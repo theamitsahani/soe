@@ -193,6 +193,42 @@ fun LoginScreen(
                         Text("Login to Account", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     }
                 }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                // Quick Login Helper
+                Text(
+                    text = "Quick Demo Login:",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Slate500
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+                ) {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            emailOrUserId = "admin@soe.com"
+                            password = "password123"
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Admin Demo", fontSize = 12.sp)
+                    }
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            emailOrUserId = "officer@soe.com"
+                            password = "password123"
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Employee Demo", fontSize = 12.sp)
+                    }
+                }
             }
         }
     }

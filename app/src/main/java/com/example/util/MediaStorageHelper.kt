@@ -2,7 +2,10 @@ package com.example.util
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
@@ -17,13 +20,15 @@ object MediaStorageHelper {
     /**
      * Copies a picked Uri (content://) to the app's persistent internal storage
      * so that media remains available indefinitely, even offline, across app restarts.
+     * Automatically downsamples large images to reduce memory pressure.
      */
     suspend fun saveMediaLocally(context: Context, sourceUri: Uri): String = withContext(Dispatchers.IO) {
         try {
             val contentResolver = context.contentResolver
             val mimeType = contentResolver.getType(sourceUri)
+            val isVideo = isMimeOrUriVideo(mimeType, sourceUri.toString())
             val extension = if (mimeType != null) {
-                MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: "jpg"
+                MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: if (isVideo) "mp4" else "jpg"
             } else {
                 val uriStr = sourceUri.toString().lowercase()
                 when {
@@ -33,7 +38,7 @@ object MediaStorageHelper {
                     uriStr.contains(".mkv") -> "mkv"
                     uriStr.contains(".png") -> "png"
                     uriStr.contains(".webp") -> "webp"
-                    else -> "jpg"
+                    else -> if (isVideo) "mp4" else "jpg"
                 }
             }
 
@@ -41,9 +46,52 @@ object MediaStorageHelper {
                 if (!exists()) mkdirs()
             }
 
-            val prefix = if (isMimeOrUriVideo(mimeType, sourceUri.toString())) "vid_" else "img_"
+            val prefix = if (isVideo) "vid_" else "img_"
             val destFile = File(mediaDir, "${prefix}${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}.$extension")
 
+            if (!isVideo) {
+                // Compress and scale image down to max 1920px to prevent excessive memory and storage usage
+                try {
+                    var inSampleSize = 1
+                    contentResolver.openInputStream(sourceUri)?.use { input ->
+                        val options = BitmapFactory.Options().apply {
+                            inJustDecodeBounds = true
+                        }
+                        BitmapFactory.decodeStream(input, null, options)
+                        val maxDim = 1920
+                        val rawWidth = options.outWidth
+                        val rawHeight = options.outHeight
+                        if (rawWidth > maxDim || rawHeight > maxDim) {
+                            val halfWidth = rawWidth / 2
+                            val halfHeight = rawHeight / 2
+                            while ((halfWidth / inSampleSize) >= maxDim || (halfHeight / inSampleSize) >= maxDim) {
+                                inSampleSize *= 2
+                            }
+                        }
+                    }
+
+                    var bitmap: Bitmap? = null
+                    contentResolver.openInputStream(sourceUri)?.use { secondInput ->
+                        val decodeOptions = BitmapFactory.Options().apply {
+                            this.inSampleSize = inSampleSize
+                            inPreferredConfig = Bitmap.Config.ARGB_8888
+                        }
+                        bitmap = BitmapFactory.decodeStream(secondInput, null, decodeOptions)
+                    }
+
+                    if (bitmap != null) {
+                        FileOutputStream(destFile).use { output ->
+                            bitmap!!.compress(Bitmap.CompressFormat.JPEG, 85, output)
+                        }
+                        bitmap?.recycle()
+                        return@withContext Uri.fromFile(destFile).toString()
+                    }
+                } catch (e: Exception) {
+                    Log.w("MediaStorageHelper", "Image compression fallback to raw copy", e)
+                }
+            }
+
+            // Fallback for video or if bitmap compression fails
             contentResolver.openInputStream(sourceUri)?.use { input: InputStream ->
                 FileOutputStream(destFile).use { output ->
                     input.copyTo(output)

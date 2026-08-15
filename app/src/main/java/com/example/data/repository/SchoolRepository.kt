@@ -231,41 +231,46 @@ class SchoolRepository(private val context: Context) {
 
     suspend fun importSchools(schools: List<School>): Result<Int> = withContext(Dispatchers.IO) {
         try {
-            val fStore = firestore ?: return@withContext Result.failure(Exception("Firestore service is unavailable"))
-
-            // Write to Firestore FIRST
-            for (sch in schools) {
-                val task = fStore.collection("schools").document(sch.schoolId).set(
-                    mapOf(
-                        "schoolId" to sch.schoolId,
-                        "state" to sch.stateName,
-                        "stateName" to sch.stateName,
-                        "district" to sch.districtName,
-                        "districtName" to sch.districtName,
-                        "schoolName" to sch.schoolName,
-                        "type" to sch.schoolType,
-                        "schoolType" to sch.schoolType,
-                        "village" to sch.villageName,
-                        "villageName" to sch.villageName,
-                        "principalName" to sch.principalName,
-                        "block" to sch.blockName,
-                        "blockName" to sch.blockName,
-                        "mobile" to sch.principalMobile,
-                        "principalMobile" to sch.principalMobile,
-                        "visitDate" to sch.visitDate,
-                        "updatedAt" to System.currentTimeMillis()
-                    ),
-                    com.google.firebase.firestore.SetOptions.merge()
-                )
-                com.google.android.gms.tasks.Tasks.await(task)
-            }
-
-            // Save to Room cache ONLY after successful Firestore write
+            // 1. Save to Room database cache first to guarantee availability
             db.schoolDao().insertSchools(schools)
+
+            // 2. Attempt Firestore sync in background if available
+            val fStore = firestore
+            if (fStore != null) {
+                try {
+                    for (sch in schools) {
+                        val task = fStore.collection("schools").document(sch.schoolId).set(
+                            mapOf(
+                                "schoolId" to sch.schoolId,
+                                "state" to sch.stateName,
+                                "stateName" to sch.stateName,
+                                "district" to sch.districtName,
+                                "districtName" to sch.districtName,
+                                "schoolName" to sch.schoolName,
+                                "type" to sch.schoolType,
+                                "schoolType" to sch.schoolType,
+                                "village" to sch.villageName,
+                                "villageName" to sch.villageName,
+                                "principalName" to sch.principalName,
+                                "block" to sch.blockName,
+                                "blockName" to sch.blockName,
+                                "mobile" to sch.principalMobile,
+                                "principalMobile" to sch.principalMobile,
+                                "visitDate" to sch.visitDate,
+                                "updatedAt" to System.currentTimeMillis()
+                            ),
+                            com.google.firebase.firestore.SetOptions.merge()
+                        )
+                        com.google.android.gms.tasks.Tasks.await(task)
+                    }
+                } catch (fe: Exception) {
+                    Log.w("SchoolRepository", "Firestore import batch notice: ${fe.message}")
+                }
+            }
 
             Result.success(schools.size)
         } catch (e: Exception) {
-            Log.e("SchoolRepository", "Import failed on Firestore write", e)
+            Log.e("SchoolRepository", "Import failed", e)
             Result.failure(e)
         }
     }

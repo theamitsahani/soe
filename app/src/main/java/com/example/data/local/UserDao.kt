@@ -29,6 +29,9 @@ interface UserDao {
     @Query("SELECT * FROM users ORDER BY name ASC")
     fun getAllUsers(): Flow<List<UserEntity>>
 
+    @Query("SELECT * FROM users ORDER BY name ASC")
+    suspend fun getAllUsersList(): List<UserEntity>
+
     @Query("SELECT * FROM users WHERE userId = :userId LIMIT 1")
     suspend fun getUserById(userId: String): UserEntity?
 
