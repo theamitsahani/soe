@@ -78,16 +78,26 @@ import com.example.ui.theme.Red600
 import com.example.ui.theme.Slate100
 import com.example.ui.theme.Slate500
 import com.example.ui.theme.Slate700
-import java.util.UUID
+import android.widget.Toast
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.VisualTransformation
 
 @Composable
 fun EmployeeManagementTab(
     employees: List<User>,
-    onSaveEmployee: (User, (Result<Unit>) -> Unit) -> Unit,
+    onSaveEmployee: (User, String?, (Result<Unit>) -> Unit) -> Unit,
     onResetPassword: ((email: String, onComplete: (Result<Unit>) -> Unit) -> Unit)? = null,
     onRefreshEmployees: ((onComplete: (Result<Int>) -> Unit) -> Unit)? = null,
     onRefresh: (() -> Unit)? = null
 ) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     var isRefreshing by remember { mutableStateOf(false) }
     var refreshErrorMessage by remember { mutableStateOf<String?>(null) }
 
@@ -129,6 +139,7 @@ fun EmployeeManagementTab(
     var isSendingResetPassword by remember { mutableStateOf(false) }
     var resetPasswordErrorMessage by remember { mutableStateOf<String?>(null) }
     var successNotification by remember { mutableStateOf<String?>(null) }
+    var newlyCreatedCredentials by remember { mutableStateOf<Triple<String, String, String>?>(null) }
 
     val filteredEmployees = remember(employees, searchQuery) {
         if (searchQuery.isBlank()) employees
@@ -328,7 +339,7 @@ fun EmployeeManagementTab(
                     onClick = { selectedEmployeeForDetails = emp },
                     onEditClick = { employeeToEdit = emp },
                     onToggleStatus = { newStatus ->
-                        onSaveEmployee(emp.copy(status = newStatus)) {}
+                        onSaveEmployee(emp.copy(status = newStatus), null) {}
                     }
                 )
             }
@@ -459,7 +470,7 @@ fun EmployeeManagementTab(
                                 val newStatus = if (checked) UserStatus.ACTIVE else UserStatus.INACTIVE
                                 val updated = emp.copy(status = newStatus)
                                 selectedEmployeeForDetails = updated
-                                onSaveEmployee(updated) {}
+                                onSaveEmployee(updated, null) {}
                             },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color.White,
@@ -496,6 +507,8 @@ fun EmployeeManagementTab(
     if (showAddEmployeeDialog) {
         var name by remember { mutableStateOf("") }
         var email by remember { mutableStateOf("") }
+        var password by remember { mutableStateOf("Officer@123") }
+        var isPasswordVisible by remember { mutableStateOf(false) }
         var mobile by remember { mutableStateOf("") }
         var state by remember { mutableStateOf("Rajasthan") }
         var district by remember { mutableStateOf("") }
@@ -581,7 +594,7 @@ fun EmployeeManagementTab(
                             email = it
                             addErrorMessage = null
                         },
-                        label = { Text("Email (ईमेल) *", fontSize = 12.sp) },
+                        label = { Text("Email (ईमेल / Login ID) *", fontSize = 12.sp) },
                         placeholder = { Text("e.g. rahul.sharma@soe.com", fontSize = 12.sp, color = Slate500) },
                         leadingIcon = {
                             Icon(Icons.Default.Email, contentDescription = null, tint = Indigo600, modifier = Modifier.size(18.dp))
@@ -591,7 +604,42 @@ fun EmployeeManagementTab(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // 3. Mobile
+                    // 3. Initial Password
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = {
+                                password = it
+                                addErrorMessage = null
+                            },
+                            label = { Text("Initial Password (पासवर्ड) *", fontSize = 12.sp) },
+                            placeholder = { Text("Officer@123", fontSize = 12.sp, color = Slate500) },
+                            leadingIcon = {
+                                Icon(Icons.Default.Lock, contentDescription = null, tint = Indigo600, modifier = Modifier.size(18.dp))
+                            },
+                            trailingIcon = {
+                                IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                                    Icon(
+                                        imageVector = if (isPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                        contentDescription = if (isPasswordVisible) "Hide password" else "Show password",
+                                        tint = Slate500,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            },
+                            visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            text = "💡 Default password is set to Officer@123. The officer can login with this and reset it anytime.",
+                            fontSize = 11.sp,
+                            color = Slate500
+                        )
+                    }
+
+                    // 4. Mobile
                     OutlinedTextField(
                         value = mobile,
                         onValueChange = {
@@ -608,7 +656,7 @@ fun EmployeeManagementTab(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // 4. State & District
+                    // 5. State & District
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -677,6 +725,7 @@ fun EmployeeManagementTab(
                     onClick = {
                         val cleanName = name.trim()
                         val cleanEmail = email.trim()
+                        val cleanPassword = password.trim().ifBlank { "Officer@123" }
                         val cleanMobile = mobile.trim()
                         val cleanState = state.trim().ifBlank { "Rajasthan" }
                         val cleanDistrict = district.trim()
@@ -687,6 +736,10 @@ fun EmployeeManagementTab(
                         }
                         if (cleanEmail.isBlank() || !android.util.Patterns.EMAIL_ADDRESS.matcher(cleanEmail).matches()) {
                             addErrorMessage = "Please enter a valid email address."
+                            return@Button
+                        }
+                        if (cleanPassword.length < 6) {
+                            addErrorMessage = "Password must be at least 6 characters."
                             return@Button
                         }
 
@@ -704,11 +757,12 @@ fun EmployeeManagementTab(
                             status = UserStatus.ACTIVE
                         )
 
-                        onSaveEmployee(newEmployee) { result ->
+                        onSaveEmployee(newEmployee, cleanPassword) { result ->
                             isSaving = false
                             if (result.isSuccess) {
                                 showAddEmployeeDialog = false
                                 successNotification = "Officer $cleanName added successfully!"
+                                newlyCreatedCredentials = Triple(cleanName, cleanEmail, cleanPassword)
                                 triggerRefresh()
                             } else {
                                 addErrorMessage = result.exceptionOrNull()?.localizedMessage ?: "Failed to add officer. Please try again."
@@ -740,6 +794,129 @@ fun EmployeeManagementTab(
                     enabled = !isSaving
                 ) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Newly Created Credentials Share Dialog
+    if (newlyCreatedCredentials != null) {
+        val (empName, empEmail, empPassword) = newlyCreatedCredentials!!
+        AlertDialog(
+            onDismissRequest = { newlyCreatedCredentials = null },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = Color(0xFF16A34A),
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Officer Account Ready!",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = Navy900
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "The officer account has been created in Firebase. Share these login credentials with the officer:",
+                        fontSize = 12.sp,
+                        color = Slate700
+                    )
+
+                    Surface(
+                        color = Slate100,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Column {
+                                Text("Officer Name:", fontSize = 11.sp, color = Slate500)
+                                Text(empName, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Navy900)
+                            }
+                            Column {
+                                Text("Email / Login ID:", fontSize = 11.sp, color = Slate500)
+                                Text(empEmail, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Navy900)
+                            }
+                            Column {
+                                Text("Default Password:", fontSize = 11.sp, color = Slate500)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(empPassword, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Indigo600)
+                                    IconButton(
+                                        onClick = {
+                                            clipboardManager.setText(AnnotatedString(empPassword))
+                                            Toast.makeText(context, "Password copied to clipboard", Toast.LENGTH_SHORT).show()
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy Password", tint = Indigo600, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                val fullText = "SOE Portal Login Details\nName: $empName\nEmail: $empEmail\nPassword: $empPassword"
+                                clipboardManager.setText(AnnotatedString(fullText))
+                                Toast.makeText(context, "All credentials copied to clipboard!", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(vertical = 6.dp, horizontal = 8.dp)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Copy All", fontSize = 11.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                val shareText = "SOE Portal Login Details\nName: $empName\nEmail: $empEmail\nPassword: $empPassword\n\nPlease log in and change your password."
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_SUBJECT, "SOE Portal Login Credentials")
+                                    putExtra(Intent.EXTRA_TEXT, shareText)
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Share Login Credentials"))
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(vertical = 6.dp, horizontal = 8.dp)
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Share", fontSize = 11.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { newlyCreatedCredentials = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Done")
                 }
             }
         )
@@ -872,7 +1049,7 @@ fun EmployeeManagementTab(
                             district = district.trim(),
                             status = status
                         )
-                        onSaveEmployee(updated) { result ->
+                        onSaveEmployee(updated, null) { result ->
                             isSaving = false
                             if (result.isSuccess) {
                                 employeeToEdit = null
@@ -886,7 +1063,7 @@ fun EmployeeManagementTab(
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     if (isSaving) {
-                        androidx.compose.material3.CircularProgressIndicator(
+                        CircularProgressIndicator(
                             color = Color.White,
                             modifier = Modifier.size(16.dp),
                             strokeWidth = 2.dp
@@ -964,8 +1141,44 @@ fun EmployeeManagementTab(
                         }
                     }
 
+                    Surface(
+                        color = Color(0xFFEFF6FF),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "ℹ️ Default Password info:",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Indigo600
+                            )
+                            Text(
+                                text = "Default initial password for officers is Officer@123. If email reset is delayed, the officer can log in with Officer@123 and change their password.",
+                                fontSize = 11.sp,
+                                color = Slate700
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString("Officer@123"))
+                                        Toast.makeText(context, "Default password (Officer@123) copied!", Toast.LENGTH_SHORT).show()
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(12.dp), tint = Indigo600)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Copy Officer@123", fontSize = 11.sp, color = Indigo600, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
                     Text(
-                        text = "Firebase Authentication will deliver an email containing a secure password reset link to this address.",
+                        text = "Firebase Authentication will deliver an email containing a secure password reset link to this address. Check Spam/Junk folder if not in Inbox.",
                         fontSize = 11.sp,
                         color = Slate500
                     )
@@ -996,7 +1209,7 @@ fun EmployeeManagementTab(
                             onResetPassword(emp.email) { result ->
                                 isSendingResetPassword = false
                                 if (result.isSuccess) {
-                                    successNotification = "Password reset email sent successfully."
+                                    successNotification = "Password reset email sent to ${emp.email}."
                                     employeeToResetPassword = null
                                 } else {
                                     resetPasswordErrorMessage = result.exceptionOrNull()?.localizedMessage ?: "Unable to send password reset email. Please try again."

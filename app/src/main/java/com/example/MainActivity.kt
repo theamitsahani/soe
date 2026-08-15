@@ -190,9 +190,9 @@ class MainActivity : ComponentActivity() {
                                             AdminTab.EMPLOYEES -> {
                                                 EmployeeManagementTab(
                                                     employees = employees,
-                                                    onSaveEmployee = { emp, callback ->
+                                                    onSaveEmployee = { emp, password, callback ->
                                                         scope.launch {
-                                                            val res = authRepository.saveEmployee(emp)
+                                                            val res = authRepository.saveEmployee(emp, password ?: "Officer@123")
                                                             callback(res)
                                                         }
                                                     },

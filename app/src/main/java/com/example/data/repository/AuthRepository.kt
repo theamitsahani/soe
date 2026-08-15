@@ -10,6 +10,7 @@ import com.example.data.model.UserRole
 import com.example.data.model.UserStatus
 import com.example.util.FirebaseUtils
 import com.google.android.gms.tasks.Tasks
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
@@ -561,11 +562,38 @@ class AuthRepository(private val context: Context) {
         }
     }
 
+    private fun getSecondaryAuth(): FirebaseAuth? {
+        return try {
+            val defaultApp = FirebaseApp.getInstance()
+            val secondaryApp = try {
+                FirebaseApp.getInstance("SecondaryAuthApp")
+            } catch (e: Exception) {
+                FirebaseApp.initializeApp(context, defaultApp.options, "SecondaryAuthApp")
+            }
+            FirebaseAuth.getInstance(secondaryApp)
+        } catch (e: Exception) {
+            Log.w("AuthRepository", "Secondary auth initialization fallback: ${e.message}")
+            null
+        }
+    }
+
     suspend fun sendPasswordResetEmail(email: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val trimmedEmail = email.trim()
+            val trimmedEmail = email.trim().lowercase()
             if (trimmedEmail.isBlank() || !Patterns.EMAIL_ADDRESS.matcher(trimmedEmail).matches()) {
                 return@withContext Result.failure(Exception("Please enter a valid email address."))
+            }
+
+            // Ensure account exists in Firebase Auth before sending reset email
+            val secondaryAuth = getSecondaryAuth()
+            if (secondaryAuth != null) {
+                try {
+                    // Pre-create user in Auth if it was only present in Firestore/Room
+                    val createResult = Tasks.await(secondaryAuth.createUserWithEmailAndPassword(trimmedEmail, "Officer@123"))
+                    secondaryAuth.signOut()
+                } catch (e: Exception) {
+                    // If user already exists in Auth, proceed smoothly
+                }
             }
 
             val fAuth = firebaseAuth ?: return@withContext Result.failure(Exception("Internet connection unavailable. Please try again."))
@@ -608,7 +636,7 @@ class AuthRepository(private val context: Context) {
         }
     }
 
-    suspend fun saveEmployee(user: User): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun saveEmployee(user: User, initialPassword: String = "Officer@123"): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val cleanEmail = user.email.trim().lowercase()
             val cleanName = user.name.trim()
@@ -616,7 +644,7 @@ class AuthRepository(private val context: Context) {
             val cleanState = user.state.trim().ifBlank { "Rajasthan" }
             val cleanDistrict = user.district.trim()
             val isNewUser = user.userId.isBlank()
-            val userId = if (isNewUser) "emp_${UUID.randomUUID().toString().replace("-", "").take(10)}" else user.userId
+            var userId = if (isNewUser) "" else user.userId
 
             if (cleanName.isBlank()) {
                 return@withContext Result.failure(Exception("Please enter the officer's full name."))
@@ -631,6 +659,28 @@ class AuthRepository(private val context: Context) {
                 if (existingLocal != null && existingLocal.userId != userId) {
                     return@withContext Result.failure(Exception("An officer with email $cleanEmail already exists."))
                 }
+            }
+
+            // If new user, create Firebase Auth account using secondary auth so Admin's active session is never logged out
+            if (isNewUser) {
+                val secAuth = getSecondaryAuth()
+                if (secAuth != null) {
+                    try {
+                        val pass = initialPassword.ifBlank { "Officer@123" }
+                        val createResult = Tasks.await(secAuth.createUserWithEmailAndPassword(cleanEmail, pass))
+                        val authUid = createResult.user?.uid
+                        if (!authUid.isNullOrBlank()) {
+                            userId = authUid
+                        }
+                        secAuth.signOut()
+                    } catch (e: Exception) {
+                        Log.w("AuthRepository", "Secondary auth registration notice: ${e.message}")
+                    }
+                }
+            }
+
+            if (userId.isBlank()) {
+                userId = "emp_${UUID.randomUUID().toString().replace("-", "").take(10)}"
             }
 
             val fStore = firestore
