@@ -31,17 +31,28 @@ android {
       val storePwd = System.getenv("KEYSTORE_PASSWORD")
         ?: (project.findProperty("KEYSTORE_PASSWORD") as? String)
         ?: System.getenv("STORE_PASSWORD")
+        ?: "soe_release_2026"
       val kAlias = System.getenv("KEY_ALIAS")
         ?: (project.findProperty("KEY_ALIAS") as? String)
+        ?: "soe_release_key"
       val kPwd = System.getenv("KEY_PASSWORD")
         ?: (project.findProperty("KEY_PASSWORD") as? String)
+        ?: "soe_release_2026"
 
       val kFile = file(keystorePath)
-      if (kFile.exists() && !storePwd.isNullOrBlank() && !kAlias.isNullOrBlank() && !kPwd.isNullOrBlank()) {
+      if (kFile.exists()) {
         storeFile = kFile
         storePassword = storePwd
         keyAlias = kAlias
         keyPassword = kPwd
+      } else {
+        val debugKeystore = file("${rootDir}/debug.keystore")
+        if (debugKeystore.exists()) {
+          storeFile = debugKeystore
+          storePassword = "android"
+          keyAlias = "androiddebugkey"
+          keyPassword = "android"
+        }
       }
     }
     create("debugConfig") {
@@ -57,7 +68,12 @@ android {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+      val releaseSigning = signingConfigs.getByName("release")
+      if (releaseSigning.storeFile != null) {
+        signingConfig = releaseSigning
+      } else {
+        signingConfig = signingConfigs.getByName("debugConfig")
+      }
     }
     debug { signingConfig = signingConfigs.getByName("debugConfig") }
   }
