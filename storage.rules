@@ -17,18 +17,20 @@ service firebase.storage {
     // School visit photos and media
     match /schools/{schoolId}/visits/{visitId}/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isValidMedia();
+      allow create, update: if isAuthenticated() && isValidMedia();
       allow delete: if isAuthenticated();
     }
 
     // General visit media upload path
     match /visit_media/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isValidMedia();
+      allow create, update: if isAuthenticated() && isValidMedia();
+      allow delete: if isAuthenticated();
     }
 
+    // Default deny everything else
     match /{allPaths=**} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if false;
     }
   }
 }

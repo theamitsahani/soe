@@ -231,46 +231,48 @@ class SchoolRepository(private val context: Context) {
 
     suspend fun importSchools(schools: List<School>): Result<Int> = withContext(Dispatchers.IO) {
         try {
-            // 1. Save to Room database cache first to guarantee availability
+            if (schools.isEmpty()) return@withContext Result.success(0)
+
+            // 1. Save to Room database cache
             db.schoolDao().insertSchools(schools)
 
-            // 2. Attempt Firestore sync in background if available
+            // 2. Sync to Firestore in atomic batches
             val fStore = firestore
             if (fStore != null) {
-                try {
-                    for (sch in schools) {
-                        val task = fStore.collection("schools").document(sch.schoolId).set(
-                            mapOf(
-                                "schoolId" to sch.schoolId,
-                                "state" to sch.stateName,
-                                "stateName" to sch.stateName,
-                                "district" to sch.districtName,
-                                "districtName" to sch.districtName,
-                                "schoolName" to sch.schoolName,
-                                "type" to sch.schoolType,
-                                "schoolType" to sch.schoolType,
-                                "village" to sch.villageName,
-                                "villageName" to sch.villageName,
-                                "principalName" to sch.principalName,
-                                "block" to sch.blockName,
-                                "blockName" to sch.blockName,
-                                "mobile" to sch.principalMobile,
-                                "principalMobile" to sch.principalMobile,
-                                "visitDate" to sch.visitDate,
-                                "updatedAt" to System.currentTimeMillis()
-                            ),
-                            com.google.firebase.firestore.SetOptions.merge()
+                // Firestore batches can hold up to 500 operations
+                val batchSize = 400
+                schools.chunked(batchSize).forEach { chunk ->
+                    val batch = fStore.batch()
+                    for (sch in chunk) {
+                        val docRef = fStore.collection("schools").document(sch.schoolId)
+                        val data = mapOf(
+                            "schoolId" to sch.schoolId,
+                            "state" to sch.stateName,
+                            "stateName" to sch.stateName,
+                            "district" to sch.districtName,
+                            "districtName" to sch.districtName,
+                            "schoolName" to sch.schoolName,
+                            "type" to sch.schoolType,
+                            "schoolType" to sch.schoolType,
+                            "village" to sch.villageName,
+                            "villageName" to sch.villageName,
+                            "principalName" to sch.principalName,
+                            "block" to sch.blockName,
+                            "blockName" to sch.blockName,
+                            "mobile" to sch.principalMobile,
+                            "principalMobile" to sch.principalMobile,
+                            "visitDate" to sch.visitDate,
+                            "updatedAt" to System.currentTimeMillis()
                         )
-                        com.google.android.gms.tasks.Tasks.await(task)
+                        batch.set(docRef, data, com.google.firebase.firestore.SetOptions.merge())
                     }
-                } catch (fe: Exception) {
-                    Log.w("SchoolRepository", "Firestore import batch notice: ${fe.message}")
+                    com.google.android.gms.tasks.Tasks.await(batch.commit())
                 }
             }
 
             Result.success(schools.size)
         } catch (e: Exception) {
-            Log.e("SchoolRepository", "Import failed", e)
+            Log.e("SchoolRepository", "Import failed: ${e.message}", e)
             Result.failure(e)
         }
     }

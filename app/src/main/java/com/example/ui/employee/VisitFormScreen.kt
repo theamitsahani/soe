@@ -868,6 +868,17 @@ fun VisitFormScreen(
                             if (currentStep < totalSteps) {
                                 currentStep++
                             } else {
+                                // Validate 5 mandatory photo categories
+                                val missingPhotoCategories = PhotoCategory.entries
+                                    .filter { it.minRequired > 0 }
+                                    .filter { (photoMap[it.categoryId] ?: emptyList()).size < it.minRequired }
+
+                                if (missingPhotoCategories.isNotEmpty()) {
+                                    val missingNames = missingPhotoCategories.joinToString("\n• ") { it.displayName }
+                                    submitError = "कृपया निम्नलिखित अनिवार्य फोटो अपलोड करें:\n• $missingNames"
+                                    return@Button
+                                }
+
                                 // Final Submission logic
                                 isSubmitting = true
                                 submitError = null

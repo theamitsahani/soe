@@ -111,8 +111,8 @@ class VisitRepository(private val context: Context) {
             // Step 1: Save to Room DB locally first (ensures 100% offline durability)
             db.visitDao().insertVisit(finalVisit)
             
-            // Step 2: Mark all assigned tasks for this school as SUBMITTED so co-officers see it as completed
-            db.taskDao().markTasksSubmittedForSchool(finalVisit.schoolId)
+            // Step 2: Mark the assigned task for this employee & school as SUBMITTED
+            db.taskDao().markTaskSubmittedForEmployeeAndSchool(finalVisit.employeeId, finalVisit.schoolId)
 
             // Step 3: If online, attempt immediate background upload with timeout protection
             if (isOnline) {

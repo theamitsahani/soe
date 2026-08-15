@@ -60,5 +60,10 @@ service cloud.firestore {
       allow update: if isAdmin() || (isEmployee() && resource.data.employeeId == request.auth.uid);
       allow delete: if isAdmin();
     }
+
+    // Default deny all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
 }

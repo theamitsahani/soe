@@ -180,9 +180,10 @@ class SyncManager(private val context: Context) {
                 // Update local Room database with the permanent photo URLs
                 db.visitDao().updateVisit(visit.copy(photosJson = updatedPhotosJson, syncStatus = SyncStatus.SYNCED))
 
-                // Also update any matching task in Firestore
+                // Also update the specific assigned task for this employee and school in Firestore
                 try {
                     val taskQuery = fStore.collection("tasks")
+                        .whereEqualTo("employeeId", visit.employeeId)
                         .whereEqualTo("schoolId", visit.schoolId)
                         .get()
                     val taskSnap = com.google.android.gms.tasks.Tasks.await(taskQuery)
