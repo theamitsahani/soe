@@ -201,6 +201,7 @@ fun VisitFormScreen(
     var keyObservations by remember { mutableStateOf(parsedExistingAnswers.q16_keyObservations) }
     var problemsOrAssistance by remember { mutableStateOf(parsedExistingAnswers.q17_problemsOrAssistance) }
     var followupRequired by remember { mutableStateOf(parsedExistingAnswers.q18_followupRequired) }
+    var dataRequiredOnHardDisk by remember { mutableStateOf(parsedExistingAnswers.q19_dataRequiredOnHardDisk) }
     var finalRemarks by remember { mutableStateOf(parsedExistingAnswers.q20_finalRemarks) }
     var smartClassStatus by remember { mutableStateOf(parsedExistingAnswers.q21_smartClassStatus) }
 
@@ -646,6 +647,13 @@ fun VisitFormScreen(
                             onOptionSelected = { followupRequired = it }
                         )
 
+                        SingleChoiceQuestion(
+                            question = "19. हार्ड डिस्क में डेटा आवश्यक है? (Data Required on Hard Disk?)",
+                            options = listOf("हाँ", "नहीं"),
+                            selectedOption = dataRequiredOnHardDisk,
+                            onOptionSelected = { dataRequiredOnHardDisk = it }
+                        )
+
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(16.dp),
@@ -971,6 +979,7 @@ fun VisitFormScreen(
                                     q16_keyObservations = keyObservations,
                                     q17_problemsOrAssistance = problemsOrAssistance,
                                     q18_followupRequired = followupRequired,
+                                    q19_dataRequiredOnHardDisk = dataRequiredOnHardDisk,
                                     q20_finalRemarks = finalRemarks,
                                     q21_smartClassStatus = smartClassStatus,
                                     q22_participatingClasses = selectedClasses.sorted().joinToString(", "),

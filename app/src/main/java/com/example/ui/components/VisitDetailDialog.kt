@@ -26,6 +26,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
@@ -92,6 +93,7 @@ fun VisitDetailDialog(
     school: School? = null,
     onDismiss: () -> Unit,
     onEditClick: (() -> Unit)? = null,
+    onUpdateAnswers: ((VisitAnswers) -> Unit)? = null,
     isEditable: Boolean = false,
     editTimeRemainingText: String = ""
 ) {
@@ -421,7 +423,39 @@ fun VisitDetailDialog(
                         DetailGridRow("21. Smart Class Status (स्मार्ट क्लास की स्थिति)", answers.q21_smartClassStatus.ifBlank { "Not Recorded" })
                         DetailGridRow("16. Key Observations (मुख्य अवलोकन)", answers.q16_keyObservations.ifBlank { "None" })
                         DetailGridRow("17. Problems / Help Required (समस्याएं / आवश्यकता)", answers.q17_problemsOrAssistance.ifBlank { "None" })
+                        
                         DetailGridRow("18. Follow-up Required (फॉलो-अप आवश्यकता)", answers.q18_followupRequired.ifBlank { "नहीं" })
+                        if (answers.q18_followupRequired.trim().equals("हाँ", ignoreCase = true) && onUpdateAnswers != null) {
+                            Button(
+                                onClick = {
+                                    onUpdateAnswers(answers.copy(q18_followupRequired = "नहीं"))
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                            ) {
+                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("फॉलो-अप पूर्ण / हटाएं (Uncheck Follow-up)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        DetailGridRow("19. Data Required on Hard Disk (हार्ड डिस्क डेटा आवश्यक)", answers.q19_dataRequiredOnHardDisk.ifBlank { "नहीं" })
+                        if (answers.q19_dataRequiredOnHardDisk.trim().equals("हाँ", ignoreCase = true) && onUpdateAnswers != null) {
+                            Button(
+                                onClick = {
+                                    onUpdateAnswers(answers.copy(q19_dataRequiredOnHardDisk = "नहीं"))
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("हार्ड डिस्क डेटा दिया गया - पूर्ण मार्क करें (Mark Data Delivered)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
                         DetailGridRow("20. Final Remarks (अंतिम टिप्पणी)", answers.q20_finalRemarks.ifBlank { "None" })
                     }
 

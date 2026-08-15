@@ -156,4 +156,72 @@ class VisitRepository(private val context: Context) {
             }
         }
     }
+
+    suspend fun updateVisitAnswers(visitId: String, updatedAnswers: com.example.data.model.VisitAnswers): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val existing = db.visitDao().getVisitById(visitId) ?: return@withContext Result.failure(Exception("Visit not found"))
+            val moshi = com.squareup.moshi.Moshi.Builder().addLast(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory()).build()
+            val answersJson = moshi.adapter(com.example.data.model.VisitAnswers::class.java).toJson(updatedAnswers)
+            val updated = existing.copy(
+                answersJson = answersJson,
+                updatedAt = System.currentTimeMillis()
+            )
+            db.visitDao().updateVisit(updated)
+
+            val fStore = firestore
+            if (fStore != null && syncManager.isNetworkAvailable()) {
+                try {
+                    val task = fStore.collection("visits").document(visitId).update(
+                        mapOf(
+                            "answersJson" to answersJson,
+                            "updatedAt" to updated.updatedAt
+                        )
+                    )
+                    com.google.android.gms.tasks.Tasks.await(task)
+                } catch (e: Exception) {
+                    android.util.Log.w("VisitRepository", "Notice updating answers in Firestore: ${e.message}")
+                }
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateVisit(visit: Visit): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val updated = visit.copy(updatedAt = System.currentTimeMillis())
+            db.visitDao().updateVisit(updated)
+
+            val fStore = firestore
+            if (fStore != null && syncManager.isNetworkAvailable()) {
+                try {
+                    val task = fStore.collection("visits").document(visit.visitId).set(
+                        mapOf(
+                            "visitId" to updated.visitId,
+                            "schoolId" to updated.schoolId,
+                            "employeeId" to updated.employeeId,
+                            "employeeName" to updated.employeeName,
+                            "schoolName" to updated.schoolName,
+                            "state" to updated.state,
+                            "district" to updated.district,
+                            "block" to updated.block,
+                            "visitDate" to updated.visitDate,
+                            "status" to updated.status.name,
+                            "answersJson" to updated.answersJson,
+                            "photosJson" to updated.photosJson,
+                            "updatedAt" to updated.updatedAt
+                        ),
+                        com.google.firebase.firestore.SetOptions.merge()
+                    )
+                    com.google.android.gms.tasks.Tasks.await(task)
+                } catch (e: Exception) {
+                    android.util.Log.w("VisitRepository", "Notice updating visit in Firestore: ${e.message}")
+                }
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

@@ -21,6 +21,7 @@ data class VisitAnswers(
     val q16_keyObservations: String = "",
     val q17_problemsOrAssistance: String = "",
     val q18_followupRequired: String = "", // Unselected by default: हाँ, नहीं
+    val q19_dataRequiredOnHardDisk: String = "", // Unselected by default: हाँ, नहीं
     val q20_finalRemarks: String = "",
     val q21_smartClassStatus: String = "", // Unselected by default: बहुत अच्छी, अच्छी, सामान्य, खराब, उपयोग में नहीं है, स्मार्ट क्लास उपलब्ध नहीं है
     val q22_participatingClasses: String = "", // Unchecked by default: e.g. "Class 6th, Class 7th"

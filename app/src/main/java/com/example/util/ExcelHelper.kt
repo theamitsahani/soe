@@ -607,7 +607,7 @@ object ExcelHelper {
             "Mission Gyan Knowledge", "Student Attendance", "School Response", 
             "BCI Name", "BCI Mobile", "BCI Full Details", "WhatsApp Group Status", 
             "Poster Installed", "Key Observations", "Problems/Help Required", 
-            "Follow-up Needed", "Smart Class Status", "Final Remarks"
+            "Follow-up Needed", "Data on Hard Disk Required", "Smart Class Status", "Final Remarks"
         )
 
         val stringList = mutableListOf<String>()
@@ -641,7 +641,7 @@ object ExcelHelper {
                 a.q9_metPrincipal, a.q10_missionGyanAwareness, a.q11_studentCount, a.q12_schoolResponse,
                 bciName, bciMobile, a.q13_bciContactDetails, a.q14_whatsappGroupAdded,
                 a.q15_posterInstalled, a.q16_keyObservations, a.q17_problemsOrAssistance,
-                a.q18_followupRequired, a.q21_smartClassStatus, a.q20_finalRemarks
+                a.q18_followupRequired, a.q19_dataRequiredOnHardDisk, a.q21_smartClassStatus, a.q20_finalRemarks
             )
             val rowIndices = rowVals.map { getSharedStringIndex(it) }
             rowsData.add(rowIndices)
@@ -753,7 +753,7 @@ object ExcelHelper {
         writer.write(
             "Visit ID,Date,Employee,District,Block,School Name,Reference Code,Principal Name,Principal Mobile," +
                     "Met Principal,Mission Gyan Knowledge,Student Attendance,School Response,BCI Name,BCI Mobile,BCI Full Details,WhatsApp Group Status," +
-                    "Poster Installed,Key Observations,Problems/Help Required,Follow-up Needed,Smart Class Status,Final Remarks\n"
+                    "Poster Installed,Key Observations,Problems/Help Required,Follow-up Needed,Data on Hard Disk Required,Smart Class Status,Final Remarks\n"
         )
 
         for (v in visits) {
@@ -777,7 +777,7 @@ object ExcelHelper {
                         "${sanitize(v.schoolName)},${sanitize(a.q4_udiseCode)},${sanitize(a.q7_principalName)},${sanitize(a.q8_principalMobile)}," +
                         "${sanitize(a.q9_metPrincipal)},${sanitize(a.q10_missionGyanAwareness)},${sanitize(a.q11_studentCount)},${sanitize(a.q12_schoolResponse)}," +
                         "${sanitize(bciName)},${sanitize(bciMobile)},${sanitize(a.q13_bciContactDetails)},${sanitize(a.q14_whatsappGroupAdded)},${sanitize(a.q15_posterInstalled)}," +
-                        "${sanitize(a.q16_keyObservations)},${sanitize(a.q17_problemsOrAssistance)},${sanitize(a.q18_followupRequired)}," +
+                        "${sanitize(a.q16_keyObservations)},${sanitize(a.q17_problemsOrAssistance)},${sanitize(a.q18_followupRequired)},${sanitize(a.q19_dataRequiredOnHardDisk)}," +
                         "${sanitize(a.q21_smartClassStatus)},${sanitize(a.q20_finalRemarks)}\n"
             )
         }

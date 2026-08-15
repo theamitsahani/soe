@@ -23,10 +23,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -62,18 +66,27 @@ import com.example.data.model.VisitStatus
 import com.example.ui.components.SearchTextField
 import com.example.ui.components.StatusChip
 import com.example.ui.components.VisitDetailDialog
+import com.example.ui.theme.Amber100
+import com.example.ui.theme.Amber600
+import com.example.ui.theme.Emerald100
+import com.example.ui.theme.Emerald600
 import com.example.ui.theme.Indigo600
 import com.example.ui.theme.Navy900
+import com.example.ui.theme.Red100
+import com.example.ui.theme.Red600
 import com.example.ui.theme.Slate500
 import com.example.ui.theme.Slate700
 import com.example.util.ExcelHelper
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReportsTab(
     visits: List<Visit>,
     schools: List<School> = emptyList(),
-    initialStatusFilter: String = "All Statuses"
+    initialStatusFilter: String = "All Statuses",
+    onUpdateVisitAnswers: ((String, VisitAnswers) -> Unit)? = null
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedStatus by remember { mutableStateOf(initialStatusFilter) }
@@ -90,7 +103,7 @@ fun ReportsTab(
     var showExportDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
-    val statusList = listOf("All Statuses", "Completed", "Pending", "Follow-up Required")
+    val statusList = listOf("All Statuses", "Completed", "Data Required on Hard Disk", "Follow-up Required", "Pending")
 
     val stateList = remember(visits) {
         listOf("All States") + visits.map { if (it.state.isNotBlank()) it.state else "Rajasthan" }.distinct()
@@ -120,6 +133,7 @@ fun ReportsTab(
                 "Completed" -> v.status == VisitStatus.SUBMITTED || v.status == VisitStatus.REVIEWED
                 "Pending" -> v.status == VisitStatus.ASSIGNED || v.status == VisitStatus.STARTED
                 "Follow-up Required" -> v.answersJson.contains("\"q18_followupRequired\":\"हाँ\"")
+                "Data Required on Hard Disk" -> v.answersJson.contains("\"q19_dataRequiredOnHardDisk\":\"हाँ\"")
                 else -> true
             }
 
@@ -330,6 +344,17 @@ fun ReportsTab(
             }
         } else {
             items(filteredVisits) { visit ->
+                val answers = remember(visit.answersJson) {
+                    try {
+                        val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
+                        moshi.adapter(VisitAnswers::class.java).fromJson(visit.answersJson) ?: VisitAnswers()
+                    } catch (e: Exception) {
+                        VisitAnswers()
+                    }
+                }
+                val hasFollowup = answers.q18_followupRequired.trim().equals("हाँ", ignoreCase = true)
+                val hasHardDisk = answers.q19_dataRequiredOnHardDisk.trim().equals("हाँ", ignoreCase = true)
+
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -361,6 +386,78 @@ fun ReportsTab(
                             Text("Officer: ${visit.employeeName}", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Slate700)
                             Text("Date: ${visit.visitDate}", fontSize = 12.sp, color = Slate500)
                         }
+
+                        // Follow-up & Hard Disk Status Badges / Action Row
+                        if (hasFollowup || hasHardDisk) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (hasFollowup) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Red100)
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Warning, contentDescription = null, tint = Red600, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Follow-up Required (फॉलो-अप)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Red600)
+                                        }
+                                        if (onUpdateVisitAnswers != null) {
+                                            Button(
+                                                onClick = {
+                                                    onUpdateVisitAnswers(visit.visitId, answers.copy(q18_followupRequired = "नहीं"))
+                                                },
+                                                shape = RoundedCornerShape(6.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                modifier = Modifier.height(28.dp)
+                                            ) {
+                                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Uncheck", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (hasHardDisk) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Amber100)
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Download, contentDescription = null, tint = Amber600, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Hard Disk Data Needed (डेटा आवश्यक)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Amber600)
+                                        }
+                                        if (onUpdateVisitAnswers != null) {
+                                            Button(
+                                                onClick = {
+                                                    onUpdateVisitAnswers(visit.visitId, answers.copy(q19_dataRequiredOnHardDisk = "नहीं"))
+                                                },
+                                                shape = RoundedCornerShape(6.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                modifier = Modifier.height(28.dp)
+                                            ) {
+                                                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(12.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Mark Done", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -376,7 +473,11 @@ fun ReportsTab(
         VisitDetailDialog(
             visit = visit,
             school = matchedSchool,
-            onDismiss = { selectedVisitForDetails = null }
+            onDismiss = { selectedVisitForDetails = null },
+            onUpdateAnswers = { updatedAnswers ->
+                onUpdateVisitAnswers?.invoke(visit.visitId, updatedAnswers)
+                selectedVisitForDetails = null
+            }
         )
     }
 

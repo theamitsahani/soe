@@ -290,7 +290,16 @@ class MainActivity : ComponentActivity() {
                                                 )
                                             }
                                             AdminTab.VISIT_REPORTS -> {
-                                                ReportsTab(visits = visits, schools = schools, initialStatusFilter = reportsStatusFilter)
+                                                ReportsTab(
+                                                    visits = visits,
+                                                    schools = schools,
+                                                    initialStatusFilter = reportsStatusFilter,
+                                                    onUpdateVisitAnswers = { visitId, updatedAnswers ->
+                                                        scope.launch {
+                                                            visitRepository.updateVisitAnswers(visitId, updatedAnswers)
+                                                        }
+                                                    }
+                                                )
                                             }
                                             AdminTab.PHOTO_GALLERY -> {
                                                 PhotoGalleryTab(visits = visits)

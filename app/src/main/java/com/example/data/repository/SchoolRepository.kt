@@ -325,6 +325,10 @@ class SchoolRepository(private val context: Context) {
         try {
             val now = System.currentTimeMillis()
             db.schoolDao().softDeleteSchool(schoolId, now)
+            
+            // Delete associated visits and tasks from local Room database
+            db.visitDao().deleteVisitsBySchool(schoolId)
+            db.taskDao().deleteTasksBySchool(schoolId)
 
             val fStore = firestore
             if (fStore != null) {
@@ -336,6 +340,24 @@ class SchoolRepository(private val context: Context) {
                     )
                 )
                 com.google.android.gms.tasks.Tasks.await(task)
+
+                // Also delete associated visits & tasks from Firestore
+                try {
+                    val visitDocs = com.google.android.gms.tasks.Tasks.await(
+                        fStore.collection("visits").whereEqualTo("schoolId", schoolId).get()
+                    )
+                    for (doc in visitDocs.documents) {
+                        fStore.collection("visits").document(doc.id).delete()
+                    }
+                    val taskDocs = com.google.android.gms.tasks.Tasks.await(
+                        fStore.collection("tasks").whereEqualTo("schoolId", schoolId).get()
+                    )
+                    for (doc in taskDocs.documents) {
+                        fStore.collection("tasks").document(doc.id).delete()
+                    }
+                } catch (e: Exception) {
+                    Log.w("SchoolRepository", "Notice deleting visits/tasks from Firestore: ${e.message}")
+                }
             }
             Result.success(Unit)
         } catch (e: Exception) {
@@ -371,6 +393,30 @@ class SchoolRepository(private val context: Context) {
         try {
             firestore?.collection("schools")?.document(schoolId)?.delete()
             db.schoolDao().deleteSchoolById(schoolId)
+            
+            // Delete associated visits and tasks from local Room database
+            db.visitDao().deleteVisitsBySchool(schoolId)
+            db.taskDao().deleteTasksBySchool(schoolId)
+
+            val fStore = firestore
+            if (fStore != null) {
+                try {
+                    val visitDocs = com.google.android.gms.tasks.Tasks.await(
+                        fStore.collection("visits").whereEqualTo("schoolId", schoolId).get()
+                    )
+                    for (doc in visitDocs.documents) {
+                        fStore.collection("visits").document(doc.id).delete()
+                    }
+                    val taskDocs = com.google.android.gms.tasks.Tasks.await(
+                        fStore.collection("tasks").whereEqualTo("schoolId", schoolId).get()
+                    )
+                    for (doc in taskDocs.documents) {
+                        fStore.collection("tasks").document(doc.id).delete()
+                    }
+                } catch (e: Exception) {
+                    Log.w("SchoolRepository", "Notice permanently deleting visits/tasks from Firestore: ${e.message}")
+                }
+            }
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e("SchoolRepository", "Failed to permanently delete school: ${e.message}", e)

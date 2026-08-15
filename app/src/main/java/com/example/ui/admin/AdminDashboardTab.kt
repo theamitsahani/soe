@@ -67,7 +67,7 @@ fun AdminDashboardTab(
     onVisitClick: (Visit) -> Unit
 ) {
     val completedCount = visits.count { it.status == VisitStatus.SUBMITTED || it.status == VisitStatus.REVIEWED }
-    val pendingCount = visits.count { it.status == VisitStatus.ASSIGNED || it.status == VisitStatus.STARTED }
+    val hardDiskDataCount = visits.count { it.answersJson.contains("\"q19_dataRequiredOnHardDisk\":\"हाँ\"") }
     val followUpCount = visits.count { it.answersJson.contains("\"q18_followupRequired\":\"हाँ\"") }
 
     LazyColumn(
@@ -99,12 +99,12 @@ fun AdminDashboardTab(
                         modifier = Modifier.weight(1f)
                     )
                     KpiCard(
-                        title = "Pending / In Progress",
-                        value = pendingCount.toString(),
-                        icon = Icons.Default.HourglassTop,
+                        title = "Data on Hard Disk",
+                        value = hardDiskDataCount.toString(),
+                        icon = Icons.Default.Download,
                         color = Amber600,
                         bgColor = Amber100,
-                        onClick = { onNavigateTabWithFilter(AdminTab.VISIT_REPORTS, "Pending") },
+                        onClick = { onNavigateTabWithFilter(AdminTab.VISIT_REPORTS, "Data Required on Hard Disk") },
                         modifier = Modifier.weight(1f)
                     )
                 }
