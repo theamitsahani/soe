@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -26,8 +27,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
@@ -119,7 +122,7 @@ fun EmployeeManagementTab(
     }
 
     var searchQuery by remember { mutableStateOf("") }
-    var showAddEmployeeInfoDialog by remember { mutableStateOf(false) }
+    var showAddEmployeeDialog by remember { mutableStateOf(false) }
     var employeeToEdit by remember { mutableStateOf<User?>(null) }
     var selectedEmployeeForDetails by remember { mutableStateOf<User?>(null) }
     var employeeToResetPassword by remember { mutableStateOf<User?>(null) }
@@ -248,7 +251,7 @@ fun EmployeeManagementTab(
                     }
                     Spacer(modifier = Modifier.width(4.dp))
                     Button(
-                        onClick = { showAddEmployeeInfoDialog = true },
+                        onClick = { showAddEmployeeDialog = true },
                         shape = RoundedCornerShape(8.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Indigo600)
@@ -489,20 +492,47 @@ fun EmployeeManagementTab(
         )
     }
 
-    // Informational Dialog: Adding Employees
-    if (showAddEmployeeInfoDialog) {
+    // Add New Employee Dialog
+    if (showAddEmployeeDialog) {
+        var name by remember { mutableStateOf("") }
+        var email by remember { mutableStateOf("") }
+        var mobile by remember { mutableStateOf("") }
+        var state by remember { mutableStateOf("Rajasthan") }
+        var district by remember { mutableStateOf("") }
+        var isSaving by remember { mutableStateOf(false) }
+        var addErrorMessage by remember { mutableStateOf<String?>(null) }
+
+        val commonDistricts = remember {
+            listOf(
+                "Jaipur", "Jodhpur", "Kota", "Bikaner", "Ajmer", "Udaipur",
+                "Alwar", "Bhilwara", "Sikar", "Bharatpur", "Pali", "Sri Ganganagar",
+                "Churu", "Nagaur", "Jhunjhunu", "Barmer", "Tonk", "Chittorgarh"
+            )
+        }
+
         AlertDialog(
-            onDismissRequest = { showAddEmployeeInfoDialog = false },
+            onDismissRequest = { if (!isSaving) showAddEmployeeDialog = false },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = null,
-                        tint = Indigo600,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Adding Field Officers", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Navy900)
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Indigo600.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = Indigo600,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text("Add New Field Officer", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Navy900)
+                        Text("नया फील्ड ऑफिसर जोड़ें", fontSize = 11.sp, color = Slate500)
+                    }
                 }
             },
             text = {
@@ -512,53 +542,204 @@ fun EmployeeManagementTab(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(
-                        text = "Employees are added directly from the Firebase Console:",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Navy900
-                    )
-
-                    Surface(
-                        color = Slate100,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                    if (addErrorMessage != null) {
+                        Surface(
+                            color = Red600.copy(alpha = 0.1f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("1. Firebase Authentication:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Indigo600)
-                            Text("Go to Authentication → Users → Add User (Enter email & password).", fontSize = 12.sp, color = Slate700)
-                            Text("Copy the generated User UID.", fontSize = 12.sp, color = Slate700)
-                            
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text("2. Cloud Firestore:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Indigo600)
-                            Text("Go to Firestore → users collection → Add document with the copied UID as Document ID:", fontSize = 12.sp, color = Slate700)
-                            Text("• role: \"EMPLOYEE\"", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = Navy900)
-                            Text("• status: \"ACTIVE\"", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = Navy900)
-                            Text("• name: (Officer's Full Name)", fontSize = 11.sp, color = Slate700)
-                            Text("• email: (Officer's Email)", fontSize = 11.sp, color = Slate700)
-                            Text("• mobile: (Contact Number)", fontSize = 11.sp, color = Slate700)
-                            Text("• state: \"Rajasthan\"", fontSize = 11.sp, color = Slate700)
-                            Text("• district: (e.g. \"Jaipur\")", fontSize = 11.sp, color = Slate700)
+                            Text(
+                                text = addErrorMessage!!,
+                                color = Red600,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(10.dp)
+                            )
                         }
                     }
 
-                    Text(
-                        text = "Once created in Firebase, the officer will automatically synchronize and appear in this list.",
-                        fontSize = 12.sp,
-                        color = Slate500
+                    // 1. Name
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = {
+                            name = it
+                            addErrorMessage = null
+                        },
+                        label = { Text("Name (नाम) *", fontSize = 12.sp) },
+                        placeholder = { Text("e.g. Rahul Sharma", fontSize = 12.sp, color = Slate500) },
+                        leadingIcon = {
+                            Icon(Icons.Default.Person, contentDescription = null, tint = Indigo600, modifier = Modifier.size(18.dp))
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
                     )
+
+                    // 2. Email
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = {
+                            email = it
+                            addErrorMessage = null
+                        },
+                        label = { Text("Email (ईमेल) *", fontSize = 12.sp) },
+                        placeholder = { Text("e.g. rahul.sharma@soe.com", fontSize = 12.sp, color = Slate500) },
+                        leadingIcon = {
+                            Icon(Icons.Default.Email, contentDescription = null, tint = Indigo600, modifier = Modifier.size(18.dp))
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // 3. Mobile
+                    OutlinedTextField(
+                        value = mobile,
+                        onValueChange = {
+                            mobile = it
+                            addErrorMessage = null
+                        },
+                        label = { Text("Mobile (मोबाइल नंबर)", fontSize = 12.sp) },
+                        placeholder = { Text("e.g. 9876543210", fontSize = 12.sp, color = Slate500) },
+                        leadingIcon = {
+                            Icon(Icons.Default.Phone, contentDescription = null, tint = Indigo600, modifier = Modifier.size(18.dp))
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // 4. State & District
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = state,
+                            onValueChange = { state = it },
+                            label = { Text("State (राज्य)", fontSize = 12.sp) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        OutlinedTextField(
+                            value = district,
+                            onValueChange = {
+                                district = it
+                                addErrorMessage = null
+                            },
+                            label = { Text("District (जिला)", fontSize = 12.sp) },
+                            placeholder = { Text("e.g. Jaipur", fontSize = 12.sp, color = Slate500) },
+                            leadingIcon = {
+                                Icon(Icons.Default.LocationOn, contentDescription = null, tint = Indigo600, modifier = Modifier.size(18.dp))
+                            },
+                            singleLine = true,
+                            modifier = Modifier.weight(1.2f)
+                        )
+                    }
+
+                    // District quick selector chips
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Quick Select District (जिला चुनें):",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Slate500
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            commonDistricts.forEach { dist ->
+                                val isSelected = district.equals(dist, ignoreCase = true)
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(if (isSelected) Indigo600 else Slate100)
+                                        .clickable { district = dist }
+                                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                                ) {
+                                    Text(
+                                        text = dist,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) Color.White else Slate700
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
                 Button(
-                    onClick = { showAddEmployeeInfoDialog = false },
+                    onClick = {
+                        val cleanName = name.trim()
+                        val cleanEmail = email.trim()
+                        val cleanMobile = mobile.trim()
+                        val cleanState = state.trim().ifBlank { "Rajasthan" }
+                        val cleanDistrict = district.trim()
+
+                        if (cleanName.isBlank()) {
+                            addErrorMessage = "Please enter the officer's full name."
+                            return@Button
+                        }
+                        if (cleanEmail.isBlank() || !android.util.Patterns.EMAIL_ADDRESS.matcher(cleanEmail).matches()) {
+                            addErrorMessage = "Please enter a valid email address."
+                            return@Button
+                        }
+
+                        isSaving = true
+                        addErrorMessage = null
+
+                        val newEmployee = User(
+                            userId = "",
+                            name = cleanName,
+                            email = cleanEmail,
+                            mobile = cleanMobile,
+                            state = cleanState,
+                            district = cleanDistrict,
+                            role = UserRole.EMPLOYEE,
+                            status = UserStatus.ACTIVE
+                        )
+
+                        onSaveEmployee(newEmployee) { result ->
+                            isSaving = false
+                            if (result.isSuccess) {
+                                showAddEmployeeDialog = false
+                                successNotification = "Officer $cleanName added successfully!"
+                                triggerRefresh()
+                            } else {
+                                addErrorMessage = result.exceptionOrNull()?.localizedMessage ?: "Failed to add officer. Please try again."
+                            }
+                        }
+                    },
+                    enabled = !isSaving && name.isNotBlank() && email.isNotBlank(),
                     colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("Got it")
+                    if (isSaving) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Adding...")
+                    } else {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Add Officer")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showAddEmployeeDialog = false },
+                    enabled = !isSaving
+                ) {
+                    Text("Cancel")
                 }
             }
         )

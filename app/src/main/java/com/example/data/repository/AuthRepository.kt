@@ -615,7 +615,8 @@ class AuthRepository(private val context: Context) {
             val cleanMobile = user.mobile.trim()
             val cleanState = user.state.trim().ifBlank { "Rajasthan" }
             val cleanDistrict = user.district.trim()
-            val userId = user.userId.ifBlank { "emp_${UUID.randomUUID().toString().take(8)}" }
+            val isNewUser = user.userId.isBlank()
+            val userId = if (isNewUser) "emp_${UUID.randomUUID().toString().replace("-", "").take(10)}" else user.userId
 
             if (cleanName.isBlank()) {
                 return@withContext Result.failure(Exception("Please enter the officer's full name."))
@@ -624,7 +625,28 @@ class AuthRepository(private val context: Context) {
                 return@withContext Result.failure(Exception("Please enter a valid email address."))
             }
 
+            // Check local duplicate email for new user
+            if (isNewUser) {
+                val existingLocal = db.userDao().getUserByEmail(cleanEmail)
+                if (existingLocal != null && existingLocal.userId != userId) {
+                    return@withContext Result.failure(Exception("An officer with email $cleanEmail already exists."))
+                }
+            }
+
             val fStore = firestore
+
+            // Check Firestore for duplicate email if new user
+            if (isNewUser && fStore != null) {
+                try {
+                    val queryTask = fStore.collection("users").whereEqualTo("email", cleanEmail).limit(1).get()
+                    val snap = Tasks.await(queryTask)
+                    if (!snap.isEmpty && snap.documents.any { it.id != userId }) {
+                        return@withContext Result.failure(Exception("An account with email $cleanEmail already exists in Firestore."))
+                    }
+                } catch (e: Exception) {
+                    Log.w("AuthRepository", "Duplicate check notice: ${e.message}")
+                }
+            }
 
             // Update in local Room database cache
             val entity = UserEntity(
@@ -641,20 +663,22 @@ class AuthRepository(private val context: Context) {
 
             // Update directly in Firestore users collection
             if (fStore != null) {
-                val setTask = fStore.collection("users").document(userId).set(
-                    mapOf(
-                        "userId" to userId,
-                        "name" to cleanName,
-                        "email" to cleanEmail,
-                        "mobile" to cleanMobile,
-                        "state" to cleanState,
-                        "district" to cleanDistrict,
-                        "role" to UserRole.EMPLOYEE.name,
-                        "status" to user.status.name,
-                        "updatedAt" to System.currentTimeMillis()
-                    ),
-                    SetOptions.merge()
+                val userMap = mutableMapOf<String, Any>(
+                    "userId" to userId,
+                    "name" to cleanName,
+                    "email" to cleanEmail,
+                    "mobile" to cleanMobile,
+                    "state" to cleanState,
+                    "district" to cleanDistrict,
+                    "role" to UserRole.EMPLOYEE.name,
+                    "status" to user.status.name,
+                    "updatedAt" to System.currentTimeMillis()
                 )
+                if (isNewUser) {
+                    userMap["createdAt"] = System.currentTimeMillis()
+                }
+
+                val setTask = fStore.collection("users").document(userId).set(userMap, SetOptions.merge())
                 Tasks.await(setTask)
             }
 

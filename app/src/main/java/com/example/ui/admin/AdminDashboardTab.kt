@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AssignmentTurnedIn
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.School
@@ -159,14 +160,14 @@ fun AdminDashboardTab(
                             onClick = { onNavigateTab(AdminTab.ASSIGN_VISITS) }
                         )
                         QuickActionButton(
-                            title = "Import Excel",
-                            icon = Icons.Default.School,
-                            onClick = { onNavigateTab(AdminTab.SCHOOLS) }
+                            title = "Officers",
+                            icon = Icons.Default.Group,
+                            onClick = { onNavigateTab(AdminTab.EMPLOYEES) }
                         )
                         QuickActionButton(
-                            title = "Photo Gallery",
-                            icon = Icons.Default.PhotoLibrary,
-                            onClick = { onNavigateTab(AdminTab.PHOTO_GALLERY) }
+                            title = "Schools",
+                            icon = Icons.Default.School,
+                            onClick = { onNavigateTab(AdminTab.SCHOOLS) }
                         )
                         QuickActionButton(
                             title = "Reports",
