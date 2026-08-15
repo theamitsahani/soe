@@ -28,6 +28,12 @@ interface SchoolDao {
     @Update
     suspend fun updateSchool(school: School)
 
+    @Query("UPDATE schools SET isDeleted = 1, deletedAt = :deletedAt WHERE schoolId = :schoolId")
+    suspend fun softDeleteSchool(schoolId: String, deletedAt: Long = System.currentTimeMillis())
+
+    @Query("UPDATE schools SET isDeleted = 0, deletedAt = 0 WHERE schoolId = :schoolId")
+    suspend fun restoreSchool(schoolId: String)
+
     @Query("DELETE FROM schools WHERE schoolId = :schoolId")
     suspend fun deleteSchoolById(schoolId: String)
 

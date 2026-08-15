@@ -196,6 +196,24 @@ class MainActivity : ComponentActivity() {
                                                             callback(res)
                                                         }
                                                     },
+                                                    onDeleteEmployee = { userId, callback ->
+                                                        scope.launch {
+                                                            val res = authRepository.softDeleteEmployee(userId)
+                                                            callback(res)
+                                                        }
+                                                    },
+                                                    onRestoreEmployee = { userId, callback ->
+                                                        scope.launch {
+                                                            val res = authRepository.restoreEmployee(userId)
+                                                            callback(res)
+                                                        }
+                                                    },
+                                                    onPermanentDeleteEmployee = { userId, callback ->
+                                                        scope.launch {
+                                                            val res = authRepository.permanentDeleteEmployee(userId)
+                                                            callback(res)
+                                                        }
+                                                    },
                                                     onResetPassword = { email, callback ->
                                                         scope.launch {
                                                             val res = authRepository.sendPasswordResetEmail(email)
@@ -225,8 +243,23 @@ class MainActivity : ComponentActivity() {
                                                     onUpdateSchool = { sch ->
                                                         scope.launch { schoolRepository.updateSchoolRecord(sch) }
                                                     },
-                                                    onDeleteSchool = { schoolId ->
-                                                        scope.launch { schoolRepository.deleteSchool(schoolId) }
+                                                    onDeleteSchool = { schoolId, callback ->
+                                                        scope.launch {
+                                                            val res = schoolRepository.softDeleteSchool(schoolId)
+                                                            callback?.invoke(res)
+                                                        }
+                                                    },
+                                                    onRestoreSchool = { schoolId, callback ->
+                                                        scope.launch {
+                                                            val res = schoolRepository.restoreSchool(schoolId)
+                                                            callback?.invoke(res)
+                                                        }
+                                                    },
+                                                    onPermanentDeleteSchool = { schoolId, callback ->
+                                                        scope.launch {
+                                                            val res = schoolRepository.permanentDeleteSchool(schoolId)
+                                                            callback?.invoke(res)
+                                                        }
                                                     },
                                                     onRefreshSchools = { callback ->
                                                         scope.launch { callback(schoolRepository.syncSchoolsFromFirestore()) }
@@ -235,8 +268,8 @@ class MainActivity : ComponentActivity() {
                                             }
                                             AdminTab.ASSIGN_VISITS -> {
                                                 AssignVisitsTab(
-                                                    schools = schools,
-                                                    employees = employees,
+                                                    schools = schools.filter { !it.isDeleted },
+                                                    employees = employees.filter { !it.isDeleted },
                                                     assignedTasks = tasks,
                                                     visits = visits,
                                                     onAssignTask = { sch, emp, date, notes, callback ->
@@ -261,9 +294,6 @@ class MainActivity : ComponentActivity() {
                                             }
                                             AdminTab.PHOTO_GALLERY -> {
                                                 PhotoGalleryTab(visits = visits)
-                                            }
-                                            AdminTab.EXPORT -> {
-                                                ReportsTab(visits = visits, schools = schools)
                                             }
                                             AdminTab.SETTINGS -> {
                                                 SettingsTab(

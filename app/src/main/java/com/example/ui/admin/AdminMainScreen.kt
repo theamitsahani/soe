@@ -73,7 +73,6 @@ enum class AdminTab(val title: String, val icon: ImageVector) {
     ASSIGN_VISITS("Assign Visits", Icons.Default.AssignmentTurnedIn),
     VISIT_REPORTS("Visit Reports", Icons.Default.Assessment),
     PHOTO_GALLERY("Photo Gallery", Icons.Default.PhotoLibrary),
-    EXPORT("Export", Icons.Default.Download),
     SETTINGS("Settings", Icons.Default.Settings)
 }
 

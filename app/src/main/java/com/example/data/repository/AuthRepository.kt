@@ -112,6 +112,9 @@ class AuthRepository(private val context: Context) {
             else -> UserStatus.ACTIVE.name
         }
 
+        val isDeleted = doc.getBoolean("isDeleted") ?: false
+        val deletedAt = doc.getLong("deletedAt") ?: 0L
+
         return UserEntity(
             userId = userId,
             name = name,
@@ -120,7 +123,9 @@ class AuthRepository(private val context: Context) {
             state = state,
             district = district,
             role = normalizedRole,
-            status = normalizedStatus
+            status = normalizedStatus,
+            isDeleted = isDeleted,
+            deletedAt = deletedAt
         )
     }
 
@@ -482,7 +487,10 @@ class AuthRepository(private val context: Context) {
                     state = e.state,
                     district = e.district,
                     role = UserRole.EMPLOYEE,
-                    status = if (e.status.equals("INACTIVE", ignoreCase = true)) UserStatus.INACTIVE else UserStatus.ACTIVE
+                    status = if (e.status.equals("INACTIVE", ignoreCase = true)) UserStatus.INACTIVE else UserStatus.ACTIVE,
+                    isDeleted = e.isDeleted,
+                    deletedAt = e.deletedAt,
+                    createdAt = e.createdAt
                 )
             }
         }
@@ -527,7 +535,10 @@ class AuthRepository(private val context: Context) {
                     state = e.state,
                     district = e.district,
                     role = UserRole.EMPLOYEE,
-                    status = if (e.status.equals("INACTIVE", ignoreCase = true)) UserStatus.INACTIVE else UserStatus.ACTIVE
+                    status = if (e.status.equals("INACTIVE", ignoreCase = true)) UserStatus.INACTIVE else UserStatus.ACTIVE,
+                    isDeleted = e.isDeleted,
+                    deletedAt = e.deletedAt,
+                    createdAt = e.createdAt
                 )
             }
 
@@ -546,7 +557,10 @@ class AuthRepository(private val context: Context) {
                     state = e.state,
                     district = e.district,
                     role = UserRole.EMPLOYEE,
-                    status = if (e.status.equals("INACTIVE", ignoreCase = true)) UserStatus.INACTIVE else UserStatus.ACTIVE
+                    status = if (e.status.equals("INACTIVE", ignoreCase = true)) UserStatus.INACTIVE else UserStatus.ACTIVE,
+                    isDeleted = e.isDeleted,
+                    deletedAt = e.deletedAt,
+                    createdAt = e.createdAt
                 )
             }
             Result.success(usersList)
@@ -640,7 +654,7 @@ class AuthRepository(private val context: Context) {
         try {
             val cleanEmail = user.email.trim().lowercase()
             val cleanName = user.name.trim()
-            val cleanMobile = user.mobile.trim()
+            val cleanMobile = user.mobile.trim().filter { it.isDigit() }
             val cleanState = user.state.trim().ifBlank { "Rajasthan" }
             val cleanDistrict = user.district.trim()
             val isNewUser = user.userId.isBlank()
@@ -652,13 +666,14 @@ class AuthRepository(private val context: Context) {
             if (cleanEmail.isBlank() || !Patterns.EMAIL_ADDRESS.matcher(cleanEmail).matches()) {
                 return@withContext Result.failure(Exception("Please enter a valid email address."))
             }
+            if (cleanMobile.isNotEmpty() && (cleanMobile.length != 10 || !cleanMobile.all { it.isDigit() })) {
+                return@withContext Result.failure(Exception("Mobile number must be exactly 10 digits."))
+            }
 
-            // Check local duplicate email for new user
-            if (isNewUser) {
-                val existingLocal = db.userDao().getUserByEmail(cleanEmail)
-                if (existingLocal != null && existingLocal.userId != userId) {
-                    return@withContext Result.failure(Exception("An officer with email $cleanEmail already exists."))
-                }
+            // Check local duplicate email for new user or email change
+            val existingLocal = db.userDao().getUserByEmail(cleanEmail)
+            if (existingLocal != null && existingLocal.userId != userId && !existingLocal.isDeleted) {
+                return@withContext Result.failure(Exception("An officer with email $cleanEmail already exists. Please use a different email address."))
             }
 
             // If new user, create Firebase Auth account using secondary auth so Admin's active session is never logged out
@@ -685,13 +700,13 @@ class AuthRepository(private val context: Context) {
 
             val fStore = firestore
 
-            // Check Firestore for duplicate email if new user
-            if (isNewUser && fStore != null) {
+            // Check Firestore for duplicate email if new user or changed
+            if (fStore != null) {
                 try {
-                    val queryTask = fStore.collection("users").whereEqualTo("email", cleanEmail).limit(1).get()
+                    val queryTask = fStore.collection("users").whereEqualTo("email", cleanEmail).limit(2).get()
                     val snap = Tasks.await(queryTask)
-                    if (!snap.isEmpty && snap.documents.any { it.id != userId }) {
-                        return@withContext Result.failure(Exception("An account with email $cleanEmail already exists in Firestore."))
+                    if (!snap.isEmpty && snap.documents.any { it.id != userId && !(it.getBoolean("isDeleted") ?: false) }) {
+                        return@withContext Result.failure(Exception("An account with email $cleanEmail already exists. Please use a different email."))
                     }
                 } catch (e: Exception) {
                     Log.w("AuthRepository", "Duplicate check notice: ${e.message}")
@@ -707,7 +722,10 @@ class AuthRepository(private val context: Context) {
                 state = cleanState,
                 district = cleanDistrict,
                 role = UserRole.EMPLOYEE.name,
-                status = user.status.name
+                status = user.status.name,
+                isDeleted = user.isDeleted,
+                deletedAt = user.deletedAt,
+                createdAt = if (user.createdAt > 0L) user.createdAt else System.currentTimeMillis()
             )
             db.userDao().insertUser(entity)
 
@@ -722,6 +740,8 @@ class AuthRepository(private val context: Context) {
                     "district" to cleanDistrict,
                     "role" to UserRole.EMPLOYEE.name,
                     "status" to user.status.name,
+                    "isDeleted" to user.isDeleted,
+                    "deletedAt" to user.deletedAt,
                     "updatedAt" to System.currentTimeMillis()
                 )
                 if (isNewUser) {
@@ -739,7 +759,52 @@ class AuthRepository(private val context: Context) {
         }
     }
 
+    suspend fun softDeleteEmployee(userId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val now = System.currentTimeMillis()
+            db.userDao().softDeleteUser(userId, now)
+            val fStore = firestore
+            if (fStore != null) {
+                val map = mapOf<String, Any>(
+                    "isDeleted" to true,
+                    "deletedAt" to now,
+                    "updatedAt" to now
+                )
+                val updateTask = fStore.collection("users").document(userId).set(map, SetOptions.merge())
+                Tasks.await(updateTask)
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("AuthRepository", "Error soft deleting employee", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun restoreEmployee(userId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            db.userDao().restoreUser(userId)
+            val fStore = firestore
+            if (fStore != null) {
+                val map = mapOf<String, Any>(
+                    "isDeleted" to false,
+                    "deletedAt" to 0L,
+                    "updatedAt" to System.currentTimeMillis()
+                )
+                val updateTask = fStore.collection("users").document(userId).set(map, SetOptions.merge())
+                Tasks.await(updateTask)
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("AuthRepository", "Error restoring employee", e)
+            Result.failure(e)
+        }
+    }
+
     suspend fun deleteEmployee(userId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        softDeleteEmployee(userId)
+    }
+
+    suspend fun permanentDeleteEmployee(userId: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             db.userDao().deleteUserById(userId)
             val fStore = firestore
@@ -749,7 +814,7 @@ class AuthRepository(private val context: Context) {
             }
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e("AuthRepository", "Error deleting employee", e)
+            Log.e("AuthRepository", "Error permanently deleting employee", e)
             Result.failure(e)
         }
     }

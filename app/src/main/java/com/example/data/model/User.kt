@@ -19,5 +19,7 @@ data class User(
     val district: String = "",
     val role: UserRole = UserRole.EMPLOYEE,
     val status: UserStatus = UserStatus.ACTIVE,
+    val isDeleted: Boolean = false,
+    val deletedAt: Long = 0L,
     val createdAt: Long = System.currentTimeMillis()
 )

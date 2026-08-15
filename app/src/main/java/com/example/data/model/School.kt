@@ -16,6 +16,8 @@ data class School(
     val principalMobile: String = "",
     val visitDate: String = "",
     val sr: String = "",
+    val isDeleted: Boolean = false,
+    val deletedAt: Long = 0L,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {

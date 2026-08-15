@@ -139,6 +139,9 @@ class SchoolRepository(private val context: Context) {
             ?: doc.getString("Visit Date")
             ?: "").trim()
 
+        val isDeleted = doc.getBoolean("isDeleted") ?: false
+        val deletedAt = doc.getLong("deletedAt") ?: 0L
+
         return School(
             schoolId = schoolId,
             sr = doc.getString("sr") ?: "",
@@ -151,6 +154,8 @@ class SchoolRepository(private val context: Context) {
             blockName = blockName,
             principalMobile = principalMobile,
             visitDate = visitDate,
+            isDeleted = isDeleted,
+            deletedAt = deletedAt,
             createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis(),
             updatedAt = doc.getLong("updatedAt") ?: System.currentTimeMillis()
         )
@@ -316,13 +321,62 @@ class SchoolRepository(private val context: Context) {
         }
     }
 
-    suspend fun deleteSchool(schoolId: String): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun softDeleteSchool(schoolId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val now = System.currentTimeMillis()
+            db.schoolDao().softDeleteSchool(schoolId, now)
+
+            val fStore = firestore
+            if (fStore != null) {
+                val task = fStore.collection("schools").document(schoolId).update(
+                    mapOf(
+                        "isDeleted" to true,
+                        "deletedAt" to now,
+                        "updatedAt" to now
+                    )
+                )
+                com.google.android.gms.tasks.Tasks.await(task)
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("SchoolRepository", "Failed to soft delete school: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun restoreSchool(schoolId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val now = System.currentTimeMillis()
+            db.schoolDao().restoreSchool(schoolId)
+
+            val fStore = firestore
+            if (fStore != null) {
+                val task = fStore.collection("schools").document(schoolId).update(
+                    mapOf(
+                        "isDeleted" to false,
+                        "deletedAt" to 0L,
+                        "updatedAt" to now
+                    )
+                )
+                com.google.android.gms.tasks.Tasks.await(task)
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("SchoolRepository", "Failed to restore school: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun permanentDeleteSchool(schoolId: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             firestore?.collection("schools")?.document(schoolId)?.delete()
             db.schoolDao().deleteSchoolById(schoolId)
             Result.success(Unit)
         } catch (e: Exception) {
+            Log.e("SchoolRepository", "Failed to permanently delete school: ${e.message}", e)
             Result.failure(e)
         }
     }
+
+    suspend fun deleteSchool(schoolId: String): Result<Unit> = softDeleteSchool(schoolId)
 }

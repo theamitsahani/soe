@@ -114,6 +114,23 @@ class VisitRepository(private val context: Context) {
             // Step 2: Mark the assigned task for this employee & school as SUBMITTED
             db.taskDao().markTaskSubmittedForEmployeeAndSchool(finalVisit.employeeId, finalVisit.schoolId)
 
+            val fStore = firestore
+            if (fStore != null && isOnline) {
+                try {
+                    // Update matching tasks in Firestore
+                    val taskQuery = fStore.collection("tasks")
+                        .whereEqualTo("employeeId", finalVisit.employeeId)
+                        .whereEqualTo("schoolId", finalVisit.schoolId)
+                        .get()
+                    val taskDocs = com.google.android.gms.tasks.Tasks.await(taskQuery)
+                    for (doc in taskDocs.documents) {
+                        fStore.collection("tasks").document(doc.id).update("status", VisitStatus.SUBMITTED.name)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("VisitRepository", "Notice updating task status in Firestore: ${e.message}")
+                }
+            }
+
             // Step 3: If online, attempt immediate background upload with timeout protection
             if (isOnline) {
                 val uploaded = syncManager.uploadSingleVisitToServer(finalVisit)

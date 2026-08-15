@@ -21,6 +21,8 @@ data class UserEntity(
     val district: String = "",
     val role: String = UserRole.EMPLOYEE.name,
     val status: String = UserStatus.ACTIVE.name,
+    val isDeleted: Boolean = false,
+    val deletedAt: Long = 0L,
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -49,6 +51,12 @@ interface UserDao {
 
     @Update
     suspend fun updateUser(user: UserEntity)
+
+    @Query("UPDATE users SET isDeleted = 1, deletedAt = :deletedAt WHERE userId = :userId")
+    suspend fun softDeleteUser(userId: String, deletedAt: Long = System.currentTimeMillis())
+
+    @Query("UPDATE users SET isDeleted = 0, deletedAt = 0 WHERE userId = :userId")
+    suspend fun restoreUser(userId: String)
 
     @Query("DELETE FROM users WHERE userId = :userId")
     suspend fun deleteUserById(userId: String)

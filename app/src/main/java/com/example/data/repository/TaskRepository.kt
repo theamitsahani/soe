@@ -62,7 +62,15 @@ class TaskRepository(private val context: Context) {
                 }
 
                 val statusStr = doc.getString("status") ?: VisitStatus.ASSIGNED.name
-                val status = try { VisitStatus.valueOf(statusStr) } catch (e: Exception) { VisitStatus.ASSIGNED }
+                var status = try { VisitStatus.valueOf(statusStr) } catch (e: Exception) { VisitStatus.ASSIGNED }
+
+                // If local database has this task marked as SUBMITTED or REVIEWED, or visit exists for this employee and school, preserve SUBMITTED status
+                if (status == VisitStatus.ASSIGNED) {
+                    val localTask = db.taskDao().getTaskById(taskId)
+                    if (localTask != null && (localTask.status == VisitStatus.SUBMITTED || localTask.status == VisitStatus.REVIEWED)) {
+                        status = localTask.status
+                    }
+                }
 
                 Task(
                     taskId = taskId,

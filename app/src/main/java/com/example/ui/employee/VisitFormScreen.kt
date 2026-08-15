@@ -401,13 +401,36 @@ fun VisitFormScreen(
                             colors = CardDefaults.cardColors(containerColor = Color.White)
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
-                                Text("UDISE Code (यू-डाइस कोड)", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Navy900)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("UDISE Code (यू-डाइस कोड) *", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Navy900)
+                                    val digitsOnly = udiseCode.filter { it.isDigit() }
+                                    Text(
+                                        text = "${digitsOnly.length}/11 digits",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (digitsOnly.length == 11) Emerald600 else if (digitsOnly.isNotEmpty()) Red600 else Slate500
+                                    )
+                                }
                                 Spacer(modifier = Modifier.height(8.dp))
                                 OutlinedTextField(
                                     value = udiseCode,
-                                    onValueChange = { udiseCode = it },
+                                    onValueChange = { input ->
+                                        udiseCode = input.filter { it.isDigit() }.take(11)
+                                        submitError = null
+                                    },
                                     placeholder = { Text("Enter 11-digit UDISE Code (e.g. 08010100101)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     singleLine = true,
+                                    isError = udiseCode.isNotBlank() && udiseCode.length != 11,
+                                    supportingText = {
+                                        if (udiseCode.isNotBlank() && udiseCode.length != 11) {
+                                            Text("UDISE code must be exactly 11 digits (11 अंकों का होना अनिवार्य है)", color = Red600, fontSize = 11.sp)
+                                        }
+                                    },
                                     shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 )
@@ -531,14 +554,23 @@ fun VisitFormScreen(
                                 // Field 2: BCI Contact Mobile Number
                                 OutlinedTextField(
                                     value = bciMobile,
-                                    onValueChange = { bciMobile = it },
+                                    onValueChange = { input ->
+                                        bciMobile = input.filter { it.isDigit() }.take(10)
+                                        submitError = null
+                                    },
                                     label = { Text("BCI Contact Number (BCI मोबाइल नंबर)", fontSize = 12.sp) },
                                     placeholder = { Text("10-digit mobile number") },
                                     leadingIcon = {
                                         Icon(Icons.Default.Phone, contentDescription = null, tint = Indigo600, modifier = Modifier.size(18.dp))
                                     },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     singleLine = true,
+                                    isError = bciMobile.isNotBlank() && bciMobile.length != 10,
+                                    supportingText = {
+                                        if (bciMobile.isNotBlank() && bciMobile.length != 10) {
+                                            Text("Mobile number must be exactly 10 digits", color = Red600, fontSize = 11.sp)
+                                        }
+                                    },
                                     shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 )
@@ -865,6 +897,35 @@ fun VisitFormScreen(
 
                     Button(
                         onClick = {
+                            submitError = null
+
+                            // Validate Step 1: 11-digit UDISE & 10-digit Principal Mobile
+                            if (currentStep == 1) {
+                                val cleanUdise = udiseCode.trim().filter { it.isDigit() }
+                                if (cleanUdise.isBlank()) {
+                                    submitError = "कृपया 11 अंकों का UDISE कोड दर्ज करें (Please enter 11-digit UDISE code)"
+                                    return@Button
+                                }
+                                if (cleanUdise.length != 11) {
+                                    submitError = "UDISE कोड अमान्य है! यह अनिवार्य रूप से ठीक 11 अंकों का होना चाहिए (UDISE Code must be exactly 11 digits)"
+                                    return@Button
+                                }
+                                val cleanPMobile = principalMobile.trim().filter { it.isDigit() }
+                                if (cleanPMobile.isNotBlank() && cleanPMobile.length != 10) {
+                                    submitError = "प्रधानाचार्य का मोबाइल नंबर ठीक 10 अंकों का होना अनिवार्य है (Principal mobile must be 10 digits)"
+                                    return@Button
+                                }
+                            }
+
+                            // Validate Step 3: 10-digit BCI Contact
+                            if (currentStep == 3) {
+                                val cleanBciMobile = bciMobile.trim().filter { it.isDigit() }
+                                if (cleanBciMobile.isNotBlank() && cleanBciMobile.length != 10) {
+                                    submitError = "BCI मोबाइल नंबर ठीक 10 अंकों का होना अनिवार्य है (BCI mobile must be 10 digits)"
+                                    return@Button
+                                }
+                            }
+
                             if (currentStep < totalSteps) {
                                 currentStep++
                             } else {
@@ -1096,8 +1157,9 @@ fun VisitFormScreen(
                     )
                     OutlinedTextField(
                         value = udiseCode,
-                        onValueChange = { udiseCode = it },
-                        label = { Text("UDISE Code") },
+                        onValueChange = { input -> udiseCode = input.filter { it.isDigit() }.take(11) },
+                        label = { Text("UDISE Code (11 Digits)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true
                     )
                     OutlinedTextField(
@@ -1126,8 +1188,9 @@ fun VisitFormScreen(
                     )
                     OutlinedTextField(
                         value = principalMobile,
-                        onValueChange = { principalMobile = it },
-                        label = { Text("Principal Mobile") },
+                        onValueChange = { input -> principalMobile = input.filter { it.isDigit() }.take(10) },
+                        label = { Text("Principal Mobile (10 Digits)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true
                     )
                 }

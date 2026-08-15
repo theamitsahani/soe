@@ -2,8 +2,10 @@ package com.example.ui.admin
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -26,21 +27,34 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -61,37 +75,40 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.User
 import com.example.data.model.UserRole
 import com.example.data.model.UserStatus
 import com.example.ui.components.SearchTextField
-import com.example.ui.components.StatusChip
+import com.example.ui.theme.Emerald600
 import com.example.ui.theme.Indigo600
 import com.example.ui.theme.Navy900
 import com.example.ui.theme.Red600
 import com.example.ui.theme.Slate100
+import com.example.ui.theme.Slate200
 import com.example.ui.theme.Slate500
 import com.example.ui.theme.Slate700
-import android.widget.Toast
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.input.VisualTransformation
+
+enum class EmployeeViewFilter {
+    ACTIVE,
+    DELETED
+}
 
 @Composable
 fun EmployeeManagementTab(
     employees: List<User>,
     onSaveEmployee: (User, String?, (Result<Unit>) -> Unit) -> Unit,
+    onDeleteEmployee: ((userId: String, (Result<Unit>) -> Unit) -> Unit)? = null,
+    onRestoreEmployee: ((userId: String, (Result<Unit>) -> Unit) -> Unit)? = null,
+    onPermanentDeleteEmployee: ((userId: String, (Result<Unit>) -> Unit) -> Unit)? = null,
     onResetPassword: ((email: String, onComplete: (Result<Unit>) -> Unit) -> Unit)? = null,
     onRefreshEmployees: ((onComplete: (Result<Int>) -> Unit) -> Unit)? = null,
     onRefresh: (() -> Unit)? = null
@@ -100,6 +117,7 @@ fun EmployeeManagementTab(
     val clipboardManager = LocalClipboardManager.current
     var isRefreshing by remember { mutableStateOf(false) }
     var refreshErrorMessage by remember { mutableStateOf<String?>(null) }
+    var selectedFilter by remember { mutableStateOf(EmployeeViewFilter.ACTIVE) }
 
     fun triggerRefresh() {
         if (onRefreshEmployees != null) {
@@ -136,14 +154,22 @@ fun EmployeeManagementTab(
     var employeeToEdit by remember { mutableStateOf<User?>(null) }
     var selectedEmployeeForDetails by remember { mutableStateOf<User?>(null) }
     var employeeToResetPassword by remember { mutableStateOf<User?>(null) }
+    var employeeToDelete by remember { mutableStateOf<User?>(null) }
+    var employeeToPermanentDelete by remember { mutableStateOf<User?>(null) }
     var isSendingResetPassword by remember { mutableStateOf(false) }
+    var isPerformingDeleteAction by remember { mutableStateOf(false) }
     var resetPasswordErrorMessage by remember { mutableStateOf<String?>(null) }
     var successNotification by remember { mutableStateOf<String?>(null) }
     var newlyCreatedCredentials by remember { mutableStateOf<Triple<String, String, String>?>(null) }
 
-    val filteredEmployees = remember(employees, searchQuery) {
-        if (searchQuery.isBlank()) employees
-        else employees.filter {
+    val activeEmployees = remember(employees) { employees.filter { !it.isDeleted } }
+    val deletedEmployees = remember(employees) { employees.filter { it.isDeleted } }
+
+    val currentList = if (selectedFilter == EmployeeViewFilter.ACTIVE) activeEmployees else deletedEmployees
+
+    val filteredEmployees = remember(currentList, searchQuery) {
+        if (searchQuery.isBlank()) currentList
+        else currentList.filter {
             it.name.contains(searchQuery, ignoreCase = true) ||
             it.email.contains(searchQuery, ignoreCase = true) ||
             it.mobile.contains(searchQuery, ignoreCase = true) ||
@@ -155,7 +181,7 @@ fun EmployeeManagementTab(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         if (successNotification != null) {
             item {
@@ -198,45 +224,60 @@ fun EmployeeManagementTab(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Firestore Sync Notice",
-                                color = Red600,
-                                fontSize = 12.sp,
+                                text = "Sync Notice",
+                                color = Color(0xFFB91C1C),
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
                                 text = refreshErrorMessage!!,
-                                color = Color(0xFF991B1B),
-                                fontSize = 11.sp
+                                color = Color(0xFF7F1D1D),
+                                fontSize = 12.sp
                             )
                         }
-                        TextButton(
+                        IconButton(
                             onClick = { triggerRefresh() },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                            modifier = Modifier.size(32.dp)
                         ) {
-                            Text("Retry", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Red600)
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Retry Sync",
+                                tint = Color(0xFFB91C1C),
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
                     }
                 }
             }
         }
 
+        // Header Section
         item {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 4.dp),
+                    .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text("SOE Field Officers", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Navy900)
-                    Text("${employees.count { it.status == UserStatus.ACTIVE }} Active • ${employees.size} Total Officers", fontSize = 11.sp, color = Slate500)
+                    Text(
+                        text = "Field Officers (${activeEmployees.size})",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Navy900
+                    )
+                    Text(
+                        text = "फील्ड ऑफिसर प्रबंधन व विवरण",
+                        fontSize = 11.sp,
+                        color = Slate500
+                    )
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -275,11 +316,48 @@ fun EmployeeManagementTab(
             }
         }
 
+        // Filter Tabs: Active vs. Recently Deleted (24h Restore)
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = selectedFilter == EmployeeViewFilter.ACTIVE,
+                    onClick = { selectedFilter = EmployeeViewFilter.ACTIVE },
+                    label = { Text("Active (${activeEmployees.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                    leadingIcon = {
+                        Icon(Icons.Default.Group, contentDescription = null, modifier = Modifier.size(14.dp))
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Indigo600,
+                        selectedLabelColor = Color.White,
+                        selectedLeadingIconColor = Color.White
+                    )
+                )
+
+                FilterChip(
+                    selected = selectedFilter == EmployeeViewFilter.DELETED,
+                    onClick = { selectedFilter = EmployeeViewFilter.DELETED },
+                    label = { Text("Recently Deleted (${deletedEmployees.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                    leadingIcon = {
+                        Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(14.dp))
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Red600,
+                        selectedLabelColor = Color.White,
+                        selectedLeadingIconColor = Color.White
+                    )
+                )
+            }
+        }
+
+        // Search Bar
         item {
             SearchTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = "Search officer by name, district, state..."
+                placeholder = if (selectedFilter == EmployeeViewFilter.ACTIVE) "Search officer by name, district, mobile..." else "Search deleted officer..."
             )
         }
 
@@ -304,20 +382,11 @@ fun EmployeeManagementTab(
                             )
                             Spacer(modifier = Modifier.height(10.dp))
                             Text("Syncing field officers from Firestore...", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Indigo600)
-                        } else if (refreshErrorMessage != null && employees.isEmpty()) {
-                            Icon(Icons.Default.Group, contentDescription = null, tint = Red600, modifier = Modifier.size(36.dp))
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Unable to load employees.", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Red600)
-                            Text("Please check your internet connection and try again.", fontSize = 12.sp, color = Slate500)
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Button(
-                                onClick = { triggerRefresh() },
-                                colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
-                            ) {
-                                Text("Retry", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
+                        } else if (selectedFilter == EmployeeViewFilter.DELETED) {
+                            Icon(Icons.Default.History, contentDescription = null, tint = Slate500, modifier = Modifier.size(36.dp))
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text("No deleted officers in trash", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Navy900)
+                            Text("Deleted officers can be restored here within 24 hours.", fontSize = 11.sp, color = Slate500)
                         } else if (searchQuery.isNotBlank()) {
                             Icon(Icons.Default.Group, contentDescription = null, tint = Slate500, modifier = Modifier.size(36.dp))
                             Spacer(modifier = Modifier.height(6.dp))
@@ -325,31 +394,52 @@ fun EmployeeManagementTab(
                         } else {
                             Icon(Icons.Default.Group, contentDescription = null, tint = Slate500, modifier = Modifier.size(36.dp))
                             Spacer(modifier = Modifier.height(6.dp))
-                            Text("No officers found in Firestore", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Navy900)
+                            Text("No officers found", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Navy900)
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text("Tap '+ Add Officer' to view steps for adding officers via Firebase Console.", fontSize = 12.sp, color = Slate500, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                            Text("Tap '+ Add Officer' to register a new field officer.", fontSize = 12.sp, color = Slate500)
                         }
                     }
                 }
             }
         } else {
             items(filteredEmployees) { emp ->
-                CompactEmployeeCardItem(
-                    employee = emp,
-                    onClick = { selectedEmployeeForDetails = emp },
-                    onEditClick = { employeeToEdit = emp },
-                    onToggleStatus = { newStatus ->
-                        onSaveEmployee(emp.copy(status = newStatus), null) {}
-                    }
-                )
+                if (selectedFilter == EmployeeViewFilter.ACTIVE) {
+                    CompactEmployeeCardItem(
+                        employee = emp,
+                        onClick = { selectedEmployeeForDetails = emp },
+                        onEditClick = { employeeToEdit = emp },
+                        onDeleteClick = { employeeToDelete = emp },
+                        onToggleStatus = { newStatus ->
+                            onSaveEmployee(emp.copy(status = newStatus), null) {}
+                        }
+                    )
+                } else {
+                    DeletedEmployeeCardItem(
+                        employee = emp,
+                        onRestoreClick = {
+                            if (onRestoreEmployee != null) {
+                                isPerformingDeleteAction = true
+                                onRestoreEmployee(emp.userId) { res ->
+                                    isPerformingDeleteAction = false
+                                    if (res.isSuccess) {
+                                        successNotification = "${emp.name} restored successfully!"
+                                        triggerRefresh()
+                                    } else {
+                                        Toast.makeText(context, res.exceptionOrNull()?.localizedMessage ?: "Failed to restore", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        },
+                        onPermanentDeleteClick = { employeeToPermanentDelete = emp }
+                    )
+                }
             }
         }
     }
 
-    // View Details Dialog on Tap
+    // View Details Dialog
     if (selectedEmployeeForDetails != null) {
         val emp = selectedEmployeeForDetails!!
-        val context = LocalContext.current
 
         AlertDialog(
             onDismissRequest = { selectedEmployeeForDetails = null },
@@ -382,13 +472,9 @@ fun EmployeeManagementTab(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Location
                     DetailItem(label = "State & District (राज्य व जिला)", value = "${emp.state.ifBlank { "Rajasthan" }} • ${emp.district.ifBlank { "All Districts" }}")
-
-                    // Email
                     DetailItem(label = "Email Address (ईमेल)", value = emp.email)
 
-                    // Mobile Number with Direct Call Action
                     Column {
                         Text("Mobile Number (मोबाइल नंबर)", fontSize = 11.sp, color = Slate500, fontWeight = FontWeight.Medium)
                         Row(
@@ -448,54 +534,28 @@ fun EmployeeManagementTab(
                             ) {
                                 Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(13.dp), tint = Indigo600)
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Reset Password", fontSize = 11.sp, color = Indigo600, fontWeight = FontWeight.Bold)
+                                Text("Reset", fontSize = 11.sp, color = Indigo600)
                             }
                         }
                     }
 
-                    // Toggle Status Option
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Slate100)
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    // Delete Officer Option
+                    OutlinedButton(
+                        onClick = {
+                            selectedEmployeeForDetails = null
+                            employeeToDelete = emp
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Red600),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Active Status (सक्रिय/निष्क्रिय)", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Slate700)
-                        Switch(
-                            checked = emp.status == UserStatus.ACTIVE,
-                            onCheckedChange = { checked ->
-                                val newStatus = if (checked) UserStatus.ACTIVE else UserStatus.INACTIVE
-                                val updated = emp.copy(status = newStatus)
-                                selectedEmployeeForDetails = updated
-                                onSaveEmployee(updated, null) {}
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = Indigo600
-                            )
-                        )
+                        Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Delete Officer (24 घंटे में रीस्टोर उपलब्ध)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        val toEdit = emp
-                        selectedEmployeeForDetails = null
-                        employeeToEdit = toEdit
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Edit Details")
-                }
-            },
-            dismissButton = {
                 TextButton(onClick = { selectedEmployeeForDetails = null }) {
                     Text("Close")
                 }
@@ -514,6 +574,11 @@ fun EmployeeManagementTab(
         var district by remember { mutableStateOf("") }
         var isSaving by remember { mutableStateOf(false) }
         var addErrorMessage by remember { mutableStateOf<String?>(null) }
+
+        val isDuplicateEmail = remember(email, employees) {
+            val clean = email.trim().lowercase()
+            clean.isNotBlank() && employees.any { !it.isDeleted && it.email.trim().equals(clean, ignoreCase = true) }
+        }
 
         val commonDistricts = remember {
             listOf(
@@ -587,7 +652,7 @@ fun EmployeeManagementTab(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // 2. Email
+                    // 2. Email (With duplicate check warning)
                     OutlinedTextField(
                         value = email,
                         onValueChange = {
@@ -601,6 +666,12 @@ fun EmployeeManagementTab(
                         },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                         singleLine = true,
+                        isError = isDuplicateEmail,
+                        supportingText = {
+                            if (isDuplicateEmail) {
+                                Text("⚠️ इस ईमेल से पहले ही एक कर्मचारी मौजूद है। कृपया दूसरा ईमेल चुनें।", color = Red600, fontSize = 11.sp)
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -639,20 +710,26 @@ fun EmployeeManagementTab(
                         )
                     }
 
-                    // 4. Mobile
+                    // 4. Mobile (Strict 10 digits validation)
                     OutlinedTextField(
                         value = mobile,
-                        onValueChange = {
-                            mobile = it
+                        onValueChange = { input ->
+                            mobile = input.filter { it.isDigit() }.take(10)
                             addErrorMessage = null
                         },
-                        label = { Text("Mobile (मोबाइल नंबर)", fontSize = 12.sp) },
-                        placeholder = { Text("e.g. 9876543210", fontSize = 12.sp, color = Slate500) },
+                        label = { Text("Mobile (10 अंकों का मोबाइल नंबर)", fontSize = 12.sp) },
+                        placeholder = { Text("10-digit number e.g. 9876543210", fontSize = 12.sp, color = Slate500) },
                         leadingIcon = {
                             Icon(Icons.Default.Phone, contentDescription = null, tint = Indigo600, modifier = Modifier.size(18.dp))
                         },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
+                        isError = mobile.isNotBlank() && mobile.length != 10,
+                        supportingText = {
+                            if (mobile.isNotBlank() && mobile.length != 10) {
+                                Text("Mobile number must be exactly 10 digits (${mobile.length}/10)", color = Red600, fontSize = 11.sp)
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -738,6 +815,14 @@ fun EmployeeManagementTab(
                             addErrorMessage = "Please enter a valid email address."
                             return@Button
                         }
+                        if (isDuplicateEmail) {
+                            addErrorMessage = "इस ईमेल से पहले ही कर्मचारी पंजीकृत है। कृपया अलग ईमेल दर्ज करें।"
+                            return@Button
+                        }
+                        if (cleanMobile.isNotBlank() && cleanMobile.length != 10) {
+                            addErrorMessage = "मोबाइल नंबर ठीक 10 अंकों का होना अनिवार्य है।"
+                            return@Button
+                        }
                         if (cleanPassword.length < 6) {
                             addErrorMessage = "Password must be at least 6 characters."
                             return@Button
@@ -769,7 +854,7 @@ fun EmployeeManagementTab(
                             }
                         }
                     },
-                    enabled = !isSaving && name.isNotBlank() && email.isNotBlank(),
+                    enabled = !isSaving && name.isNotBlank() && email.isNotBlank() && !isDuplicateEmail,
                     colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
                     shape = RoundedCornerShape(8.dp)
                 ) {
@@ -799,7 +884,7 @@ fun EmployeeManagementTab(
         )
     }
 
-    // Newly Created Credentials Share Dialog
+    // Credentials Share Dialog
     if (newlyCreatedCredentials != null) {
         val (empName, empEmail, empPassword) = newlyCreatedCredentials!!
         AlertDialog(
@@ -936,7 +1021,24 @@ fun EmployeeManagementTab(
 
         AlertDialog(
             onDismissRequest = { if (!isSaving) employeeToEdit = null },
-            title = { Text("Edit Officer Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Navy900) },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Edit Officer Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Navy900)
+                    IconButton(
+                        onClick = {
+                            val target = emp
+                            employeeToEdit = null
+                            employeeToDelete = target
+                        }
+                    ) {
+                        Icon(Icons.Default.DeleteOutline, contentDescription = "Delete Officer", tint = Red600)
+                    }
+                }
+            },
             text = {
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -980,10 +1082,19 @@ fun EmployeeManagementTab(
                     )
                     OutlinedTextField(
                         value = mobile,
-                        onValueChange = { mobile = it },
-                        label = { Text("Mobile Number", fontSize = 11.sp) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        onValueChange = { input -> 
+                            mobile = input.filter { it.isDigit() }.take(10)
+                            editErrorMessage = null
+                        },
+                        label = { Text("Mobile Number (10 Digits)", fontSize = 11.sp) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
+                        isError = mobile.isNotBlank() && mobile.length != 10,
+                        supportingText = {
+                            if (mobile.isNotBlank() && mobile.length != 10) {
+                                Text("Must be 10 digits (${mobile.length}/10)", color = Red600, fontSize = 11.sp)
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth()
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1039,12 +1150,18 @@ fun EmployeeManagementTab(
             confirmButton = {
                 Button(
                     onClick = {
+                        val cleanMobile = mobile.trim()
+                        if (cleanMobile.isNotBlank() && cleanMobile.length != 10) {
+                            editErrorMessage = "मोबाइल नंबर ठीक 10 अंकों का होना अनिवार्य है।"
+                            return@Button
+                        }
+
                         isSaving = true
                         editErrorMessage = null
                         val updated = emp.copy(
                             name = name.trim(),
                             email = email.trim(),
-                            mobile = mobile.trim(),
+                            mobile = cleanMobile,
                             state = state.trim(),
                             district = district.trim(),
                             status = status
@@ -1053,6 +1170,7 @@ fun EmployeeManagementTab(
                             isSaving = false
                             if (result.isSuccess) {
                                 employeeToEdit = null
+                                triggerRefresh()
                             } else {
                                 editErrorMessage = result.exceptionOrNull()?.localizedMessage ?: "Failed to update officer."
                             }
@@ -1084,6 +1202,152 @@ fun EmployeeManagementTab(
         )
     }
 
+    // Soft Delete Confirmation Dialog (with 24-hour restore info)
+    if (employeeToDelete != null) {
+        val emp = employeeToDelete!!
+        AlertDialog(
+            onDismissRequest = { if (!isPerformingDeleteAction) employeeToDelete = null },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.DeleteOutline,
+                    contentDescription = null,
+                    tint = Red600,
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Delete Officer (कर्मचारी हटाएं)?",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = Navy900
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "क्या आप \"${emp.name}\" (${emp.email}) को हटाना चाहते हैं?",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Navy900
+                    )
+                    Text(
+                        text = "ℹ️ यह कर्मचारी 'Recently Deleted' सेक्शन में जाएगा। आप इसे अगले 24 घंटे के अंदर कभी भी पुनर्स्थापित (Restore) कर सकते हैं।",
+                        fontSize = 12.sp,
+                        color = Slate700
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (onDeleteEmployee != null) {
+                            isPerformingDeleteAction = true
+                            onDeleteEmployee(emp.userId) { res ->
+                                isPerformingDeleteAction = false
+                                employeeToDelete = null
+                                if (res.isSuccess) {
+                                    successNotification = "${emp.name} deleted (can be restored within 24 hours)."
+                                    triggerRefresh()
+                                } else {
+                                    Toast.makeText(context, res.exceptionOrNull()?.localizedMessage ?: "Failed to delete", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        } else {
+                            employeeToDelete = null
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Red600),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    if (isPerformingDeleteAction) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("Delete (हटाएं)", fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { employeeToDelete = null }, enabled = !isPerformingDeleteAction) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Permanent Delete Confirmation Dialog
+    if (employeeToPermanentDelete != null) {
+        val emp = employeeToPermanentDelete!!
+        AlertDialog(
+            onDismissRequest = { if (!isPerformingDeleteAction) employeeToPermanentDelete = null },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.DeleteForever,
+                    contentDescription = null,
+                    tint = Red600,
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Permanent Delete (हमेशा के लिए हटाएं)?",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = Red600
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Are you sure you want to permanently delete \"${emp.name}\"?",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Navy900
+                    )
+                    Text(
+                        text = "⚠️ This action cannot be undone. All local and cloud records for this officer will be removed permanently.",
+                        fontSize = 12.sp,
+                        color = Red600
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (onPermanentDeleteEmployee != null) {
+                            isPerformingDeleteAction = true
+                            onPermanentDeleteEmployee(emp.userId) { res ->
+                                isPerformingDeleteAction = false
+                                employeeToPermanentDelete = null
+                                if (res.isSuccess) {
+                                    successNotification = "${emp.name} permanently deleted."
+                                    triggerRefresh()
+                                } else {
+                                    Toast.makeText(context, res.exceptionOrNull()?.localizedMessage ?: "Failed to delete permanently", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        } else {
+                            employeeToPermanentDelete = null
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Red600),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    if (isPerformingDeleteAction) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("Delete Forever", fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { employeeToPermanentDelete = null }, enabled = !isPerformingDeleteAction) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     // Password Reset Confirmation Dialog
     if (employeeToResetPassword != null) {
         val emp = employeeToResetPassword!!
@@ -1099,12 +1363,12 @@ fun EmployeeManagementTab(
                     imageVector = Icons.Default.Lock,
                     contentDescription = null,
                     tint = Indigo600,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(36.dp)
                 )
             },
             title = {
                 Text(
-                    text = "Reset Officer Password",
+                    text = "Send Password Reset Email",
                     fontWeight = FontWeight.Bold,
                     fontSize = 17.sp,
                     color = Navy900
@@ -1113,72 +1377,21 @@ fun EmployeeManagementTab(
             text = {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "Send password reset instructions to officer's registered email:",
+                        text = "A password reset link will be sent to:",
                         fontSize = 13.sp,
                         color = Slate700
                     )
-                    Surface(
-                        color = Slate100,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(
-                                text = emp.name,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Slate500
-                            )
-                            Text(
-                                text = emp.email,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Navy900
-                            )
-                        }
-                    }
-
-                    Surface(
-                        color = Color(0xFFEFF6FF),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text = "ℹ️ Default Password info:",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Indigo600
-                            )
-                            Text(
-                                text = "Default initial password for officers is Officer@123. If email reset is delayed, the officer can log in with Officer@123 and change their password.",
-                                fontSize = 11.sp,
-                                color = Slate700
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                TextButton(
-                                    onClick = {
-                                        clipboardManager.setText(AnnotatedString("Officer@123"))
-                                        Toast.makeText(context, "Default password (Officer@123) copied!", Toast.LENGTH_SHORT).show()
-                                    },
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                ) {
-                                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(12.dp), tint = Indigo600)
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Copy Officer@123", fontSize = 11.sp, color = Indigo600, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-
                     Text(
-                        text = "Firebase Authentication will deliver an email containing a secure password reset link to this address. Check Spam/Junk folder if not in Inbox.",
+                        text = emp.email,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Indigo600
+                    )
+                    Text(
+                        text = "The officer can open the email to set a new password. (Also check Spam/Junk folder if not received in Inbox).",
                         fontSize = 11.sp,
                         color = Slate500
                     )
@@ -1264,6 +1477,7 @@ fun CompactEmployeeCardItem(
     employee: User,
     onClick: () -> Unit,
     onEditClick: () -> Unit,
+    onDeleteClick: () -> Unit,
     onToggleStatus: (UserStatus) -> Unit
 ) {
     Card(
@@ -1281,7 +1495,7 @@ fun CompactEmployeeCardItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Left Column: Name & State/District
+            // Left Column: Name & State/District & Mobile
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = employee.name,
@@ -1295,12 +1509,20 @@ fun CompactEmployeeCardItem(
                     fontSize = 12.sp,
                     color = Slate500
                 )
+                if (employee.mobile.isNotBlank()) {
+                    Text(
+                        text = "📱 ${employee.mobile}",
+                        fontSize = 11.sp,
+                        color = Indigo600,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
 
-            // Right Row: Status Dot (Green for Active, Red for Inactive) + Edit Button
+            // Right Row: Status Dot + Edit Button + Delete Button
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 // Status Indicator Dot: Green for Active, Red for Inactive
                 val isActive = employee.status == UserStatus.ACTIVE
@@ -1336,6 +1558,114 @@ fun CompactEmployeeCardItem(
                         tint = Indigo600,
                         modifier = Modifier.size(18.dp)
                     )
+                }
+
+                // Delete Button
+                IconButton(
+                    onClick = onDeleteClick,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteOutline,
+                        contentDescription = "Delete Officer",
+                        tint = Red600,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DeletedEmployeeCardItem(
+    employee: User,
+    onRestoreClick: () -> Unit,
+    onPermanentDeleteClick: () -> Unit
+) {
+    val elapsedMillis = System.currentTimeMillis() - employee.deletedAt
+    val remainingHours = 24 - (elapsedMillis / (1000 * 60 * 60))
+    val isRestoreAvailable = remainingHours > 0
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF1F2)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = employee.name,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Navy900
+                    )
+                    Text(
+                        text = employee.email,
+                        fontSize = 12.sp,
+                        color = Slate700
+                    )
+                    Text(
+                        text = "${employee.state.ifBlank { "Rajasthan" }} • ${employee.district.ifBlank { "All Districts" }}",
+                        fontSize = 11.sp,
+                        color = Slate500
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (isRestoreAvailable) Color(0xFFFEF3C7) else Color(0xFFFEE2E2))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = if (isRestoreAvailable) "Restore: ${remainingHours}h left" else "Restore Expired",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isRestoreAvailable) Color(0xFFB45309) else Color(0xFFB91C1C)
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (isRestoreAvailable) {
+                    Button(
+                        onClick = onRestoreClick,
+                        colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Restore, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Restore (रीस्टोर करें)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = onPermanentDeleteClick,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Red600),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 4.dp)
+                ) {
+                    Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Delete Forever", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
