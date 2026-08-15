@@ -40,26 +40,27 @@ android {
         ?: "soe_release_2026"
 
       val kFile = file(keystorePath)
+      val debugKeystore = file("${rootDir}/debug.keystore")
       if (kFile.exists()) {
         storeFile = kFile
         storePassword = storePwd
         keyAlias = kAlias
         keyPassword = kPwd
-      } else {
-        val debugKeystore = file("${rootDir}/debug.keystore")
-        if (debugKeystore.exists()) {
-          storeFile = debugKeystore
-          storePassword = "android"
-          keyAlias = "androiddebugkey"
-          keyPassword = "android"
-        }
+      } else if (debugKeystore.exists()) {
+        storeFile = debugKeystore
+        storePassword = "android"
+        keyAlias = "androiddebugkey"
+        keyPassword = "android"
       }
     }
     create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
+      val debugKeystore = file("${rootDir}/debug.keystore")
+      if (debugKeystore.exists()) {
+        storeFile = debugKeystore
+        storePassword = "android"
+        keyAlias = "androiddebugkey"
+        keyPassword = "android"
+      }
     }
   }
 
@@ -72,10 +73,18 @@ android {
       if (releaseSigning.storeFile != null) {
         signingConfig = releaseSigning
       } else {
-        signingConfig = signingConfigs.getByName("debugConfig")
+        val debugSigning = signingConfigs.getByName("debugConfig")
+        if (debugSigning.storeFile != null) {
+          signingConfig = debugSigning
+        }
       }
     }
-    debug { signingConfig = signingConfigs.getByName("debugConfig") }
+    debug {
+      val debugSigning = signingConfigs.getByName("debugConfig")
+      if (debugSigning.storeFile != null) {
+        signingConfig = debugSigning
+      }
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
