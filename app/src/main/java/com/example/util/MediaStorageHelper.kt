@@ -8,6 +8,11 @@ import android.net.Uri
 import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
+import com.google.android.gms.tasks.Tasks
+import com.google.firebase.storage.StorageMetadata
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.Types
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -16,6 +21,10 @@ import java.io.InputStream
 import java.util.UUID
 
 object MediaStorageHelper {
+
+    private val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
+    private val mapType = Types.newParameterizedType(Map::class.java, String::class.java, List::class.java)
+    private val photosAdapter = moshi.adapter<Map<String, List<String>>>(mapType)
 
     /**
      * Copies a picked Uri (content://) to the app's persistent internal storage
@@ -50,7 +59,6 @@ object MediaStorageHelper {
             val destFile = File(mediaDir, "${prefix}${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}.$extension")
 
             if (!isVideo) {
-                // Compress and scale image down to max 1920px to prevent excessive memory and storage usage
                 try {
                     var inSampleSize = 1
                     contentResolver.openInputStream(sourceUri)?.use { input ->
@@ -101,8 +109,84 @@ object MediaStorageHelper {
             Uri.fromFile(destFile).toString()
         } catch (e: Exception) {
             e.printStackTrace()
-            // Fallback to original URI string if file copy fails
             sourceUri.toString()
+        }
+    }
+
+    /**
+     * Uploads all photos/videos in photosJson to Firebase Storage and returns updated photosJson
+     * containing the permanent public/download URLs.
+     */
+    suspend fun uploadPhotosJsonToFirebaseStorage(
+        context: Context,
+        schoolId: String,
+        visitId: String,
+        photosJson: String
+    ): String = withContext(Dispatchers.IO) {
+        val storage = FirebaseUtils.storage ?: return@withContext photosJson
+        val storageRef = storage.reference
+
+        try {
+            val originalMap = photosAdapter.fromJson(photosJson) ?: return@withContext photosJson
+            val updatedMap = mutableMapOf<String, List<String>>()
+
+            for ((categoryId, uriList) in originalMap) {
+                val updatedUris = mutableListOf<String>()
+                for ((index, uriStr) in uriList.withIndex()) {
+                    if (uriStr.startsWith("http://") || uriStr.startsWith("https://")) {
+                        // Already uploaded to Firebase Storage or remote URL
+                        updatedUris.add(uriStr)
+                    } else {
+                        // Upload local file or content URI to Firebase Storage
+                        try {
+                            val isVideo = isMediaVideo(uriStr, context)
+                            val ext = if (isVideo) "mp4" else "jpg"
+                            val fileName = getStandardizedFileName(categoryId, index, ext)
+                            val cleanSchoolId = schoolId.ifBlank { "general" }
+                            val cleanVisitId = visitId.ifBlank { UUID.randomUUID().toString() }
+                            val destinationPath = "schools/$cleanSchoolId/visits/$cleanVisitId/${System.currentTimeMillis()}_$fileName"
+                            val itemRef = storageRef.child(destinationPath)
+
+                            val uploadUri = when {
+                                uriStr.startsWith("file://") -> {
+                                    val file = File(Uri.parse(uriStr).path ?: "")
+                                    if (file.exists()) Uri.fromFile(file) else Uri.parse(uriStr)
+                                }
+                                uriStr.startsWith("/") -> {
+                                    val file = File(uriStr)
+                                    if (file.exists()) Uri.fromFile(file) else Uri.parse("file://$uriStr")
+                                }
+                                else -> Uri.parse(uriStr)
+                            }
+
+                            val mime = if (isVideo) "video/mp4" else "image/jpeg"
+                            val metadata = StorageMetadata.Builder()
+                                .setContentType(mime)
+                                .setCustomMetadata("categoryId", categoryId)
+                                .setCustomMetadata("schoolId", cleanSchoolId)
+                                .setCustomMetadata("visitId", cleanVisitId)
+                                .build()
+
+                            val uploadTask = itemRef.putFile(uploadUri, metadata)
+                            Tasks.await(uploadTask)
+
+                            val downloadUrlTask = itemRef.downloadUrl
+                            val downloadUri = Tasks.await(downloadUrlTask)
+                            updatedUris.add(downloadUri.toString())
+                            Log.d("MediaStorageHelper", "Successfully uploaded $fileName to Firebase Storage: $downloadUri")
+                        } catch (e: Exception) {
+                            Log.w("MediaStorageHelper", "Failed to upload photo to Firebase Storage, keeping local URI: $uriStr", e)
+                            updatedUris.add(uriStr)
+                        }
+                    }
+                }
+                updatedMap[categoryId] = updatedUris
+            }
+
+            photosAdapter.toJson(updatedMap)
+        } catch (e: Exception) {
+            Log.e("MediaStorageHelper", "Error processing photosJson for Firebase Storage upload", e)
+            photosJson
         }
     }
 

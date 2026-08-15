@@ -142,8 +142,20 @@ class SyncManager(private val context: Context) {
     suspend fun uploadSingleVisitToServer(visit: Visit): Boolean = withContext(Dispatchers.IO) {
         val fStore = firestore ?: return@withContext false
         try {
-            // Set 5-second timeout per document to handle slow network gracefully
-            val success = withTimeoutOrNull(5000L) {
+            // 1. Upload photos to Firebase Storage and get permanent download URLs
+            val updatedPhotosJson = try {
+                MediaStorageHelper.uploadPhotosJsonToFirebaseStorage(
+                    context = context,
+                    schoolId = visit.schoolId,
+                    visitId = visit.visitId,
+                    photosJson = visit.photosJson
+                )
+            } catch (e: Exception) {
+                visit.photosJson
+            }
+
+            // 2. Set timeout for Firestore write
+            val success = withTimeoutOrNull(25000L) {
                 val visitMap = hashMapOf(
                     "visitId" to visit.visitId,
                     "schoolId" to visit.schoolId,
@@ -155,14 +167,36 @@ class SyncManager(private val context: Context) {
                     "visitDate" to visit.visitDate,
                     "status" to visit.status.name,
                     "answersJson" to visit.answersJson,
-                    "photosJson" to visit.photosJson,
-                    "updatedAt" to visit.updatedAt
+                    "photosJson" to updatedPhotosJson,
+                    "createdAt" to visit.createdAt,
+                    "updatedAt" to System.currentTimeMillis()
                 )
 
                 val setTask = fStore.collection("visits")
                     .document(visit.visitId)
-                    .set(visitMap)
+                    .set(visitMap, com.google.firebase.firestore.SetOptions.merge())
                 com.google.android.gms.tasks.Tasks.await(setTask)
+
+                // Update local Room database with the permanent photo URLs
+                db.visitDao().updateVisit(visit.copy(photosJson = updatedPhotosJson, syncStatus = SyncStatus.SYNCED))
+
+                // Also update any matching task in Firestore
+                try {
+                    val taskQuery = fStore.collection("tasks")
+                        .whereEqualTo("schoolId", visit.schoolId)
+                        .get()
+                    val taskSnap = com.google.android.gms.tasks.Tasks.await(taskQuery)
+                    for (taskDoc in taskSnap.documents) {
+                        taskDoc.reference.update(
+                            mapOf(
+                                "status" to "SUBMITTED",
+                                "visitId" to visit.visitId,
+                                "updatedAt" to System.currentTimeMillis()
+                            )
+                        )
+                    }
+                } catch (_: Exception) {}
+
                 true
             }
             success == true

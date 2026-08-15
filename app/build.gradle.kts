@@ -116,6 +116,7 @@ dependencies {
   implementation(libs.firebase.ai)
   implementation(libs.firebase.firestore)
   implementation(libs.firebase.auth)
+  implementation(libs.firebase.storage)
   // implementation(libs.firebase.functions)
 
   // Uncomment ALL FOUR of the following dependencies together to use Firebase Auth and Google
