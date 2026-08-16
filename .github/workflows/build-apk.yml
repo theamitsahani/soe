@@ -116,20 +116,20 @@ jobs:
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_ALERT_TIGER_505514_S1 || secrets.GCP_SA_KEY || secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SOE_VISIT_TEST || secrets.FIREBASE_SERVICE_ACCOUNT || secrets.GCP_SA_KEY }}
         run: |
           if [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
             echo "Deploying uploadPhotoToDrive using Service Account Key..."
             echo "$FIREBASE_SERVICE_ACCOUNT" > "$HOME/gcp-sa-key.json"
             export GOOGLE_APPLICATION_CREDENTIALS="$HOME/gcp-sa-key.json"
-            npx firebase-tools deploy --only functions:uploadPhotoToDrive --project alert-tiger-505514-s1 --non-interactive
+            npx firebase-tools deploy --only functions:uploadPhotoToDrive --project soe-visit-test --non-interactive
             rm -f "$HOME/gcp-sa-key.json"
           elif [ -n "$FIREBASE_TOKEN" ]; then
             echo "Deploying uploadPhotoToDrive using FIREBASE_TOKEN..."
-            npx firebase-tools deploy --only functions:uploadPhotoToDrive --project alert-tiger-505514-s1 --token "$FIREBASE_TOKEN" --non-interactive
+            npx firebase-tools deploy --only functions:uploadPhotoToDrive --project soe-visit-test --token "$FIREBASE_TOKEN" --non-interactive
           else
-            echo "::warning::Firebase Functions deployment skipped because FIREBASE_SERVICE_ACCOUNT_ALERT_TIGER_505514_S1 or FIREBASE_TOKEN is not configured in GitHub Secrets."
-            echo "NOTICE: APK built successfully! To enable automatic Firebase Cloud Functions deployment, add FIREBASE_SERVICE_ACCOUNT_ALERT_TIGER_505514_S1 or FIREBASE_TOKEN to your GitHub Repository Secrets."
+            echo "::warning::Firebase Functions deployment skipped because FIREBASE_SERVICE_ACCOUNT_SOE_VISIT_TEST or FIREBASE_TOKEN is not configured in GitHub Secrets."
+            echo "NOTICE: APK built successfully! To enable automatic Firebase Cloud Functions deployment, add FIREBASE_SERVICE_ACCOUNT_SOE_VISIT_TEST or FIREBASE_TOKEN to your GitHub Repository Secrets."
           fi
 
       - name: Cleanup Keystore

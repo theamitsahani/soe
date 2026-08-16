@@ -178,8 +178,7 @@ async function resolveCategoryFolderId(drive, params) {
 exports.uploadPhotoToDrive = functions
   .runWith({
     timeoutSeconds: 300,
-    memory: "512MB",
-    serviceAccount: "soe-drive-storage@alert-tiger-505514-s1.iam.gserviceaccount.com"
+    memory: "512MB"
   })
   .https.onCall(async (data, context) => {
     // 1. Verify Authentication
