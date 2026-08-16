@@ -2,6 +2,7 @@ package com.example.ui.admin
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.AssignmentTurnedIn
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material3.Button
@@ -32,6 +34,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -45,9 +48,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import com.example.data.model.School
 import com.example.data.model.Task
 import com.example.data.model.User
@@ -87,7 +95,28 @@ fun AssignVisitsTab(
     var selectedEmployee1 by remember { mutableStateOf<User?>(null) }
     var selectedEmployee2 by remember { mutableStateOf<User?>(null) }
     var enableCoOfficer by remember { mutableStateOf(false) }
-    var visitDate by remember { mutableStateOf("15-Aug-2026") }
+    val context = LocalContext.current
+    val todayDateFormatted = remember {
+        val sdf = SimpleDateFormat("dd-MMM-yyyy", Locale.ENGLISH)
+        sdf.format(Date())
+    }
+    var visitDate by remember { mutableStateOf(todayDateFormatted) }
+
+    val calendar = remember { Calendar.getInstance() }
+    val datePickerDialog = remember(context) {
+        android.app.DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                val selectedCal = Calendar.getInstance()
+                selectedCal.set(year, month, dayOfMonth)
+                val sdf = SimpleDateFormat("dd-MMM-yyyy", Locale.ENGLISH)
+                visitDate = sdf.format(selectedCal.time)
+            },
+            calendar.get(Calendar.YEAR),
+            calendar.get(Calendar.MONTH),
+            calendar.get(Calendar.DAY_OF_MONTH)
+        )
+    }
     var notes by remember { mutableStateOf("") }
 
     var selectedState by remember { mutableStateOf("All States") }
@@ -470,15 +499,38 @@ fun AssignVisitsTab(
                         }
                     }
 
-                    OutlinedTextField(
-                        value = visitDate,
-                        onValueChange = { visitDate = it },
-                        label = { Text("Visit Scheduled Date") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = textFieldColors,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { datePickerDialog.show() }
+                    ) {
+                        OutlinedTextField(
+                            value = visitDate,
+                            onValueChange = {},
+                            readOnly = true,
+                            enabled = false,
+                            label = { Text("Visit Scheduled Date (निरीक्षण तिथि) *") },
+                            trailingIcon = {
+                                IconButton(onClick = { datePickerDialog.show() }) {
+                                    Icon(
+                                        imageVector = Icons.Default.DateRange,
+                                        contentDescription = "Select Date from Calendar",
+                                        tint = Indigo600
+                                    )
+                                }
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                disabledTextColor = Slate900,
+                                disabledContainerColor = Color.White,
+                                disabledBorderColor = Indigo600,
+                                disabledLabelColor = Indigo600,
+                                disabledTrailingIconColor = Indigo600
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
 
                     OutlinedTextField(
                         value = notes,

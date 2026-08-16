@@ -161,7 +161,15 @@ class MainActivity : ComponentActivity() {
                                     AdminMainScreen(
                                         adminUser = state.adminUser,
                                         selectedTab = selectedAdminTab,
-                                        onTabSelected = { selectedAdminTab = it },
+                                        onTabSelected = { tab ->
+                                            selectedAdminTab = tab
+                                            scope.launch {
+                                                schoolRepository.syncSchoolsFromFirestore()
+                                                visitRepository.syncVisitsFromFirestore(state.adminUser.role, state.adminUser.userId)
+                                                taskRepository.syncTasksFromFirestore(state.adminUser.role, state.adminUser.userId)
+                                                authRepository.refreshEmployeesFromFirestore()
+                                            }
+                                        },
                                         onLogoutClick = {
                                             authRepository.logout()
                                             currentScreen = ScreenState.Login
@@ -333,6 +341,14 @@ class MainActivity : ComponentActivity() {
                                         pendingSyncCount = pendingSyncCount,
                                         onSyncClick = {
                                             scope.launch { syncManager.syncPendingData() }
+                                        },
+                                        onTabSelected = { tab ->
+                                            scope.launch {
+                                                syncManager.syncPendingData()
+                                                schoolRepository.syncSchoolsFromFirestore()
+                                                visitRepository.syncVisitsFromFirestore(state.employeeUser.role, state.employeeUser.userId)
+                                                taskRepository.syncTasksFromFirestore(state.employeeUser.role, state.employeeUser.userId)
+                                            }
                                         },
                                         onStartVisit = { task ->
                                             val matchedSchool = schools.find { it.schoolId == task.schoolId }

@@ -161,7 +161,8 @@ fun VisitFormScreen(
     var block by remember { mutableStateOf(existingVisit?.block?.ifBlank { null } ?: task?.block ?: initialSchool?.block ?: "") }
     var principalName by remember { mutableStateOf(parsedExistingAnswers.q7_principalName.ifBlank { initialSchool?.principalName ?: "" }) }
     var principalMobile by remember { mutableStateOf(parsedExistingAnswers.q8_principalMobile.ifBlank { initialSchool?.principalMobile?.ifBlank { initialSchool.mobile } ?: "" }) }
-    var visitDate by remember { mutableStateOf(existingVisit?.visitDate?.ifBlank { null } ?: task?.visitDate ?: "14-Aug-2026") }
+    val defaultTodayDate = remember { java.text.SimpleDateFormat("dd-MMM-yyyy", java.util.Locale.ENGLISH).format(java.util.Date()) }
+    var visitDate by remember { mutableStateOf(existingVisit?.visitDate?.ifBlank { null } ?: task?.visitDate ?: defaultTodayDate) }
 
     // Participating Classes Checkboxes (Class 6th to 12th) - Unchecked by default for new visit
     val availableClasses = remember { listOf("Class 6th", "Class 7th", "Class 8th", "Class 9th", "Class 10th", "Class 11th", "Class 12th") }

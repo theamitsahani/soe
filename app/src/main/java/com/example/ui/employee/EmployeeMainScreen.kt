@@ -107,6 +107,7 @@ fun EmployeeMainScreen(
     onSyncClick: () -> Unit,
     onStartVisit: (Task) -> Unit,
     onEditVisit: (Visit) -> Unit = {},
+    onTabSelected: ((Int) -> Unit)? = null,
     onLogoutClick: () -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -149,7 +150,10 @@ fun EmployeeMainScreen(
                 tabs.forEachIndexed { index, tab ->
                     NavigationBarItem(
                         selected = selectedTab == index,
-                        onClick = { selectedTab = index },
+                        onClick = {
+                            selectedTab = index
+                            onTabSelected?.invoke(index)
+                        },
                         icon = { Icon(tab.icon, contentDescription = tab.title) },
                         label = { Text(tab.title, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
                         colors = NavigationBarItemDefaults.colors(
