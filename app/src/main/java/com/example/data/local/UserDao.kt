@@ -1,0 +1,63 @@
+package com.example.data.local
+
+import androidx.room.Dao
+import androidx.room.Entity
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.PrimaryKey
+import androidx.room.Query
+import androidx.room.Update
+import com.example.data.model.UserRole
+import com.example.data.model.UserStatus
+import kotlinx.coroutines.flow.Flow
+
+@Entity(tableName = "users")
+data class UserEntity(
+    @PrimaryKey val userId: String,
+    val name: String,
+    val email: String,
+    val mobile: String = "",
+    val state: String = "Rajasthan",
+    val district: String = "",
+    val role: String = UserRole.EMPLOYEE.name,
+    val status: String = UserStatus.ACTIVE.name,
+    val isDeleted: Boolean = false,
+    val deletedAt: Long = 0L,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Dao
+interface UserDao {
+    @Query("SELECT * FROM users ORDER BY name ASC")
+    fun getAllUsers(): Flow<List<UserEntity>>
+
+    @Query("SELECT * FROM users ORDER BY name ASC")
+    suspend fun getAllUsersList(): List<UserEntity>
+
+    @Query("SELECT * FROM users WHERE userId = :userId LIMIT 1")
+    suspend fun getUserById(userId: String): UserEntity?
+
+    @Query("SELECT * FROM users WHERE email = :email LIMIT 1")
+    suspend fun getUserByEmail(email: String): UserEntity?
+
+    @Query("SELECT * FROM users WHERE mobile = :mobile LIMIT 1")
+    suspend fun getUserByMobile(mobile: String): UserEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUser(user: UserEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUsers(users: List<UserEntity>)
+
+    @Update
+    suspend fun updateUser(user: UserEntity)
+
+    @Query("UPDATE users SET isDeleted = 1, deletedAt = :deletedAt WHERE userId = :userId")
+    suspend fun softDeleteUser(userId: String, deletedAt: Long = System.currentTimeMillis())
+
+    @Query("UPDATE users SET isDeleted = 0, deletedAt = 0 WHERE userId = :userId")
+    suspend fun restoreUser(userId: String)
+
+    @Query("DELETE FROM users WHERE userId = :userId")
+    suspend fun deleteUserById(userId: String)
+}
