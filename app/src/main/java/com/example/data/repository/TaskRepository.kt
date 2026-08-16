@@ -1,12 +1,18 @@
 package com.example.data.repository
 
 import android.content.Context
+import android.util.Log
 import com.example.data.local.AppDatabase
 import com.example.data.model.Task
+import com.example.data.model.UserRole
 import com.example.data.model.VisitStatus
 import com.example.util.FirebaseUtils
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.ListenerRegistration
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
@@ -14,10 +20,101 @@ class TaskRepository(private val context: Context) {
 
     private val db = AppDatabase.getDatabase(context)
     private val firestore get() = FirebaseUtils.firestore
+    private var tasksListenerRegistration: ListenerRegistration? = null
 
     fun getAllTasks(): Flow<List<Task>> = db.taskDao().getAllTasks()
 
     fun getTasksByEmployee(employeeId: String): Flow<List<Task>> = db.taskDao().getTasksByEmployee(employeeId)
+
+    fun startTasksRealtimeListener(role: UserRole? = null, userId: String? = null) {
+        if (tasksListenerRegistration != null) return
+        val fAuth = FirebaseUtils.auth ?: return
+        val currentFbUser = fAuth.currentUser ?: return
+        val fStore = firestore ?: return
+        val currentUid = userId?.ifBlank { currentFbUser.uid } ?: currentFbUser.uid
+        val isEmployee = (role == UserRole.EMPLOYEE)
+
+        try {
+            val query = if (isEmployee && currentUid.isNotBlank()) {
+                fStore.collection("tasks").whereEqualTo("employeeId", currentUid)
+            } else {
+                fStore.collection("tasks")
+            }
+
+            tasksListenerRegistration = query.addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.w("TaskRepository", "Tasks snapshot listener notice: ${error.message}")
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    CoroutineScope(Dispatchers.IO).launch {
+                        try {
+                            val tasks = snapshot.documents.mapNotNull { doc ->
+                                parseDocToTask(doc)
+                            }
+                            if (tasks.isNotEmpty()) {
+                                db.taskDao().insertTasks(tasks)
+                            }
+                        } catch (e: Exception) {
+                            Log.e("TaskRepository", "Failed to cache tasks from listener", e)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("TaskRepository", "Error starting tasks realtime listener", e)
+        }
+    }
+
+    fun stopTasksRealtimeListener() {
+        try {
+            tasksListenerRegistration?.remove()
+        } catch (e: Exception) {
+            Log.w("TaskRepository", "Error stopping tasks listener", e)
+        }
+        tasksListenerRegistration = null
+    }
+
+    private suspend fun parseDocToTask(doc: DocumentSnapshot): Task? {
+        val taskId = doc.getString("taskId")?.ifBlank { doc.id } ?: doc.id
+        if (taskId.isBlank()) return null
+        val schoolId = doc.getString("schoolId") ?: ""
+        val employeeId = doc.getString("employeeId") ?: ""
+        var schoolName = doc.getString("schoolName") ?: ""
+        if (schoolName.isBlank() && schoolId.isNotBlank()) {
+            schoolName = db.schoolDao().getSchoolById(schoolId)?.schoolName ?: "School ($schoolId)"
+        }
+        if (schoolName.isBlank()) {
+            schoolName = "School Visit Task"
+        }
+
+        val statusStr = doc.getString("status") ?: VisitStatus.ASSIGNED.name
+        var status = try { VisitStatus.valueOf(statusStr) } catch (e: Exception) { VisitStatus.ASSIGNED }
+
+        // If local database has this task marked as SUBMITTED or REVIEWED, preserve it
+        if (status == VisitStatus.ASSIGNED) {
+            val localTask = db.taskDao().getTaskById(taskId)
+            if (localTask != null && (localTask.status == VisitStatus.SUBMITTED || localTask.status == VisitStatus.REVIEWED)) {
+                status = localTask.status
+            }
+        }
+
+        return Task(
+            taskId = taskId,
+            visitId = doc.getString("visitId") ?: "",
+            schoolId = schoolId,
+            employeeId = employeeId,
+            employeeName = doc.getString("employeeName") ?: "",
+            schoolName = schoolName,
+            district = doc.getString("district") ?: "",
+            block = doc.getString("block") ?: "",
+            assignedBy = doc.getString("assignedBy") ?: "Admin",
+            visitDate = doc.getString("visitDate") ?: "",
+            status = status,
+            notes = doc.getString("notes") ?: "",
+            createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+        )
+    }
 
     suspend fun syncTasksFromFirestore(role: com.example.data.model.UserRole? = null, userId: String? = null): Result<Int> = withContext(Dispatchers.IO) {
         try {
@@ -50,43 +147,7 @@ class TaskRepository(private val context: Context) {
             val snapshot = com.google.android.gms.tasks.Tasks.await(snapshotTask)
 
             val tasks = snapshot.documents.mapNotNull { doc ->
-                val taskId = doc.getString("taskId") ?: doc.id
-                val schoolId = doc.getString("schoolId") ?: ""
-                val employeeId = doc.getString("employeeId") ?: ""
-                var schoolName = doc.getString("schoolName") ?: ""
-                if (schoolName.isBlank() && schoolId.isNotBlank()) {
-                    schoolName = db.schoolDao().getSchoolById(schoolId)?.schoolName ?: "School ($schoolId)"
-                }
-                if (schoolName.isBlank()) {
-                    schoolName = "School Visit Task"
-                }
-
-                val statusStr = doc.getString("status") ?: VisitStatus.ASSIGNED.name
-                var status = try { VisitStatus.valueOf(statusStr) } catch (e: Exception) { VisitStatus.ASSIGNED }
-
-                // If local database has this task marked as SUBMITTED or REVIEWED, or visit exists for this employee and school, preserve SUBMITTED status
-                if (status == VisitStatus.ASSIGNED) {
-                    val localTask = db.taskDao().getTaskById(taskId)
-                    if (localTask != null && (localTask.status == VisitStatus.SUBMITTED || localTask.status == VisitStatus.REVIEWED)) {
-                        status = localTask.status
-                    }
-                }
-
-                Task(
-                    taskId = taskId,
-                    visitId = doc.getString("visitId") ?: "",
-                    schoolId = schoolId,
-                    employeeId = employeeId,
-                    employeeName = doc.getString("employeeName") ?: "",
-                    schoolName = schoolName,
-                    district = doc.getString("district") ?: "",
-                    block = doc.getString("block") ?: "",
-                    assignedBy = doc.getString("assignedBy") ?: "Admin",
-                    visitDate = doc.getString("visitDate") ?: "",
-                    status = status,
-                    notes = doc.getString("notes") ?: "",
-                    createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
-                )
+                parseDocToTask(doc)
             }
 
             if (tasks.isNotEmpty()) {

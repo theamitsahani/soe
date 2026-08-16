@@ -109,6 +109,7 @@ class MainActivity : ComponentActivity() {
                                 launch { authRepository.syncEmployeesFromFirestore() }
                             }
                             schoolRepository.startSchoolsRealtimeListener()
+                            taskRepository.startTasksRealtimeListener(sessionUser.role, sessionUser.userId)
                             launch { schoolRepository.syncSchoolsFromFirestore() }
                             launch { visitRepository.syncVisitsFromFirestore(sessionUser.role, sessionUser.userId) }
                             launch { taskRepository.syncTasksFromFirestore(sessionUser.role, sessionUser.userId) }
@@ -137,10 +138,13 @@ class MainActivity : ComponentActivity() {
                                                     val user = result.getOrNull()!!
                                                     if (user.role == UserRole.ADMIN) {
                                                         currentScreen = ScreenState.Admin(user)
+                                                        authRepository.startListeningToFirestoreUsers()
                                                         launch { authRepository.syncEmployeesFromFirestore() }
                                                     } else {
                                                         currentScreen = ScreenState.Employee(user)
                                                     }
+                                                    schoolRepository.startSchoolsRealtimeListener()
+                                                    taskRepository.startTasksRealtimeListener(user.role, user.userId)
                                                     launch { schoolRepository.syncSchoolsFromFirestore() }
                                                     launch { visitRepository.syncVisitsFromFirestore(user.role, user.userId) }
                                                     launch { taskRepository.syncTasksFromFirestore(user.role, user.userId) }
@@ -331,11 +335,11 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
 
-                                is ScreenState.Employee -> {
+                                 is ScreenState.Employee -> {
                                     EmployeeMainScreen(
                                         employeeUser = state.employeeUser,
-                                        tasks = tasks.filter { it.employeeId == state.employeeUser.userId },
-                                        completedVisits = visits.filter { it.employeeId == state.employeeUser.userId },
+                                        tasks = tasks.filter { it.employeeId == state.employeeUser.userId || (state.employeeUser.email.isNotBlank() && it.employeeId.equals(state.employeeUser.email, ignoreCase = true)) },
+                                        completedVisits = visits.filter { it.employeeId == state.employeeUser.userId || (state.employeeUser.email.isNotBlank() && it.employeeId.equals(state.employeeUser.email, ignoreCase = true)) },
                                         schools = schools,
                                         isOnline = isOnline,
                                         pendingSyncCount = pendingSyncCount,
@@ -364,6 +368,8 @@ class MainActivity : ComponentActivity() {
                                             )
                                         },
                                         onLogoutClick = {
+                                            taskRepository.stopTasksRealtimeListener()
+                                            schoolRepository.stopSchoolsRealtimeListener()
                                             authRepository.logout()
                                             currentScreen = ScreenState.Login
                                         }

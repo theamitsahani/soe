@@ -58,12 +58,12 @@ service cloud.firestore {
 
     // Tasks Collection: Mass-assignment prevention
     match /tasks/{taskId} {
-      // Admin can read all tasks; Employee can only read tasks assigned to them
-      allow read: if isAdmin() || (isEmployee() && resource.data.employeeId == request.auth.uid);
+      // Admin can read all tasks; Authenticated Employee can read tasks assigned to their UID
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.employeeId == request.auth.uid);
       allow create, delete: if isAdmin();
       // Employee cannot reassign task ownership or change schoolId; can only update workflow status and updatedAt
       allow update: if isAdmin() || (
-        isEmployee() &&
+        isAuthenticated() &&
         resource.data.employeeId == request.auth.uid &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']) &&
         request.resource.data.status in ['ASSIGNED', 'SUBMITTED', 'REVIEWED']

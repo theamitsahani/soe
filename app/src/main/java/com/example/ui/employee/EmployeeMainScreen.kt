@@ -180,67 +180,22 @@ fun EmployeeMainScreen(
                 onSyncClick = onSyncClick
             )
 
-            val todayDateStr = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault()).format(java.util.Date())
-            val sdf = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault()).apply { isLenient = false }
-            val todayCal = java.util.Calendar.getInstance().apply {
-                set(java.util.Calendar.HOUR_OF_DAY, 0)
-                set(java.util.Calendar.MINUTE, 0)
-                set(java.util.Calendar.SECOND, 0)
-                set(java.util.Calendar.MILLISECOND, 0)
-            }
-
-            val todayTasks = tasks.filter { task ->
-                if (task.visitDate.isBlank()) {
-                    true
-                } else {
-                    try {
-                        val d = sdf.parse(task.visitDate)
-                        if (d != null) {
-                            val c = java.util.Calendar.getInstance().apply {
-                                time = d
-                                set(java.util.Calendar.HOUR_OF_DAY, 0)
-                                set(java.util.Calendar.MINUTE, 0)
-                                set(java.util.Calendar.SECOND, 0)
-                                set(java.util.Calendar.MILLISECOND, 0)
-                            }
-                            !c.after(todayCal)
-                        } else {
-                            task.visitDate == todayDateStr
-                        }
-                    } catch (_: Exception) {
-                        task.visitDate == todayDateStr
-                    }
+            val todayTasks = remember(tasks) {
+                tasks.filter { task ->
+                    isTaskForTodayOrPast(task.visitDate)
                 }
             }
 
-            val upcomingTasks = tasks.filter { task ->
-                if (task.visitDate.isBlank()) {
-                    false
-                } else {
-                    try {
-                        val d = sdf.parse(task.visitDate)
-                        if (d != null) {
-                            val c = java.util.Calendar.getInstance().apply {
-                                time = d
-                                set(java.util.Calendar.HOUR_OF_DAY, 0)
-                                set(java.util.Calendar.MINUTE, 0)
-                                set(java.util.Calendar.SECOND, 0)
-                                set(java.util.Calendar.MILLISECOND, 0)
-                            }
-                            c.after(todayCal)
-                        } else {
-                            false
-                        }
-                    } catch (_: Exception) {
-                        false
-                    }
+            val upcomingTasks = remember(tasks) {
+                tasks.filter { task ->
+                    isTaskUpcoming(task.visitDate)
                 }
             }
 
             when (tabs[selectedTab]) {
                 EmployeeNavTab.TODAY_TASKS -> {
                     TasksListSection(
-                        title = "Today's Assigned Tasks",
+                        title = "Today's Assigned Tasks (${todayTasks.size})",
                         tasks = todayTasks,
                         schools = schools,
                         onStartVisit = onStartVisit
@@ -248,7 +203,7 @@ fun EmployeeMainScreen(
                 }
                 EmployeeNavTab.UPCOMING -> {
                     TasksListSection(
-                        title = "Upcoming Field Tasks (Tomorrow & Later)",
+                        title = "Upcoming Field Tasks (${upcomingTasks.size})",
                         tasks = upcomingTasks,
                         schools = schools,
                         onStartVisit = onStartVisit
@@ -963,4 +918,83 @@ fun EmployeeProfileSection(user: User, onLogout: () -> Unit) {
             }
         }
     }
+}
+
+private fun isTaskForTodayOrPast(visitDate: String): Boolean {
+    if (visitDate.isBlank()) return true
+    val today = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.HOUR_OF_DAY, 0)
+        set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0)
+        set(java.util.Calendar.MILLISECOND, 0)
+    }
+
+    val dateFormats = listOf(
+        "dd-MMM-yyyy",
+        "dd MMM yyyy",
+        "dd/MM/yyyy",
+        "dd-MM-yyyy",
+        "yyyy-MM-dd",
+        "d-MMM-yyyy",
+        "d MMM yyyy",
+        "d/M/yyyy"
+    )
+
+    for (pattern in dateFormats) {
+        try {
+            val sdf = java.text.SimpleDateFormat(pattern, java.util.Locale.ENGLISH).apply { isLenient = true }
+            val parsed = sdf.parse(visitDate.trim())
+            if (parsed != null) {
+                val taskCal = java.util.Calendar.getInstance().apply {
+                    time = parsed
+                    set(java.util.Calendar.HOUR_OF_DAY, 0)
+                    set(java.util.Calendar.MINUTE, 0)
+                    set(java.util.Calendar.SECOND, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                }
+                return !taskCal.after(today)
+            }
+        } catch (_: Exception) {}
+    }
+    // Default to showing in today's tasks so no task is missed
+    return true
+}
+
+private fun isTaskUpcoming(visitDate: String): Boolean {
+    if (visitDate.isBlank()) return false
+    val today = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.HOUR_OF_DAY, 0)
+        set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0)
+        set(java.util.Calendar.MILLISECOND, 0)
+    }
+
+    val dateFormats = listOf(
+        "dd-MMM-yyyy",
+        "dd MMM yyyy",
+        "dd/MM/yyyy",
+        "dd-MM-yyyy",
+        "yyyy-MM-dd",
+        "d-MMM-yyyy",
+        "d MMM yyyy",
+        "d/M/yyyy"
+    )
+
+    for (pattern in dateFormats) {
+        try {
+            val sdf = java.text.SimpleDateFormat(pattern, java.util.Locale.ENGLISH).apply { isLenient = true }
+            val parsed = sdf.parse(visitDate.trim())
+            if (parsed != null) {
+                val taskCal = java.util.Calendar.getInstance().apply {
+                    time = parsed
+                    set(java.util.Calendar.HOUR_OF_DAY, 0)
+                    set(java.util.Calendar.MINUTE, 0)
+                    set(java.util.Calendar.SECOND, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                }
+                return taskCal.after(today)
+            }
+        } catch (_: Exception) {}
+    }
+    return false
 }
