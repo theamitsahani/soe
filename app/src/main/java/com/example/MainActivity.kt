@@ -235,7 +235,11 @@ class MainActivity : ComponentActivity() {
                                                         scope.launch {
                                                             val res = schoolRepository.importSchools(newSchools)
                                                             for (v in completedVisits) {
-                                                                visitRepository.submitVisit(v)
+                                                                val existing = visitRepository.getVisitsListBySchool(v.schoolId)
+                                                                val alreadyHasSubmittedVisit = existing.any { it.status == com.example.data.model.VisitStatus.SUBMITTED || it.status == com.example.data.model.VisitStatus.REVIEWED }
+                                                                if (!alreadyHasSubmittedVisit) {
+                                                                    visitRepository.submitVisit(v)
+                                                                }
                                                             }
                                                             callback(res)
                                                         }

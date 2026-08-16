@@ -64,18 +64,25 @@ object ExcelHelper {
 
     /**
      * Parses uploaded CSV or native Excel (.xlsx) file.
-     * Column Mapping Rules:
+     * 
+     * EXACT COLUMN MAPPING:
      * 1st Row (Header Row): Ignored & Not counted. Reading starts strictly from 2nd row (index 1).
-     * Column A (0): State Name
-     * Column B (1): District Name
-     * Column C (2): School Name (Required: Row is INVALID ONLY if Column C is empty)
-     * Column D (3): School Type
-     * Column E (4): Village Name
-     * Column F (5): Principal Name
-     * Column G (6): Block Name
-     * Column H (7): Principal Mobile Number
-     * Column I (8): Visit Date
-     * Column J (9) / Column G: Status -> If "TRUE"/"True"/"1"/"YES"/"COMPLETED", marked as COMPLETED Visit!
+     * Column A (0): S.R
+     * Column B (1): DISTRICT
+     * Column C (2): SCHOOL NAME (Required: Row is INVALID ONLY if Column C is empty)
+     * Column D (3): TYPE
+     * Column E (4): VILLAGE
+     * Column F (5): PRINCIPAL NAME
+     * Column G (6): PRINCIPAL MOBILE NUMBER
+     * Column H (7): BLOCK NAME
+     * Column I (8): VISIT DATE
+     * 
+     * VISIT STATUS LOGIC:
+     * - If Column I (VISIT DATE) contains a value, mark that school as COMPLETED.
+     * - If Column I is empty/blank, mark that school as PENDING / NOT COMPLETED.
+     * - Column G is ALWAYS treated as Principal Mobile Number.
+     * - Column H is ALWAYS treated as Block Name.
+     * - Column I is ALWAYS treated as Visit Date.
      */
     fun parseSchoolCsv(context: Context, uri: Uri, existingSchools: List<School>): ImportValidationResult {
         val errors = mutableListOf<String>()
@@ -107,8 +114,6 @@ object ExcelHelper {
                 return ImportValidationResult(0, 0, 0, 0, emptyList(), emptyList(), listOf("File contains no data rows (only header or empty)"))
             }
 
-            val existingNames = existingSchools.map { cleanText(it.schoolName).lowercase() }.toSet()
-
             // Skip row 0 (1st row is header). Process starting strictly from index 1 (2nd row).
             for (i in 1 until parsedRows.size) {
                 val row = parsedRows[i]
@@ -120,16 +125,16 @@ object ExcelHelper {
                     return if (idx >= 0 && idx < row.size) cleanText(row[idx]) else ""
                 }
 
-                val stateName = getCol(0)         // Column A: State Name
-                val districtName = getCol(1)      // Column B: District Name
-                val schoolName = getCol(2)        // Column C: School Name (Required)
-                val schoolType = getCol(3)        // Column D: School Type
-                val villageName = getCol(4)       // Column E: Village Name
-                val principalName = getCol(5)     // Column F: Principal Name
-                val blockName = getCol(6)         // Column G: Block Name
-                val principalMobile = getCol(7)   // Column H: Principal Mobile Number
-                val visitDate = getCol(8)         // Column I: Visit Date
-                val statusStr = getCol(9).ifBlank { getCol(6) } // Status string if present
+                val sr = cleanSrNumber(getCol(0))                    // Column A: S.R
+                val districtName = getCol(1)                         // Column B: DISTRICT
+                val schoolName = getCol(2)                           // Column C: SCHOOL NAME (Required)
+                val schoolType = getCol(3)                           // Column D: TYPE
+                val villageName = getCol(4)                          // Column E: VILLAGE
+                val principalName = getCol(5)                        // Column F: PRINCIPAL NAME
+                val principalMobile = cleanMobileNumber(getCol(6))   // Column G: PRINCIPAL MOBILE NUMBER
+                val blockName = getCol(7)                            // Column H: BLOCK NAME
+                val rawVisitDate = getCol(8)                         // Column I: VISIT DATE
+                val visitDate = parseExcelDate(rawVisitDate)
 
                 // RULE: ONLY if Column C (school name) is empty, consider row INVALID
                 if (schoolName.isBlank()) {
@@ -140,7 +145,7 @@ object ExcelHelper {
 
                 val existingSchool = existingSchools.find { 
                     it.schoolName.trim().equals(schoolName.trim(), ignoreCase = true) && 
-                    (districtName.isBlank() || it.districtName.trim().equals(districtName.trim(), ignoreCase = true))
+                    (districtName.isBlank() || it.districtName.isBlank() || it.districtName.trim().equals(districtName.trim(), ignoreCase = true))
                 }
                 val isDuplicate = existingSchool != null
                 if (isDuplicate) {
@@ -151,32 +156,34 @@ object ExcelHelper {
 
                 val school = School(
                     schoolId = schoolId,
-                    stateName = stateName.ifBlank { "Rajasthan" },
-                    districtName = districtName,
-                    schoolName = schoolName, // Exact school name as provided, preserving brackets/numbers
-                    schoolType = schoolType,
-                    villageName = villageName,
-                    principalName = principalName,
-                    blockName = blockName,
-                    principalMobile = principalMobile,
-                    visitDate = visitDate,
-                    createdAt = System.currentTimeMillis(),
+                    sr = sr.ifBlank { existingSchool?.sr ?: "" },
+                    stateName = existingSchool?.stateName?.ifBlank { "Rajasthan" } ?: "Rajasthan",
+                    districtName = districtName.ifBlank { existingSchool?.districtName ?: "" },
+                    schoolName = schoolName,
+                    schoolType = schoolType.ifBlank { existingSchool?.schoolType ?: "" },
+                    villageName = villageName.ifBlank { existingSchool?.villageName ?: "" },
+                    principalName = principalName.ifBlank { existingSchool?.principalName ?: "" },
+                    blockName = blockName.ifBlank { existingSchool?.blockName ?: "" },
+                    principalMobile = principalMobile.ifBlank { existingSchool?.principalMobile ?: "" },
+                    visitDate = visitDate.ifBlank { existingSchool?.visitDate ?: "" },
+                    isDeleted = existingSchool?.isDeleted ?: false,
+                    deletedAt = existingSchool?.deletedAt ?: 0L,
+                    createdAt = existingSchool?.createdAt ?: System.currentTimeMillis(),
                     updatedAt = System.currentTimeMillis()
                 )
 
                 schools.add(school)
                 validRows++
 
-                // Check completed visit status
-                val isCompleted = statusStr.equals("TRUE", ignoreCase = true) ||
-                        statusStr.equals("1") ||
-                        statusStr.equals("YES", ignoreCase = true) ||
-                        statusStr.equals("COMPLETED", ignoreCase = true)
+                // VISIT STATUS LOGIC:
+                // If Column I (VISIT DATE) contains a value -> COMPLETED
+                // If Column I is empty/blank -> PENDING / NOT COMPLETED
+                val isCompleted = visitDate.isNotBlank()
 
                 if (isCompleted) {
                     val answers = com.example.data.model.VisitAnswers(
                         q1_soeName = "Excel Import System",
-                        q2_visitDate = visitDate.ifBlank { "Imported" },
+                        q2_visitDate = visitDate,
                         q3_schoolName = schoolName,
                         q4_udiseCode = "",
                         q5_district = districtName,
@@ -187,24 +194,26 @@ object ExcelHelper {
                         q10_missionGyanAwareness = "हाँ",
                         q11_studentCount = "Verified",
                         q12_schoolResponse = "Completed (Excel Import)",
-                        q20_finalRemarks = "Imported from Excel as Completed Visit"
+                        q20_finalRemarks = "Imported from Excel with Visit Date: $visitDate"
                     )
                     val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
                     val answersAdapter = moshi.adapter(com.example.data.model.VisitAnswers::class.java)
 
                     val visit = com.example.data.model.Visit(
-                        visitId = "vst_" + UUID.randomUUID().toString().take(8),
+                        visitId = "vst_" + schoolId.removePrefix("sch_") + "_imported",
                         schoolId = schoolId,
                         employeeId = "emp_system",
                         employeeName = "System (Excel Import)",
                         schoolName = schoolName,
                         district = districtName,
                         block = blockName,
-                        visitDate = visitDate.ifBlank { "Imported" },
+                        visitDate = visitDate,
                         status = com.example.data.model.VisitStatus.SUBMITTED,
                         answersJson = answersAdapter.toJson(answers),
                         photosJson = "{}",
-                        syncStatus = com.example.data.model.SyncStatus.SYNCED
+                        syncStatus = com.example.data.model.SyncStatus.SYNCED,
+                        createdAt = System.currentTimeMillis(),
+                        updatedAt = System.currentTimeMillis()
                     )
                     completedVisits.add(visit)
                 }
@@ -223,6 +232,47 @@ object ExcelHelper {
             completedVisitsToImport = completedVisits,
             errors = errors
         )
+    }
+
+    private fun cleanSrNumber(raw: String): String {
+        var s = raw.trim()
+        if (s.endsWith(".0")) s = s.substringBefore(".0")
+        return s
+    }
+
+    private fun cleanMobileNumber(raw: String): String {
+        var s = raw.trim()
+        if (s.endsWith(".0")) {
+            s = s.substringBefore(".0")
+        }
+        if (s.contains("E") || s.contains("e")) {
+            try {
+                s = java.math.BigDecimal(s).toPlainString()
+            } catch (_: Exception) {}
+        }
+        return s.filter { it.isDigit() }
+    }
+
+    fun parseExcelDate(raw: String): String {
+        val trimmed = cleanText(raw)
+        if (trimmed.isBlank()) return ""
+
+        // Check if it's an Excel numeric date serial (typically 20000..80000)
+        val doubleVal = trimmed.toDoubleOrNull()
+        if (doubleVal != null && doubleVal > 20000 && doubleVal < 80000) {
+            try {
+                val excelEpoch = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply {
+                    set(1899, java.util.Calendar.DECEMBER, 30, 0, 0, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                }
+                val millis = excelEpoch.timeInMillis + (doubleVal * 86400000L).toLong()
+                val sdf = java.text.SimpleDateFormat("dd-MM-yyyy", java.util.Locale.ENGLISH)
+                sdf.timeZone = java.util.TimeZone.getDefault()
+                return sdf.format(java.util.Date(millis))
+            } catch (_: Exception) {}
+        }
+
+        return trimmed
     }
 
     /**

@@ -21,6 +21,10 @@ class VisitRepository(private val context: Context) {
 
     fun getVisitsBySchool(schoolId: String): Flow<List<Visit>> = db.visitDao().getVisitsBySchool(schoolId)
 
+    suspend fun getVisitsListBySchool(schoolId: String): List<Visit> = withContext(Dispatchers.IO) {
+        db.visitDao().getVisitsListBySchool(schoolId)
+    }
+
     fun getVisitsByEmployee(employeeId: String): Flow<List<Visit>> = db.visitDao().getVisitsByEmployee(employeeId)
 
     suspend fun getVisitById(visitId: String): Visit? = withContext(Dispatchers.IO) {

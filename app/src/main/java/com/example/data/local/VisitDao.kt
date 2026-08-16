@@ -17,6 +17,9 @@ interface VisitDao {
     @Query("SELECT * FROM visits WHERE schoolId = :schoolId ORDER BY createdAt DESC")
     fun getVisitsBySchool(schoolId: String): Flow<List<Visit>>
 
+    @Query("SELECT * FROM visits WHERE schoolId = :schoolId")
+    suspend fun getVisitsListBySchool(schoolId: String): List<Visit>
+
     @Query("SELECT * FROM visits WHERE employeeId = :employeeId ORDER BY createdAt DESC")
     fun getVisitsByEmployee(employeeId: String): Flow<List<Visit>>
 
