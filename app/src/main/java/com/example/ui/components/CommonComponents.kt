@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
@@ -55,24 +56,26 @@ fun SyncStatusBanner(
     onSyncClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val bgColor = if (!isOnline) Red100 else if (pendingCount > 0) Amber100 else Emerald100
-    val contentColor = if (!isOnline) Red600 else if (pendingCount > 0) Amber600 else Emerald600
-    val icon = if (!isOnline) Icons.Default.CloudOff else if (pendingCount > 0) Icons.Default.CloudQueue else Icons.Default.CloudDone
-    val text = if (!isOnline) "Offline Mode • Data saved locally"
+    val bgColor = if (!isOnline) Color(0xFFFEF2F2) else if (pendingCount > 0) Color(0xFFFFFBEB) else Color(0xFFF0FDF4)
+    val contentColor = if (!isOnline) Color(0xFFDC2626) else if (pendingCount > 0) Color(0xFFD97706) else Color(0xFF059669)
+    val borderColor = if (!isOnline) Color(0xFFFEE2E2) else if (pendingCount > 0) Color(0xFFFEF3C7) else Color(0xFFDCFCE7)
+    val icon = if (!isOnline) Icons.Default.CloudOff else if (pendingCount > 0) Icons.Default.CloudQueue else Icons.Default.CheckCircle
+    val text = if (!isOnline) "Offline · Data saved locally"
     else if (pendingCount > 0) "$pendingCount Visit(s) Pending Sync"
-    else "Online • All Data Synced"
+    else "Online · All data synced"
 
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(12.dp),
-        color = bgColor
+        shape = RoundedCornerShape(14.dp),
+        color = bgColor,
+        border = androidx.compose.foundation.BorderStroke(1.dp, borderColor)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -84,12 +87,12 @@ fun SyncStatusBanner(
                     imageVector = icon,
                     contentDescription = null,
                     tint = contentColor,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(18.dp)
                 )
                 Text(
                     text = text,
                     fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.SemiBold,
                     color = contentColor
                 )
             }
@@ -98,9 +101,10 @@ fun SyncStatusBanner(
                 OutlinedButton(
                     onClick = onSyncClick,
                     modifier = Modifier.padding(0.dp),
+                    shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = contentColor)
                 ) {
-                    Text("Sync Now", fontSize = 12.sp)
+                    Text("Sync Now", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
