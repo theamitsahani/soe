@@ -92,7 +92,10 @@ service cloud.firestore {
 
       // Photos metadata subcollection: Cross-employee deletion/tampering prevention
       match /photos/{photoId} {
-        allow read: if isAuthenticated();
+        allow read: if isAdmin() || (
+          isEmployee() &&
+          get(/databases/$(database)/documents/visits/$(visitId)).data.employeeId == request.auth.uid
+        );
         allow create, update, delete: if isAdmin() || (
           isEmployee() &&
           get(/databases/$(database)/documents/visits/$(visitId)).data.employeeId == request.auth.uid &&
