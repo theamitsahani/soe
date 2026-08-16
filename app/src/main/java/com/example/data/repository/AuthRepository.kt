@@ -894,4 +894,29 @@ class AuthRepository(private val context: Context) {
             Result.failure(e)
         }
     }
+
+    companion object {
+        fun generateSecureTemporaryPassword(): String {
+            val upper = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+            val lower = "abcdefghijkmnopqrstuvwxyz"
+            val digits = "23456789"
+            val special = "@#$%"
+            val secureRandom = java.security.SecureRandom()
+
+            val chars = mutableListOf(
+                upper[secureRandom.nextInt(upper.length)],
+                lower[secureRandom.nextInt(lower.length)],
+                digits[secureRandom.nextInt(digits.length)],
+                special[secureRandom.nextInt(special.length)]
+            )
+
+            val allChars = upper + lower + digits + special
+            repeat(6) {
+                chars.add(allChars[secureRandom.nextInt(allChars.length)])
+            }
+
+            chars.shuffle(secureRandom)
+            return chars.joinToString("")
+        }
+    }
 }

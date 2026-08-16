@@ -87,6 +87,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.User
 import com.example.data.model.UserRole
 import com.example.data.model.UserStatus
+import com.example.data.repository.AuthRepository
 import com.example.ui.components.SearchTextField
 import com.example.ui.theme.Emerald600
 import com.example.ui.theme.Indigo600
@@ -567,7 +568,7 @@ fun EmployeeManagementTab(
     if (showAddEmployeeDialog) {
         var name by remember { mutableStateOf("") }
         var email by remember { mutableStateOf("") }
-        var password by remember { mutableStateOf("Officer@123") }
+        var password by remember { mutableStateOf(AuthRepository.generateSecureTemporaryPassword()) }
         var isPasswordVisible by remember { mutableStateOf(false) }
         var mobile by remember { mutableStateOf("") }
         var state by remember { mutableStateOf("Rajasthan") }
@@ -704,7 +705,7 @@ fun EmployeeManagementTab(
                             modifier = Modifier.fillMaxWidth()
                         )
                         Text(
-                            text = "💡 Default password is set to Officer@123. The officer can login with this and reset it anytime.",
+                            text = "💡 A unique secure temporary password has been generated. The officer will be prompted to change it upon first login.",
                             fontSize = 11.sp,
                             color = Slate500
                         )
@@ -802,7 +803,7 @@ fun EmployeeManagementTab(
                     onClick = {
                         val cleanName = name.trim()
                         val cleanEmail = email.trim()
-                        val cleanPassword = password.trim().ifBlank { "Officer@123" }
+                        val cleanPassword = password.trim().ifBlank { AuthRepository.generateSecureTemporaryPassword() }
                         val cleanMobile = mobile.trim()
                         val cleanState = state.trim().ifBlank { "Rajasthan" }
                         val cleanDistrict = district.trim()

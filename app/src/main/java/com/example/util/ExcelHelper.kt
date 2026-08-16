@@ -36,6 +36,15 @@ data class ImportValidationResult(
 
 object ExcelHelper {
 
+    fun neutralizeFormula(value: String): String {
+        val trimmed = value.trimStart()
+        return if (trimmed.startsWith("=") || trimmed.startsWith("+") || trimmed.startsWith("-") || trimmed.startsWith("@")) {
+            "'$value"
+        } else {
+            value
+        }
+    }
+
     /**
      * Helper to share or notify user of exported file.
      */
@@ -152,7 +161,7 @@ object ExcelHelper {
                     duplicateRows++
                 }
 
-                val schoolId = existingSchool?.schoolId ?: ("sch_" + Math.abs((schoolName.trim().lowercase() + "_" + districtName.trim().lowercase()).hashCode()).toString(36))
+                val schoolId = existingSchool?.schoolId ?: ("sch_" + UUID.randomUUID().toString().replace("-", "").take(12))
 
                 val school = School(
                     schoolId = schoolId,
@@ -687,11 +696,11 @@ object ExcelHelper {
 
             val rowVals = listOf(
                 v.visitId, v.visitDate, v.employeeName, v.district, v.block,
-                v.schoolName, a.q4_udiseCode, a.q7_principalName, a.q8_principalMobile,
+                neutralizeFormula(v.schoolName), a.q4_udiseCode, neutralizeFormula(a.q7_principalName), neutralizeFormula(a.q8_principalMobile),
                 a.q9_metPrincipal, a.q10_missionGyanAwareness, a.q11_studentCount, a.q12_schoolResponse,
-                bciName, bciMobile, a.q13_bciContactDetails, a.q14_whatsappGroupAdded,
-                a.q15_posterInstalled, a.q16_keyObservations, a.q17_problemsOrAssistance,
-                a.q18_followupRequired, a.q19_dataRequiredOnHardDisk, a.q21_smartClassStatus, a.q20_finalRemarks
+                neutralizeFormula(bciName), bciMobile, neutralizeFormula(a.q13_bciContactDetails), a.q14_whatsappGroupAdded,
+                a.q15_posterInstalled, neutralizeFormula(a.q16_keyObservations), neutralizeFormula(a.q17_problemsOrAssistance),
+                a.q18_followupRequired, a.q19_dataRequiredOnHardDisk, a.q21_smartClassStatus, neutralizeFormula(a.q20_finalRemarks)
             )
             val rowIndices = rowVals.map { getSharedStringIndex(it) }
             rowsData.add(rowIndices)
@@ -808,8 +817,9 @@ object ExcelHelper {
 
         for (v in visits) {
             val a = parseVisitAnswers(v.answersJson)
-            fun sanitize(str: String): String {
-                val escaped = str.replace("\"", "\"\"")
+            fun sanitize(str: String, isUserInput: Boolean = false): String {
+                val safe = if (isUserInput) neutralizeFormula(str) else str
+                val escaped = safe.replace("\"", "\"\"")
                 return "\"$escaped\""
             }
 
@@ -824,11 +834,11 @@ object ExcelHelper {
 
             writer.write(
                 "${sanitize(v.visitId)},${sanitize(v.visitDate)},${sanitize(v.employeeName)},${sanitize(v.district)},${sanitize(v.block)}," +
-                        "${sanitize(v.schoolName)},${sanitize(a.q4_udiseCode)},${sanitize(a.q7_principalName)},${sanitize(a.q8_principalMobile)}," +
+                        "${sanitize(v.schoolName, true)},${sanitize(a.q4_udiseCode)},${sanitize(a.q7_principalName, true)},${sanitize(a.q8_principalMobile, true)}," +
                         "${sanitize(a.q9_metPrincipal)},${sanitize(a.q10_missionGyanAwareness)},${sanitize(a.q11_studentCount)},${sanitize(a.q12_schoolResponse)}," +
-                        "${sanitize(bciName)},${sanitize(bciMobile)},${sanitize(a.q13_bciContactDetails)},${sanitize(a.q14_whatsappGroupAdded)},${sanitize(a.q15_posterInstalled)}," +
-                        "${sanitize(a.q16_keyObservations)},${sanitize(a.q17_problemsOrAssistance)},${sanitize(a.q18_followupRequired)},${sanitize(a.q19_dataRequiredOnHardDisk)}," +
-                        "${sanitize(a.q21_smartClassStatus)},${sanitize(a.q20_finalRemarks)}\n"
+                        "${sanitize(bciName, true)},${sanitize(bciMobile)},${sanitize(a.q13_bciContactDetails, true)},${sanitize(a.q14_whatsappGroupAdded)},${sanitize(a.q15_posterInstalled)}," +
+                        "${sanitize(a.q16_keyObservations, true)},${sanitize(a.q17_problemsOrAssistance, true)},${sanitize(a.q18_followupRequired)},${sanitize(a.q19_dataRequiredOnHardDisk)}," +
+                        "${sanitize(a.q21_smartClassStatus)},${sanitize(a.q20_finalRemarks, true)}\n"
             )
         }
 

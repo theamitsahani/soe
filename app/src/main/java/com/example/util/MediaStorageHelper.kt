@@ -158,18 +158,21 @@ object MediaStorageHelper {
 
                                 val safeVisitId = visitId.ifBlank { "unknown_visit" }
                                 val safeSchoolId = schoolId.ifBlank { "unknown_school" }
-                                val folderPath = "visits/$safeVisitId/$safeSchoolId/$categoryId"
-                                val publicId = "${photoId}_${fileName.substringBeforeLast(".")}"
-                                val storagePath = "$folderPath/$publicId"
 
-                                val downloadUrl = CloudinaryUploader.uploadBytes(
+                                val uploadResult = CloudinaryUploader.uploadBytes(
                                     bytes = bytes,
-                                    folder = folderPath,
-                                    publicId = publicId,
+                                    visitId = safeVisitId,
+                                    schoolId = safeSchoolId,
+                                    categoryId = categoryId,
                                     isVideo = isVideo
                                 )
 
-                                if (downloadUrl != null) {
+                                if (uploadResult != null) {
+                                    val downloadUrl = uploadResult.downloadUrl
+                                    val publicId = uploadResult.publicId
+                                    val resourceType = uploadResult.resourceType
+                                    val storagePath = "${uploadResult.folder}/$publicId"
+
                                     // Save photo metadata to Firestore: visits/{visitId}/photos/{photoId}
                                     if (firestore != null && safeVisitId.isNotBlank()) {
                                         try {
@@ -180,6 +183,8 @@ object MediaStorageHelper {
                                                 "schoolId" to safeSchoolId,
                                                 "employeeId" to employeeId,
                                                 "category" to categoryId,
+                                                "publicId" to publicId,
+                                                "resourceType" to resourceType,
                                                 "storagePath" to storagePath,
                                                 "downloadUrl" to downloadUrl,
                                                 "createdAt" to now,
@@ -248,7 +253,7 @@ object MediaStorageHelper {
     }
 
     /**
-     * Deletes photo metadata from Firestore.
+     * Deletes photo metadata from Firestore and permanently destroys the asset in Cloudinary.
      */
     suspend fun deletePhotoFromFirebaseStorage(
         visitId: String,
@@ -258,13 +263,32 @@ object MediaStorageHelper {
             val firestore = FirebaseUtils.firestore ?: return@withContext false
 
             if (photoUrlOrPath.startsWith("http://") || photoUrlOrPath.startsWith("https://") || photoUrlOrPath.startsWith("gs://")) {
-                // Try to find and delete photo metadata doc in Firestore
+                // Find photo metadata doc in Firestore, call deleteCloudinaryAsset callable function, and delete metadata doc
                 if (visitId.isNotBlank()) {
                     try {
                         val photosCol = firestore.collection("visits").document(visitId).collection("photos")
                         val queryTask = photosCol.whereEqualTo("downloadUrl", photoUrlOrPath).get()
                         val snap = Tasks.await(queryTask)
                         for (doc in snap.documents) {
+                            val publicId = doc.getString("publicId")
+                            val resourceType = doc.getString("resourceType") ?: if (isMediaVideo(photoUrlOrPath)) "video" else "image"
+                            
+                            if (!publicId.isNullOrBlank()) {
+                                try {
+                                    val functions = com.google.firebase.functions.FirebaseFunctions.getInstance()
+                                    val delTask = functions.getHttpsCallable("deleteCloudinaryAsset")
+                                        .call(
+                                            mapOf(
+                                                "visitId" to visitId,
+                                                "publicId" to publicId,
+                                                "resourceType" to resourceType
+                                            )
+                                        )
+                                    Tasks.await(delTask)
+                                } catch (fnErr: Exception) {
+                                    Log.w("MediaStorageHelper", "Cloud Function deleteCloudinaryAsset warning: ${fnErr.message}")
+                                }
+                            }
                             Tasks.await(doc.reference.delete())
                         }
                     } catch (e: Exception) {

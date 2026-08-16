@@ -200,25 +200,42 @@ class VisitRepository(private val context: Context) {
             val fStore = firestore
             if (fStore != null && syncManager.isNetworkAvailable()) {
                 try {
-                    val task = fStore.collection("visits").document(visit.visitId).set(
-                        mapOf(
-                            "visitId" to updated.visitId,
-                            "schoolId" to updated.schoolId,
-                            "employeeId" to updated.employeeId,
-                            "employeeName" to updated.employeeName,
-                            "schoolName" to updated.schoolName,
-                            "state" to updated.state,
-                            "district" to updated.district,
-                            "block" to updated.block,
-                            "visitDate" to updated.visitDate,
-                            "status" to updated.status.name,
-                            "answersJson" to updated.answersJson,
-                            "photosJson" to updated.photosJson,
-                            "updatedAt" to updated.updatedAt
-                        ),
-                        com.google.firebase.firestore.SetOptions.merge()
-                    )
-                    com.google.android.gms.tasks.Tasks.await(task)
+                    val currentUid = FirebaseUtils.auth?.currentUser?.uid ?: ""
+                    val isEmployeeCaller = (currentUid == visit.employeeId)
+
+                    if (isEmployeeCaller) {
+                        val task = fStore.collection("visits").document(visit.visitId).update(
+                            mapOf(
+                                "status" to updated.status.name,
+                                "answersJson" to updated.answersJson,
+                                "photosJson" to updated.photosJson,
+                                "syncStatus" to updated.syncStatus.name,
+                                "updatedAt" to updated.updatedAt
+                            )
+                        )
+                        com.google.android.gms.tasks.Tasks.await(task)
+                    } else {
+                        val task = fStore.collection("visits").document(visit.visitId).set(
+                            mapOf(
+                                "visitId" to updated.visitId,
+                                "schoolId" to updated.schoolId,
+                                "employeeId" to updated.employeeId,
+                                "employeeName" to updated.employeeName,
+                                "schoolName" to updated.schoolName,
+                                "state" to updated.state,
+                                "district" to updated.district,
+                                "block" to updated.block,
+                                "visitDate" to updated.visitDate,
+                                "status" to updated.status.name,
+                                "answersJson" to updated.answersJson,
+                                "photosJson" to updated.photosJson,
+                                "syncStatus" to updated.syncStatus.name,
+                                "updatedAt" to updated.updatedAt
+                            ),
+                            com.google.firebase.firestore.SetOptions.merge()
+                        )
+                        com.google.android.gms.tasks.Tasks.await(task)
+                    }
                 } catch (e: Exception) {
                     android.util.Log.w("VisitRepository", "Notice updating visit in Firestore: ${e.message}")
                 }

@@ -37,17 +37,11 @@ android {
         ?: (project.findProperty("KEY_PASSWORD") as? String)
 
       val kFile = file(keystorePath)
-      val debugKeystore = file("${rootDir}/debug.keystore")
       if (kFile.exists() && !storePwd.isNullOrBlank() && !kAlias.isNullOrBlank() && !kPwd.isNullOrBlank()) {
         storeFile = kFile
         storePassword = storePwd
         keyAlias = kAlias
         keyPassword = kPwd
-      } else if (debugKeystore.exists()) {
-        storeFile = debugKeystore
-        storePassword = "android"
-        keyAlias = "androiddebugkey"
-        keyPassword = "android"
       }
     }
     create("debugConfig") {
@@ -70,10 +64,8 @@ android {
       if (releaseSigning.storeFile != null) {
         signingConfig = releaseSigning
       } else {
-        val debugSigning = signingConfigs.getByName("debugConfig")
-        if (debugSigning.storeFile != null) {
-          signingConfig = debugSigning
-        }
+        // Release build must have a valid configured release keystore.
+        // Avoid falling back to debugConfig to prevent publishing insecurely signed release APKs.
       }
     }
     debug {
@@ -139,7 +131,7 @@ dependencies {
   implementation(libs.firebase.firestore)
   implementation(libs.firebase.auth)
   implementation(libs.firebase.storage)
-  // implementation(libs.firebase.functions)
+  implementation(libs.firebase.functions)
 
   // Uncomment ALL FOUR of the following dependencies together to use Firebase Auth and Google
   // Sign-In via Credential Manager:

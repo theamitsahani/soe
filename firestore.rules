@@ -30,7 +30,7 @@ service cloud.firestore {
 
     // Users Collection: Privilege escalation prevention
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      allow read: if isAdmin() || (isAuthenticated() && request.auth.uid == userId);
       // Admin has full create and delete control
       allow create, delete: if isAdmin();
       // Non-admin users can ONLY update their own safe profile fields (name, mobile, mustChangePassword, updatedAt).
@@ -51,7 +51,8 @@ service cloud.firestore {
       // Employees can only correct contact info (principalName, principalMobile, updatedAt) during visits
       allow update: if isAdmin() || (
         isEmployee() &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['principalName', 'principalMobile', 'updatedAt'])
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['principalName', 'principalMobile', 'updatedAt']) &&
+        (!('principalMobile' in request.resource.data) || request.resource.data.principalMobile.size() <= 15)
       );
     }
 
@@ -64,7 +65,8 @@ service cloud.firestore {
       allow update: if isAdmin() || (
         isEmployee() &&
         resource.data.employeeId == request.auth.uid &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']) &&
+        request.resource.data.status in ['ASSIGNED', 'SUBMITTED', 'REVIEWED']
       );
     }
 
@@ -79,8 +81,12 @@ service cloud.firestore {
         isEmployee() &&
         resource.data.employeeId == request.auth.uid &&
         resource.data.status != 'REVIEWED' &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'answersJson', 'photosJson', 'syncStatus', 'updatedAt']) &&
         request.resource.data.employeeId == resource.data.employeeId &&
-        request.resource.data.schoolId == resource.data.schoolId
+        request.resource.data.schoolId == resource.data.schoolId &&
+        (request.resource.data.status == resource.data.status ||
+         request.resource.data.status == 'SUBMITTED')
       );
       allow delete: if isAdmin();
 

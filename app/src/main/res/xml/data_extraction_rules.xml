@@ -10,6 +10,7 @@
         <exclude domain="database" path="soe_school_visit.db-wal" />
         <exclude domain="sharedpref" path="encrypted_prefs.xml" />
         <exclude domain="sharedpref" path="auth_prefs.xml" />
+        <exclude domain="file" path="visit_media/" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="database" path="soe_school_visit.db" />
@@ -17,5 +18,6 @@
         <exclude domain="database" path="soe_school_visit.db-wal" />
         <exclude domain="sharedpref" path="encrypted_prefs.xml" />
         <exclude domain="sharedpref" path="auth_prefs.xml" />
+        <exclude domain="file" path="visit_media/" />
     </device-transfer>
 </data-extraction-rules>

@@ -2,42 +2,10 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    
-    // Helper function to check if caller is authenticated
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    // Helper function to check image or video mime type and max size (30MB)
-    function isValidMedia() {
-      return request.resource.size < 30 * 1024 * 1024
-          && (request.resource.contentType.matches('image/.*') || request.resource.contentType.matches('video/.*'));
-    }
-
-    // Structured visit photos path: visits/{visitId}/{schoolId}/{categoryId}/{photoId}_{fileName}
-    match /visits/{visitId}/{schoolId}/{category}/{fileName} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated() && isValidMedia();
-      allow delete: if isAuthenticated();
-    }
-
-    // School visit photos and media
-    match /schools/{schoolId}/visits/{visitId}/{allPaths=**} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated() && isValidMedia();
-      allow delete: if isAuthenticated();
-    }
-
-    // General visit media upload path
-    match /visit_media/{allPaths=**} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated() && isValidMedia();
-      allow delete: if isAuthenticated();
-    }
-
-    // Default deny everything else
+    // Deny-all: photo storage uses server-signed Cloudinary uploads via Cloud Functions
     match /{allPaths=**} {
       allow read, write: if false;
     }
   }
 }
+
