@@ -21,6 +21,7 @@ android {
     versionName = "1.0.2"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    buildConfigField("String", "VERCEL_API_BASE_URL", "\"https://cloudinary-server-six.vercel.app\"")
   }
 
   signingConfigs {

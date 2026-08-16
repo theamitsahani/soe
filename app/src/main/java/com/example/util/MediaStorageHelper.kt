@@ -253,7 +253,7 @@ object MediaStorageHelper {
     }
 
     /**
-     * Deletes photo metadata from Firestore and permanently destroys the asset in Cloudinary.
+     * Deletes photo metadata from Firestore and permanently destroys the asset in Cloudinary via Vercel backend.
      */
     suspend fun deletePhotoFromFirebaseStorage(
         visitId: String,
@@ -263,7 +263,7 @@ object MediaStorageHelper {
             val firestore = FirebaseUtils.firestore ?: return@withContext false
 
             if (photoUrlOrPath.startsWith("http://") || photoUrlOrPath.startsWith("https://") || photoUrlOrPath.startsWith("gs://")) {
-                // Find photo metadata doc in Firestore, call deleteCloudinaryAsset callable function, and delete metadata doc
+                // Find photo metadata doc in Firestore, call deleteAsset on Vercel backend, and delete metadata doc
                 if (visitId.isNotBlank()) {
                     try {
                         val photosCol = firestore.collection("visits").document(visitId).collection("photos")
@@ -275,18 +275,13 @@ object MediaStorageHelper {
                             
                             if (!publicId.isNullOrBlank()) {
                                 try {
-                                    val functions = com.google.firebase.functions.FirebaseFunctions.getInstance()
-                                    val delTask = functions.getHttpsCallable("deleteCloudinaryAsset")
-                                        .call(
-                                            mapOf(
-                                                "visitId" to visitId,
-                                                "publicId" to publicId,
-                                                "resourceType" to resourceType
-                                            )
-                                        )
-                                    Tasks.await(delTask)
-                                } catch (fnErr: Exception) {
-                                    Log.w("MediaStorageHelper", "Cloud Function deleteCloudinaryAsset warning: ${fnErr.message}")
+                                    val isVideo = resourceType.equals("video", ignoreCase = true)
+                                    val deleted = CloudinaryUploader.deleteAsset(visitId, publicId, isVideo)
+                                    if (!deleted) {
+                                        Log.w("MediaStorageHelper", "Cloudinary asset delete notice for publicId: $publicId")
+                                    }
+                                } catch (delErr: Exception) {
+                                    Log.w("MediaStorageHelper", "Cloudinary deleteAsset warning: ${delErr.message}")
                                 }
                             }
                             Tasks.await(doc.reference.delete())
