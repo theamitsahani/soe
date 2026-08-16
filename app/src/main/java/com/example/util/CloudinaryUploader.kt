@@ -8,21 +8,10 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-/**
- * Simple unsigned upload to Cloudinary using OkHttp (already a project dependency).
- * No Firebase Blaze billing needed — Cloudinary free tier works with just an account.
- *
- * SETUP (do this once):
- * 1. Sign up free at https://cloudinary.com (no card needed)
- * 2. Dashboard home shows your "Cloud name" at the top -> paste it in CLOUD_NAME below
- * 3. Go to Settings (gear icon) -> Upload -> Scroll to "Upload presets" -> Add upload preset
- *    -> Set "Signing Mode" to "Unsigned" -> Save -> copy the preset name into UPLOAD_PRESET below
- */
 object CloudinaryUploader {
 
-    // TODO: replace these two with your own Cloudinary values
-    private const val CLOUD_NAME = "fzfgmowd"
-    private const val UPLOAD_PRESET = "ml_default"
+    private const val CLOUD_NAME = "PASTE_YOUR_CLOUD_NAME_HERE"
+    private const val UPLOAD_PRESET = "PASTE_YOUR_UPLOAD_PRESET_HERE"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
@@ -30,10 +19,6 @@ object CloudinaryUploader {
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
 
-    /**
-     * Uploads raw bytes to Cloudinary and returns the permanent secure_url, or null on failure.
-     * folder + publicId together control where it lands, mirroring the old Storage path structure.
-     */
     fun uploadBytes(bytes: ByteArray, folder: String, publicId: String, isVideo: Boolean): String? {
         return try {
             val resourceType = if (isVideo) "video" else "image"

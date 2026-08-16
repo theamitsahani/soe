@@ -141,8 +141,8 @@ object MediaStorageHelper {
             for ((categoryId, uriList) in originalMap) {
                 val updatedUris = mutableListOf<String>()
                 for ((index, uriStr) in uriList.withIndex()) {
-                    if (uriStr.startsWith("http://") || uriStr.startsWith("https://")) {
-                        // Already uploaded, keep as-is
+                    if (uriStr.startsWith("http://") || uriStr.startsWith("https://") || uriStr.startsWith("gs://")) {
+                        // Already uploaded to Cloudinary or remote URL
                         updatedUris.add(uriStr)
                         processedItems++
                         onProgress?.invoke(processedItems, totalItems)
@@ -156,7 +156,6 @@ object MediaStorageHelper {
                                 val fileName = getStandardizedFileName(categoryId, index, ext)
                                 val photoId = UUID.randomUUID().toString()
 
-                                // Structured Cloudinary path: visits/{visitId}/{schoolId}/{categoryId}/{photoId}_{fileName}
                                 val safeVisitId = visitId.ifBlank { "unknown_visit" }
                                 val safeSchoolId = schoolId.ifBlank { "unknown_school" }
                                 val folderPath = "visits/$safeVisitId/$safeSchoolId/$categoryId"
@@ -170,10 +169,7 @@ object MediaStorageHelper {
                                     isVideo = isVideo
                                 )
 
-                                if (downloadUrl == null) {
-                                    Log.e("MediaStorageHelper", "Cloudinary upload returned no URL for $uriStr")
-                                    updatedUris.add(uriStr)
-                                } else {
+                                if (downloadUrl != null) {
                                     // Save photo metadata to Firestore: visits/{visitId}/photos/{photoId}
                                     if (firestore != null && safeVisitId.isNotBlank()) {
                                         try {
@@ -207,6 +203,9 @@ object MediaStorageHelper {
 
                                     Log.d("MediaStorageHelper", "Successfully uploaded $fileName to Cloudinary: $downloadUrl")
                                     updatedUris.add(downloadUrl)
+                                } else {
+                                    Log.e("MediaStorageHelper", "Cloudinary upload failed for $uriStr, keeping local reference")
+                                    updatedUris.add(uriStr)
                                 }
                             } catch (e: Exception) {
                                 Log.e("MediaStorageHelper", "Cloudinary upload failed for $uriStr, keeping local reference: ${e.message}", e)
@@ -249,7 +248,7 @@ object MediaStorageHelper {
     }
 
     /**
-     * Deletes a photo from Firebase Storage and deletes its metadata from Firestore.
+     * Deletes photo metadata from Firestore.
      */
     suspend fun deletePhotoFromFirebaseStorage(
         visitId: String,
@@ -258,11 +257,8 @@ object MediaStorageHelper {
         try {
             val firestore = FirebaseUtils.firestore ?: return@withContext false
 
-            if (photoUrlOrPath.startsWith("http://") || photoUrlOrPath.startsWith("https://")) {
-                // NOTE: Cloudinary deletion needs a *signed* request (API secret),
-                // which should never be embedded in the app. So this only removes
-                // the Firestore metadata record; the file stays in Cloudinary and
-                // can be cleaned up from the Cloudinary console or a backend job.
+            if (photoUrlOrPath.startsWith("http://") || photoUrlOrPath.startsWith("https://") || photoUrlOrPath.startsWith("gs://")) {
+                // Try to find and delete photo metadata doc in Firestore
                 if (visitId.isNotBlank()) {
                     try {
                         val photosCol = firestore.collection("visits").document(visitId).collection("photos")
