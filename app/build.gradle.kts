@@ -64,8 +64,14 @@ android {
       if (releaseSigning.storeFile != null) {
         signingConfig = releaseSigning
       } else {
-        // Release build must have a valid configured release keystore.
-        // Avoid falling back to debugConfig to prevent publishing insecurely signed release APKs.
+        // Enforce loud failure for release tasks if keystore is missing
+        val isBuildingRelease = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+        if (isBuildingRelease) {
+          throw GradleException(
+            "Release keystore not configured. Set KEYSTORE_PATH, KEYSTORE_PASSWORD, KEY_ALIAS, " +
+            "and KEY_PASSWORD (env vars or gradle properties) before building a release APK."
+          )
+        }
       }
     }
     debug {
