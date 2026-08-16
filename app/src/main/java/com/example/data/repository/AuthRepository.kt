@@ -114,6 +114,7 @@ class AuthRepository(private val context: Context) {
 
         val isDeleted = doc.getBoolean("isDeleted") ?: false
         val deletedAt = doc.getLong("deletedAt") ?: 0L
+        val mustChangePassword = doc.getBoolean("mustChangePassword") ?: false
 
         return UserEntity(
             userId = userId,
@@ -125,8 +126,28 @@ class AuthRepository(private val context: Context) {
             role = normalizedRole,
             status = normalizedStatus,
             isDeleted = isDeleted,
-            deletedAt = deletedAt
+            deletedAt = deletedAt,
+            mustChangePassword = mustChangePassword
         )
+    }
+
+    fun generateSecureTemporaryPassword(): String {
+        val upper = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+        val lower = "abcdefghijkmnopqrstuvwxyz"
+        val digits = "23456789"
+        val special = "@#$%"
+        val random = java.security.SecureRandom()
+        val chars = ArrayList<Char>()
+        chars.add(upper[random.nextInt(upper.length)])
+        chars.add(lower[random.nextInt(lower.length)])
+        chars.add(digits[random.nextInt(digits.length)])
+        chars.add(special[random.nextInt(special.length)])
+        val allChars = upper + lower + digits
+        for (i in 0 until 4) {
+            chars.add(allChars[random.nextInt(allChars.length)])
+        }
+        chars.shuffle(random)
+        return chars.joinToString("")
     }
 
     suspend fun checkCurrentSession(): User? = withContext(Dispatchers.IO) {
@@ -173,6 +194,7 @@ class AuthRepository(private val context: Context) {
                         val mobile = userDoc.getString("mobile") ?: ""
                         val state = userDoc.getString("state") ?: "Rajasthan"
                         val district = userDoc.getString("district") ?: ""
+                        val mustChangePassword = userDoc.getBoolean("mustChangePassword") ?: false
 
                         val user = User(
                             userId = uid,
@@ -182,7 +204,8 @@ class AuthRepository(private val context: Context) {
                             state = state,
                             district = district,
                             role = role,
-                            status = UserStatus.ACTIVE
+                            status = UserStatus.ACTIVE,
+                            mustChangePassword = mustChangePassword
                         )
 
                         db.userDao().insertUser(
@@ -194,7 +217,8 @@ class AuthRepository(private val context: Context) {
                                 state = user.state,
                                 district = user.district,
                                 role = user.role.name,
-                                status = user.status.name
+                                status = user.status.name,
+                                mustChangePassword = user.mustChangePassword
                             )
                         )
                         _currentUser.value = user
@@ -226,7 +250,8 @@ class AuthRepository(private val context: Context) {
                     state = localUser.state,
                     district = localUser.district,
                     role = role,
-                    status = UserStatus.ACTIVE
+                    status = UserStatus.ACTIVE,
+                    mustChangePassword = localUser.mustChangePassword
                 )
                 _currentUser.value = user
                 startListeningToFirestoreUsers()
@@ -310,6 +335,37 @@ class AuthRepository(private val context: Context) {
                         mobile = userDoc.getString("mobile") ?: ""
                         state = userDoc.getString("state") ?: "Rajasthan"
                         district = userDoc.getString("district") ?: ""
+                        val mustChangePassword = userDoc.getBoolean("mustChangePassword") ?: false
+
+                        val authenticatedUser = User(
+                            userId = uid,
+                            name = name,
+                            email = userEmail,
+                            mobile = mobile,
+                            state = state,
+                            district = district,
+                            role = role,
+                            status = status,
+                            mustChangePassword = mustChangePassword
+                        )
+
+                        db.userDao().insertUser(
+                            UserEntity(
+                                userId = authenticatedUser.userId,
+                                name = authenticatedUser.name,
+                                email = authenticatedUser.email,
+                                mobile = authenticatedUser.mobile,
+                                state = authenticatedUser.state,
+                                district = authenticatedUser.district,
+                                role = authenticatedUser.role.name,
+                                status = authenticatedUser.status.name,
+                                mustChangePassword = authenticatedUser.mustChangePassword
+                            )
+                        )
+
+                        _currentUser.value = authenticatedUser
+                        startListeningToFirestoreUsers()
+                        return@withContext Result.success(authenticatedUser)
                     } else {
                         // User exists in Firebase Auth but no Firestore record yet; initialize standard Employee record
                         val newUserData = mapOf(
@@ -321,6 +377,7 @@ class AuthRepository(private val context: Context) {
                             "district" to district,
                             "role" to UserRole.EMPLOYEE.name,
                             "status" to UserStatus.ACTIVE.name,
+                            "mustChangePassword" to false,
                             "createdAt" to System.currentTimeMillis(),
                             "updatedAt" to System.currentTimeMillis()
                         )
@@ -339,7 +396,8 @@ class AuthRepository(private val context: Context) {
                 state = state,
                 district = district,
                 role = role,
-                status = status
+                status = status,
+                mustChangePassword = false
             )
 
             db.userDao().insertUser(
@@ -351,7 +409,8 @@ class AuthRepository(private val context: Context) {
                     state = authenticatedUser.state,
                     district = authenticatedUser.district,
                     role = authenticatedUser.role.name,
-                    status = authenticatedUser.status.name
+                    status = authenticatedUser.status.name,
+                    mustChangePassword = false
                 )
             )
 
@@ -388,7 +447,8 @@ class AuthRepository(private val context: Context) {
                         state = localUser.state,
                         district = localUser.district,
                         role = role,
-                        status = UserStatus.ACTIVE
+                        status = UserStatus.ACTIVE,
+                        mustChangePassword = localUser.mustChangePassword
                     )
                     _currentUser.value = authenticatedUser
                     return@withContext Result.success(authenticatedUser)
@@ -465,9 +525,27 @@ class AuthRepository(private val context: Context) {
 
     suspend fun updatePassword(newPassword: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val currentUser = firebaseAuth?.currentUser ?: throw Exception("Not authenticated")
+            val fAuth = firebaseAuth ?: return@withContext Result.failure(Exception("Authentication service unavailable"))
+            val currentUser = fAuth.currentUser ?: throw Exception("Not authenticated")
+            val uid = currentUser.uid
             val task = currentUser.updatePassword(newPassword)
             Tasks.await(task)
+
+            val fStore = firestore
+            if (fStore != null) {
+                val map = mapOf<String, Any>(
+                    "mustChangePassword" to false,
+                    "updatedAt" to System.currentTimeMillis()
+                )
+                fStore.collection("users").document(uid).set(map, SetOptions.merge())
+            }
+
+            val localUser = db.userDao().getUserById(uid)
+            if (localUser != null) {
+                db.userDao().insertUser(localUser.copy(mustChangePassword = false))
+            }
+            _currentUser.value = _currentUser.value?.copy(mustChangePassword = false)
+
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -490,6 +568,7 @@ class AuthRepository(private val context: Context) {
                     status = if (e.status.equals("INACTIVE", ignoreCase = true)) UserStatus.INACTIVE else UserStatus.ACTIVE,
                     isDeleted = e.isDeleted,
                     deletedAt = e.deletedAt,
+                    mustChangePassword = e.mustChangePassword,
                     createdAt = e.createdAt
                 )
             }
@@ -538,6 +617,7 @@ class AuthRepository(private val context: Context) {
                     status = if (e.status.equals("INACTIVE", ignoreCase = true)) UserStatus.INACTIVE else UserStatus.ACTIVE,
                     isDeleted = e.isDeleted,
                     deletedAt = e.deletedAt,
+                    mustChangePassword = e.mustChangePassword,
                     createdAt = e.createdAt
                 )
             }
@@ -560,6 +640,7 @@ class AuthRepository(private val context: Context) {
                     status = if (e.status.equals("INACTIVE", ignoreCase = true)) UserStatus.INACTIVE else UserStatus.ACTIVE,
                     isDeleted = e.isDeleted,
                     deletedAt = e.deletedAt,
+                    mustChangePassword = e.mustChangePassword,
                     createdAt = e.createdAt
                 )
             }
@@ -596,18 +677,6 @@ class AuthRepository(private val context: Context) {
             val trimmedEmail = email.trim().lowercase()
             if (trimmedEmail.isBlank() || !Patterns.EMAIL_ADDRESS.matcher(trimmedEmail).matches()) {
                 return@withContext Result.failure(Exception("Please enter a valid email address."))
-            }
-
-            // Ensure account exists in Firebase Auth before sending reset email
-            val secondaryAuth = getSecondaryAuth()
-            if (secondaryAuth != null) {
-                try {
-                    // Pre-create user in Auth if it was only present in Firestore/Room
-                    val createResult = Tasks.await(secondaryAuth.createUserWithEmailAndPassword(trimmedEmail, "Officer@123"))
-                    secondaryAuth.signOut()
-                } catch (e: Exception) {
-                    // If user already exists in Auth, proceed smoothly
-                }
             }
 
             val fAuth = firebaseAuth ?: return@withContext Result.failure(Exception("Internet connection unavailable. Please try again."))
@@ -650,7 +719,7 @@ class AuthRepository(private val context: Context) {
         }
     }
 
-    suspend fun saveEmployee(user: User, initialPassword: String = "Officer@123"): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun saveEmployee(user: User, initialPassword: String? = null): Result<String?> = withContext(Dispatchers.IO) {
         try {
             val cleanEmail = user.email.trim().lowercase()
             val cleanName = user.name.trim()
@@ -659,6 +728,7 @@ class AuthRepository(private val context: Context) {
             val cleanDistrict = user.district.trim()
             val isNewUser = user.userId.isBlank()
             var userId = if (isNewUser) "" else user.userId
+            var generatedPassword: String? = null
 
             if (cleanName.isBlank()) {
                 return@withContext Result.failure(Exception("Please enter the officer's full name."))
@@ -676,13 +746,14 @@ class AuthRepository(private val context: Context) {
                 return@withContext Result.failure(Exception("An officer with email $cleanEmail already exists. Please use a different email address."))
             }
 
-            // If new user, create Firebase Auth account using secondary auth so Admin's active session is never logged out
+            // If new user, create Firebase Auth account using secondary auth with a secure temporary password
             if (isNewUser) {
                 val secAuth = getSecondaryAuth()
+                val tempPassword = if (!initialPassword.isNullOrBlank()) initialPassword.trim() else generateSecureTemporaryPassword()
+                generatedPassword = tempPassword
                 if (secAuth != null) {
                     try {
-                        val pass = initialPassword.ifBlank { "Officer@123" }
-                        val createResult = Tasks.await(secAuth.createUserWithEmailAndPassword(cleanEmail, pass))
+                        val createResult = Tasks.await(secAuth.createUserWithEmailAndPassword(cleanEmail, tempPassword))
                         val authUid = createResult.user?.uid
                         if (!authUid.isNullOrBlank()) {
                             userId = authUid
@@ -713,6 +784,9 @@ class AuthRepository(private val context: Context) {
                 }
             }
 
+            // For newly created employees, set mustChangePassword = true so they set their own password on first login
+            val mustChangePassword = if (isNewUser) true else user.mustChangePassword
+
             // Update in local Room database cache
             val entity = UserEntity(
                 userId = userId,
@@ -725,6 +799,7 @@ class AuthRepository(private val context: Context) {
                 status = user.status.name,
                 isDeleted = user.isDeleted,
                 deletedAt = user.deletedAt,
+                mustChangePassword = mustChangePassword,
                 createdAt = if (user.createdAt > 0L) user.createdAt else System.currentTimeMillis()
             )
             db.userDao().insertUser(entity)
@@ -742,6 +817,7 @@ class AuthRepository(private val context: Context) {
                     "status" to user.status.name,
                     "isDeleted" to user.isDeleted,
                     "deletedAt" to user.deletedAt,
+                    "mustChangePassword" to mustChangePassword,
                     "updatedAt" to System.currentTimeMillis()
                 )
                 if (isNewUser) {
@@ -752,7 +828,7 @@ class AuthRepository(private val context: Context) {
                 Tasks.await(setTask)
             }
 
-            return@withContext Result.success(Unit)
+            return@withContext Result.success(generatedPassword)
         } catch (e: Exception) {
             Log.e("AuthRepository", "Error saving employee", e)
             Result.failure(e)

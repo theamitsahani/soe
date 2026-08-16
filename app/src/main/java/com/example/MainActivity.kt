@@ -200,8 +200,8 @@ class MainActivity : ComponentActivity() {
                                                     employees = employees,
                                                     onSaveEmployee = { emp, password, callback ->
                                                         scope.launch {
-                                                            val res = authRepository.saveEmployee(emp, password ?: "Officer@123")
-                                                            callback(res)
+                                                            val res = authRepository.saveEmployee(emp, password)
+                                                            callback(res.map { })
                                                         }
                                                     },
                                                     onDeleteEmployee = { userId, callback ->

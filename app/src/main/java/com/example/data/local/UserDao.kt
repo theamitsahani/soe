@@ -23,6 +23,7 @@ data class UserEntity(
     val status: String = UserStatus.ACTIVE.name,
     val isDeleted: Boolean = false,
     val deletedAt: Long = 0L,
+    val mustChangePassword: Boolean = false,
     val createdAt: Long = System.currentTimeMillis()
 )
 

@@ -21,5 +21,6 @@ data class User(
     val status: UserStatus = UserStatus.ACTIVE,
     val isDeleted: Boolean = false,
     val deletedAt: Long = 0L,
+    val mustChangePassword: Boolean = false,
     val createdAt: Long = System.currentTimeMillis()
 )

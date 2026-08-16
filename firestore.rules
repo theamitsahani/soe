@@ -14,7 +14,8 @@ service cloud.firestore {
         request.auth.token.role == 'ADMIN' ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN' &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INACTIVE')
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INACTIVE' &&
+         !(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isDeleted == true))
       );
     }
 
@@ -22,49 +23,75 @@ service cloud.firestore {
     function isEmployee() {
       return isAuthenticated() && (
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INACTIVE'
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INACTIVE' &&
+        !(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isDeleted == true)
       );
     }
 
-    // Users Collection
+    // Users Collection: Privilege escalation prevention
     match /users/{userId} {
-      // Any authenticated user can read user profiles (for employee assignments, directory, auth checks)
       allow read: if isAuthenticated();
-      // Admin can create, update, disable, delete any user document
-      allow write: if isAdmin() || (isAuthenticated() && request.auth.uid == userId);
+      // Admin has full create and delete control
+      allow create, delete: if isAdmin();
+      // Non-admin users can ONLY update their own safe profile fields (name, mobile, mustChangePassword, updatedAt).
+      // They CANNOT self-escalate role, change status, or resurrect deleted accounts.
+      allow update: if isAdmin() || (
+        isAuthenticated() &&
+        request.auth.uid == userId &&
+        resource != null &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'mobile', 'mustChangePassword', 'updatedAt'])
+      );
     }
     
     // Schools Master Data Collection
     match /schools/{schoolId} {
-      // Authenticated users (Admin and Field Employees) can read schools
       allow read: if isAuthenticated();
-      // Admin can add, update, delete, bulk import schools; Employees can update school info from visit
-      allow write: if isAdmin() || isEmployee();
-    }
-
-    // Tasks Collection
-    match /tasks/{taskId} {
-      // Admin can read all tasks; Employee can read tasks assigned to them
-      allow read: if isAdmin() || (isEmployee() && resource.data.employeeId == request.auth.uid);
-      // Admin can create, edit, assign, delete tasks; Employee can update status of their task
+      // Admin has full control for creating, deleting, and updating school master data
       allow create, delete: if isAdmin();
-      allow update: if isAdmin() || (isEmployee() && resource.data.employeeId == request.auth.uid);
+      // Employees can only correct contact info (principalName, principalMobile, updatedAt) during visits
+      allow update: if isAdmin() || (
+        isEmployee() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['principalName', 'principalMobile', 'updatedAt'])
+      );
     }
 
-    // Visits Collection
-    match /visits/{visitId} {
-      // Admin can read all visits; Employee can read visits submitted by them
+    // Tasks Collection: Mass-assignment prevention
+    match /tasks/{taskId} {
+      // Admin can read all tasks; Employee can only read tasks assigned to them
       allow read: if isAdmin() || (isEmployee() && resource.data.employeeId == request.auth.uid);
-      // Employee can submit their visit; Admin can update/review/delete visits
+      allow create, delete: if isAdmin();
+      // Employee cannot reassign task ownership or change schoolId; can only update workflow status and updatedAt
+      allow update: if isAdmin() || (
+        isEmployee() &&
+        resource.data.employeeId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+      );
+    }
+
+    // Visits Collection: Visit tampering prevention & REVIEWED lock
+    match /visits/{visitId} {
+      // Admin can read all visits; Employee can only read visits submitted by them
+      allow read: if isAdmin() || (isEmployee() && resource.data.employeeId == request.auth.uid);
+      // Employee can submit their own visit (employeeId must match auth.uid)
       allow create: if isAdmin() || (isEmployee() && request.resource.data.employeeId == request.auth.uid);
-      allow update: if isAdmin() || (isEmployee() && resource.data.employeeId == request.auth.uid);
+      // Employee cannot change visit ownership/school and cannot modify a visit once it is marked REVIEWED
+      allow update: if isAdmin() || (
+        isEmployee() &&
+        resource.data.employeeId == request.auth.uid &&
+        resource.data.status != 'REVIEWED' &&
+        request.resource.data.employeeId == resource.data.employeeId &&
+        request.resource.data.schoolId == resource.data.schoolId
+      );
       allow delete: if isAdmin();
 
-      // Photos subcollection for photo metadata
+      // Photos metadata subcollection: Cross-employee deletion/tampering prevention
       match /photos/{photoId} {
         allow read: if isAuthenticated();
-        allow create, update: if isAuthenticated();
-        allow delete: if isAdmin() || isAuthenticated();
+        allow create, update, delete: if isAdmin() || (
+          isEmployee() &&
+          get(/databases/$(database)/documents/visits/$(visitId)).data.employeeId == request.auth.uid &&
+          get(/databases/$(database)/documents/visits/$(visitId)).data.status != 'REVIEWED'
+        );
       }
     }
 

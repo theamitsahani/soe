@@ -31,17 +31,14 @@ android {
       val storePwd = System.getenv("KEYSTORE_PASSWORD")
         ?: (project.findProperty("KEYSTORE_PASSWORD") as? String)
         ?: System.getenv("STORE_PASSWORD")
-        ?: "soe_release_2026"
       val kAlias = System.getenv("KEY_ALIAS")
         ?: (project.findProperty("KEY_ALIAS") as? String)
-        ?: "soe_release_key"
       val kPwd = System.getenv("KEY_PASSWORD")
         ?: (project.findProperty("KEY_PASSWORD") as? String)
-        ?: "soe_release_2026"
 
       val kFile = file(keystorePath)
       val debugKeystore = file("${rootDir}/debug.keystore")
-      if (kFile.exists()) {
+      if (kFile.exists() && !storePwd.isNullOrBlank() && !kAlias.isNullOrBlank() && !kPwd.isNullOrBlank()) {
         storeFile = kFile
         storePassword = storePwd
         keyAlias = kAlias
