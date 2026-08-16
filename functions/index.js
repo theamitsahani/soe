@@ -128,16 +128,14 @@ async function resolveCategoryFolderId(drive, params) {
     categoryId
   } = params;
 
-  // 1. Root -> SOE APP DATA
-  const soeAppDataId = await getOrCreateFolder(drive, DRIVE_ROOT_FOLDER_ID, "SOE APP DATA");
-
-  // 2. Year (e.g. "2026")
+  // 1. DRIVE_ROOT_FOLDER_ID ("1bgIXv6zTpd9oT8Fr3QwCtIaZ1eCDwKtc") IS ALREADY "SOE APP DATA"
+  // 2. Year (e.g. "2026") created directly inside DRIVE_ROOT_FOLDER_ID
   let effectiveYear = (year || "").trim();
   if (!effectiveYear) {
     const match = (visitDate || "").match(/\b(20\d\d)\b/);
     effectiveYear = match ? match[1] : new Date().getFullYear().toString();
   }
-  const yearFolderId = await getOrCreateFolder(drive, soeAppDataId, effectiveYear);
+  const yearFolderId = await getOrCreateFolder(drive, DRIVE_ROOT_FOLDER_ID, effectiveYear);
 
   // 3. State (e.g. "Rajasthan")
   const effectiveState = (state || "Rajasthan").trim() || "Rajasthan";
