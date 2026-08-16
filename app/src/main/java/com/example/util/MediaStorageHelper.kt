@@ -9,7 +9,6 @@ import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import com.google.android.gms.tasks.Tasks
-import com.google.firebase.storage.StorageMetadata
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -133,13 +132,7 @@ object MediaStorageHelper {
         try {
             val originalMap = photosAdapter.fromJson(photosJson) ?: return@withContext photosJson
             val updatedMap = mutableMapOf<String, List<String>>()
-            val storage = FirebaseUtils.storage
             val firestore = FirebaseUtils.firestore
-
-            if (storage == null) {
-                Log.e("MediaStorageHelper", "FirebaseStorage instance is null")
-                return@withContext photosJson
-            }
 
             var totalItems = 0
             originalMap.values.forEach { totalItems += it.size }
@@ -148,8 +141,8 @@ object MediaStorageHelper {
             for ((categoryId, uriList) in originalMap) {
                 val updatedUris = mutableListOf<String>()
                 for ((index, uriStr) in uriList.withIndex()) {
-                    if (uriStr.startsWith("http://") || uriStr.startsWith("https://") || uriStr.startsWith("gs://")) {
-                        // Already uploaded to Firebase Storage or remote URL
+                    if (uriStr.startsWith("http://") || uriStr.startsWith("https://")) {
+                        // Already uploaded, keep as-is
                         updatedUris.add(uriStr)
                         processedItems++
                         onProgress?.invoke(processedItems, totalItems)
@@ -163,63 +156,60 @@ object MediaStorageHelper {
                                 val fileName = getStandardizedFileName(categoryId, index, ext)
                                 val photoId = UUID.randomUUID().toString()
 
-                                // Structured Storage path: visits/{visitId}/{schoolId}/{categoryId}/{photoId}_{fileName}
+                                // Structured Cloudinary path: visits/{visitId}/{schoolId}/{categoryId}/{photoId}_{fileName}
                                 val safeVisitId = visitId.ifBlank { "unknown_visit" }
                                 val safeSchoolId = schoolId.ifBlank { "unknown_school" }
-                                val storagePath = "visits/$safeVisitId/$safeSchoolId/$categoryId/${photoId}_$fileName"
-                                val storageRef = storage.reference.child(storagePath)
+                                val folderPath = "visits/$safeVisitId/$safeSchoolId/$categoryId"
+                                val publicId = "${photoId}_${fileName.substringBeforeLast(".")}"
+                                val storagePath = "$folderPath/$publicId"
 
-                                val metadata = StorageMetadata.Builder()
-                                    .setContentType(mime)
-                                    .setCustomMetadata("visitId", safeVisitId)
-                                    .setCustomMetadata("schoolId", safeSchoolId)
-                                    .setCustomMetadata("employeeId", employeeId)
-                                    .setCustomMetadata("categoryId", categoryId)
-                                    .setCustomMetadata("photoId", photoId)
-                                    .setCustomMetadata("fileName", fileName)
-                                    .build()
+                                val downloadUrl = CloudinaryUploader.uploadBytes(
+                                    bytes = bytes,
+                                    folder = folderPath,
+                                    publicId = publicId,
+                                    isVideo = isVideo
+                                )
 
-                                val uploadTask = storageRef.putBytes(bytes, metadata)
-                                Tasks.await(uploadTask)
+                                if (downloadUrl == null) {
+                                    Log.e("MediaStorageHelper", "Cloudinary upload returned no URL for $uriStr")
+                                    updatedUris.add(uriStr)
+                                } else {
+                                    // Save photo metadata to Firestore: visits/{visitId}/photos/{photoId}
+                                    if (firestore != null && safeVisitId.isNotBlank()) {
+                                        try {
+                                            val now = System.currentTimeMillis()
+                                            val photoMeta = hashMapOf(
+                                                "photoId" to photoId,
+                                                "visitId" to safeVisitId,
+                                                "schoolId" to safeSchoolId,
+                                                "employeeId" to employeeId,
+                                                "category" to categoryId,
+                                                "storagePath" to storagePath,
+                                                "downloadUrl" to downloadUrl,
+                                                "createdAt" to now,
+                                                "uploadedAt" to now,
+                                                "status" to "UPLOADED",
+                                                "fileName" to fileName,
+                                                "contentType" to mime,
+                                                "fileSize" to bytes.size.toLong()
+                                            )
 
-                                val downloadUrlTask = storageRef.downloadUrl
-                                val downloadUrl = Tasks.await(downloadUrlTask).toString()
-
-                                // Save photo metadata to Firestore: visits/{visitId}/photos/{photoId}
-                                if (firestore != null && safeVisitId.isNotBlank()) {
-                                    try {
-                                        val now = System.currentTimeMillis()
-                                        val photoMeta = hashMapOf(
-                                            "photoId" to photoId,
-                                            "visitId" to safeVisitId,
-                                            "schoolId" to safeSchoolId,
-                                            "employeeId" to employeeId,
-                                            "category" to categoryId,
-                                            "storagePath" to storagePath,
-                                            "downloadUrl" to downloadUrl,
-                                            "createdAt" to now,
-                                            "uploadedAt" to now,
-                                            "status" to "UPLOADED",
-                                            "fileName" to fileName,
-                                            "contentType" to mime,
-                                            "fileSize" to bytes.size.toLong()
-                                        )
-
-                                        val metaTask = firestore.collection("visits")
-                                            .document(safeVisitId)
-                                            .collection("photos")
-                                            .document(photoId)
-                                            .set(photoMeta)
-                                        Tasks.await(metaTask)
-                                    } catch (metaErr: Exception) {
-                                        Log.w("MediaStorageHelper", "Error saving photo metadata in Firestore: ${metaErr.message}")
+                                            val metaTask = firestore.collection("visits")
+                                                .document(safeVisitId)
+                                                .collection("photos")
+                                                .document(photoId)
+                                                .set(photoMeta)
+                                            Tasks.await(metaTask)
+                                        } catch (metaErr: Exception) {
+                                            Log.w("MediaStorageHelper", "Error saving photo metadata in Firestore: ${metaErr.message}")
+                                        }
                                     }
-                                }
 
-                                Log.d("MediaStorageHelper", "Successfully uploaded $fileName to Firebase Storage: $downloadUrl")
-                                updatedUris.add(downloadUrl)
+                                    Log.d("MediaStorageHelper", "Successfully uploaded $fileName to Cloudinary: $downloadUrl")
+                                    updatedUris.add(downloadUrl)
+                                }
                             } catch (e: Exception) {
-                                Log.e("MediaStorageHelper", "Firebase Storage upload failed for $uriStr, keeping local reference: ${e.message}", e)
+                                Log.e("MediaStorageHelper", "Cloudinary upload failed for $uriStr, keeping local reference: ${e.message}", e)
                                 updatedUris.add(uriStr)
                             }
                         } else {
@@ -235,7 +225,7 @@ object MediaStorageHelper {
 
             photosAdapter.toJson(updatedMap)
         } catch (e: Exception) {
-            Log.e("MediaStorageHelper", "Error processing photosJson for Firebase Storage upload", e)
+            Log.e("MediaStorageHelper", "Error processing photosJson for Cloudinary upload", e)
             photosJson
         }
     }
@@ -266,16 +256,14 @@ object MediaStorageHelper {
         photoUrlOrPath: String
     ): Boolean = withContext(Dispatchers.IO) {
         try {
-            val storage = FirebaseUtils.storage ?: return@withContext false
-            val firestore = FirebaseUtils.firestore
+            val firestore = FirebaseUtils.firestore ?: return@withContext false
 
-            if (photoUrlOrPath.startsWith("http://") || photoUrlOrPath.startsWith("https://") || photoUrlOrPath.startsWith("gs://")) {
-                val ref = storage.getReferenceFromUrl(photoUrlOrPath)
-                val deleteTask = ref.delete()
-                Tasks.await(deleteTask)
-
-                // Try to find and delete photo metadata doc in Firestore
-                if (firestore != null && visitId.isNotBlank()) {
+            if (photoUrlOrPath.startsWith("http://") || photoUrlOrPath.startsWith("https://")) {
+                // NOTE: Cloudinary deletion needs a *signed* request (API secret),
+                // which should never be embedded in the app. So this only removes
+                // the Firestore metadata record; the file stays in Cloudinary and
+                // can be cleaned up from the Cloudinary console or a backend job.
+                if (visitId.isNotBlank()) {
                     try {
                         val photosCol = firestore.collection("visits").document(visitId).collection("photos")
                         val queryTask = photosCol.whereEqualTo("downloadUrl", photoUrlOrPath).get()
@@ -292,7 +280,7 @@ object MediaStorageHelper {
                 false
             }
         } catch (e: Exception) {
-            Log.e("MediaStorageHelper", "Error deleting photo from Firebase Storage: ${e.message}", e)
+            Log.e("MediaStorageHelper", "Error deleting photo metadata: ${e.message}", e)
             false
         }
     }
