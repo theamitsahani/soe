@@ -21,8 +21,8 @@ import java.util.concurrent.TimeUnit
 object CloudinaryUploader {
 
     // TODO: replace these two with your own Cloudinary values
-    private const val CLOUD_NAME = "your_cloud_name"
-    private const val UPLOAD_PRESET = "your_unsigned_preset"
+    private const val CLOUD_NAME = "fzfgmowd"
+    private const val UPLOAD_PRESET = "ml_default"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
