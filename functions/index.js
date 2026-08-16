@@ -176,7 +176,11 @@ async function resolveCategoryFolderId(drive, params) {
  * Uploads a single photo/media file to Google Drive under the structured folder hierarchy.
  */
 exports.uploadPhotoToDrive = functions
-  .runWith({ timeoutSeconds: 300, memory: "512MB" })
+  .runWith({
+    timeoutSeconds: 300,
+    memory: "512MB",
+    serviceAccount: "soe-drive-storage@alert-tiger-505514-s1.iam.gserviceaccount.com"
+  })
   .https.onCall(async (data, context) => {
     // 1. Verify Authentication
     if (!context.auth || !context.auth.uid) {
@@ -273,30 +277,15 @@ exports.uploadPhotoToDrive = functions
         throw new Error("Drive API returned an empty file ID.");
       }
 
-      // Grant 'anyone with link' reader permissions so images load in app/web viewers
-      try {
-        await drive.permissions.create({
-          fileId: fileId,
-          requestBody: {
-            role: "reader",
-            type: "anyone"
-          },
-          supportsAllDrives: true
-        });
-      } catch (permErr) {
-        console.warn("Notice: Failed to set public reader permission on Drive file:", permErr.message);
-      }
-
       const viewUrl = createRes.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
-      const directCdnUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
       const downloadUrl = createRes.data.webContentLink || `https://drive.google.com/uc?export=download&id=${fileId}`;
 
       return {
         success: true,
         fileId: fileId,
         fileName: effectiveFileName,
-        url: directCdnUrl,
-        directUrl: directCdnUrl,
+        url: viewUrl,
+        directUrl: downloadUrl,
         webViewLink: viewUrl,
         webContentLink: downloadUrl,
         folderId: targetFolderId,
