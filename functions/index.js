@@ -253,8 +253,7 @@ exports.uploadPhotoToDrive = functions
 
     try {
       const fileBuffer = Buffer.from(base64Data, "base64");
-      const bufferStream = new stream.PassThrough();
-      bufferStream.end(fileBuffer);
+      const readableStream = stream.Readable.from(fileBuffer);
 
       const createRes = await drive.files.create({
         requestBody: {
@@ -263,7 +262,7 @@ exports.uploadPhotoToDrive = functions
         },
         media: {
           mimeType: mimeType || "image/jpeg",
-          body: bufferStream
+          body: readableStream
         },
         fields: "id, name, webViewLink, webContentLink, size, mimeType",
         supportsAllDrives: true
@@ -274,17 +273,32 @@ exports.uploadPhotoToDrive = functions
         throw new Error("Drive API returned an empty file ID.");
       }
 
+      // Grant 'anyone with link' reader permissions so images load in app/web viewers
+      try {
+        await drive.permissions.create({
+          fileId: fileId,
+          requestBody: {
+            role: "reader",
+            type: "anyone"
+          },
+          supportsAllDrives: true
+        });
+      } catch (permErr) {
+        console.warn("Notice: Failed to set public reader permission on Drive file:", permErr.message);
+      }
+
       const viewUrl = createRes.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
-      const directUrl = createRes.data.webContentLink || `https://drive.google.com/uc?export=download&id=${fileId}`;
+      const directCdnUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
+      const downloadUrl = createRes.data.webContentLink || `https://drive.google.com/uc?export=download&id=${fileId}`;
 
       return {
         success: true,
         fileId: fileId,
         fileName: effectiveFileName,
-        url: directUrl,
-        directUrl: directUrl,
+        url: directCdnUrl,
+        directUrl: directCdnUrl,
         webViewLink: viewUrl,
-        webContentLink: createRes.data.webContentLink || `https://drive.google.com/uc?export=download&id=${fileId}`,
+        webContentLink: downloadUrl,
         folderId: targetFolderId,
         drivePath: path
       };

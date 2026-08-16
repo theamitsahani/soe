@@ -169,7 +169,9 @@ object MediaStorageHelper {
                                     "index" to (index + 1)
                                 )
 
-                                val callable = functions.getHttpsCallable("uploadPhotoToDrive")
+                                val callable = functions.getHttpsCallable("uploadPhotoToDrive").apply {
+                                    setTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+                                }
                                 val task = callable.call(payload)
                                 val result = Tasks.await(task)
                                 val dataMap = result.data as? Map<*, *>
@@ -181,13 +183,16 @@ object MediaStorageHelper {
                                     Log.d("MediaStorageHelper", "Successfully uploaded $fileName to Drive: $driveUrl")
                                     updatedUris.add(driveUrl)
                                 } else {
+                                    Log.w("MediaStorageHelper", "Drive returned blank URL for $fileName, response: $dataMap")
                                     updatedUris.add(uriStr)
                                 }
                             } catch (e: Exception) {
-                                Log.w("MediaStorageHelper", "Drive upload failed for $uriStr, keeping local reference: ${e.message}")
+                                Log.e("MediaStorageHelper", "Drive upload failed for $uriStr, keeping local reference: ${e.message}", e)
                                 updatedUris.add(uriStr)
                             }
                         } else {
+                            if (functions == null) Log.e("MediaStorageHelper", "FirebaseFunctions instance is null")
+                            if (bytes == null || bytes.isEmpty()) Log.e("MediaStorageHelper", "Failed to read bytes for media URI: $uriStr")
                             updatedUris.add(uriStr)
                         }
                     }
@@ -225,26 +230,32 @@ object MediaStorageHelper {
 
     private fun readMediaBytes(context: Context, uriStr: String): ByteArray? {
         return try {
-            when {
-                uriStr.startsWith("content://") -> {
-                    context.contentResolver.openInputStream(Uri.parse(uriStr))?.use { it.readBytes() }
-                }
-                uriStr.startsWith("file://") -> {
-                    val file = File(Uri.parse(uriStr).path ?: "")
-                    if (file.exists()) file.readBytes() else null
-                }
-                uriStr.startsWith("/") -> {
-                    val file = File(uriStr)
-                    if (file.exists()) file.readBytes() else null
-                }
-                else -> {
-                    val file = File(uriStr)
-                    if (file.exists()) file.readBytes() else null
-                }
+            val uri = Uri.parse(uriStr)
+            // 1. Try opening via contentResolver (works for content:// and file:// URIs)
+            val bytesFromResolver = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            if (bytesFromResolver != null && bytesFromResolver.isNotEmpty()) {
+                return bytesFromResolver
+            }
+
+            // 2. Direct File path reading
+            val path = uri.path ?: uriStr.removePrefix("file://")
+            val file = File(path)
+            if (file.exists()) {
+                file.readBytes()
+            } else {
+                val directFile = File(uriStr)
+                if (directFile.exists()) directFile.readBytes() else null
             }
         } catch (e: Exception) {
             Log.e("MediaStorageHelper", "Error reading media bytes for $uriStr", e)
-            null
+            try {
+                val cleanPath = uriStr.removePrefix("file://")
+                val fallbackFile = File(cleanPath)
+                if (fallbackFile.exists()) fallbackFile.readBytes() else null
+            } catch (e2: Exception) {
+                Log.e("MediaStorageHelper", "Fallback readMediaBytes failed for $uriStr", e2)
+                null
+            }
         }
     }
 

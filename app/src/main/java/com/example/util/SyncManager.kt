@@ -166,7 +166,7 @@ class SyncManager(private val context: Context) {
             }
 
             // 2. Set timeout for Firestore write
-            val success = withTimeoutOrNull(25000L) {
+            val success = withTimeoutOrNull(120000L) {
                 val visitMap = hashMapOf(
                     "visitId" to visit.visitId,
                     "schoolId" to visit.schoolId,
