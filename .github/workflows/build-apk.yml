@@ -101,37 +101,6 @@ jobs:
           path: app/build/outputs/apk/**/*.apk
           retention-days: 14
 
-      - name: Setup Node.js 22 for Firebase Functions
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: 'functions/package-lock.json'
-
-      - name: Install Functions Dependencies
-        run: |
-          npm --prefix functions ci
-
-      - name: Deploy Firebase Cloud Functions (uploadPhotoToDrive)
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
-        env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SOE_VISIT_TEST || secrets.FIREBASE_SERVICE_ACCOUNT || secrets.GCP_SA_KEY }}
-        run: |
-          if [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
-            echo "Deploying uploadPhotoToDrive using Service Account Key..."
-            echo "$FIREBASE_SERVICE_ACCOUNT" > "$HOME/gcp-sa-key.json"
-            export GOOGLE_APPLICATION_CREDENTIALS="$HOME/gcp-sa-key.json"
-            npx firebase-tools deploy --only functions:uploadPhotoToDrive --project soe-visit-test --non-interactive
-            rm -f "$HOME/gcp-sa-key.json"
-          elif [ -n "$FIREBASE_TOKEN" ]; then
-            echo "Deploying uploadPhotoToDrive using FIREBASE_TOKEN..."
-            npx firebase-tools deploy --only functions:uploadPhotoToDrive --project soe-visit-test --token "$FIREBASE_TOKEN" --non-interactive
-          else
-            echo "::warning::Firebase Functions deployment skipped because FIREBASE_SERVICE_ACCOUNT_SOE_VISIT_TEST or FIREBASE_TOKEN is not configured in GitHub Secrets."
-            echo "NOTICE: APK built successfully! To enable automatic Firebase Cloud Functions deployment, add FIREBASE_SERVICE_ACCOUNT_SOE_VISIT_TEST or FIREBASE_TOKEN to your GitHub Repository Secrets."
-          fi
-
       - name: Cleanup Keystore
         if: always()
         run: |

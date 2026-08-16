@@ -114,87 +114,120 @@ object MediaStorageHelper {
     }
 
     /**
-     * Uploads all photos/videos in photosJson to Google Drive via Firebase Cloud Function
-     * and returns updated photosJson containing the permanent Google Drive direct URLs.
+     * Uploads all photos/videos in photosJson directly to Firebase Storage
+     * and saves photo metadata to Firestore ("visits/{visitId}/photos/{photoId}").
+     * Returns updated photosJson containing permanent Firebase Storage download URLs.
      */
-    suspend fun uploadPhotosJsonToGoogleDrive(
+    suspend fun uploadPhotosJsonToFirebaseStorage(
         context: Context,
-        schoolName: String,
-        udiseCode: String = "",
-        state: String = "Rajasthan",
-        district: String = "",
-        block: String = "",
+        visitId: String,
+        schoolId: String,
+        employeeId: String,
+        photosJson: String,
+        schoolName: String = "",
         visitDate: String = "",
-        photosJson: String
+        onProgress: ((current: Int, total: Int) -> Unit)? = null
     ): String = withContext(Dispatchers.IO) {
         if (photosJson.isBlank() || photosJson == "{}") return@withContext photosJson
 
         try {
             val originalMap = photosAdapter.fromJson(photosJson) ?: return@withContext photosJson
             val updatedMap = mutableMapOf<String, List<String>>()
-            val functions = FirebaseUtils.functions
+            val storage = FirebaseUtils.storage
+            val firestore = FirebaseUtils.firestore
+
+            if (storage == null) {
+                Log.e("MediaStorageHelper", "FirebaseStorage instance is null")
+                return@withContext photosJson
+            }
+
+            var totalItems = 0
+            originalMap.values.forEach { totalItems += it.size }
+            var processedItems = 0
 
             for ((categoryId, uriList) in originalMap) {
                 val updatedUris = mutableListOf<String>()
                 for ((index, uriStr) in uriList.withIndex()) {
-                    if (uriStr.startsWith("http://") || uriStr.startsWith("https://")) {
-                        // Already uploaded to Google Drive or remote URL
+                    if (uriStr.startsWith("http://") || uriStr.startsWith("https://") || uriStr.startsWith("gs://")) {
+                        // Already uploaded to Firebase Storage or remote URL
                         updatedUris.add(uriStr)
+                        processedItems++
+                        onProgress?.invoke(processedItems, totalItems)
                     } else {
                         val bytes = readMediaBytes(context, uriStr)
-                        if (bytes != null && bytes.isNotEmpty() && functions != null) {
+                        if (bytes != null && bytes.isNotEmpty()) {
                             try {
                                 val isVideo = isMediaVideo(uriStr, context)
                                 val mime = if (isVideo) "video/mp4" else "image/jpeg"
-                                val base64Data = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
                                 val ext = if (isVideo) "mp4" else "jpg"
                                 val fileName = getStandardizedFileName(categoryId, index, ext)
+                                val photoId = UUID.randomUUID().toString()
 
-                                val year = if (visitDate.isNotBlank()) {
-                                    Regex("""\b(20\d\d)\b""").find(visitDate)?.value ?: ""
-                                } else ""
+                                // Structured Storage path: visits/{visitId}/{schoolId}/{categoryId}/{photoId}_{fileName}
+                                val safeVisitId = visitId.ifBlank { "unknown_visit" }
+                                val safeSchoolId = schoolId.ifBlank { "unknown_school" }
+                                val storagePath = "visits/$safeVisitId/$safeSchoolId/$categoryId/${photoId}_$fileName"
+                                val storageRef = storage.reference.child(storagePath)
 
-                                val payload = hashMapOf(
-                                    "base64Data" to base64Data,
-                                    "mimeType" to mime,
-                                    "fileName" to fileName,
-                                    "categoryId" to categoryId,
-                                    "schoolName" to schoolName,
-                                    "udiseCode" to udiseCode,
-                                    "state" to state.ifBlank { "Rajasthan" },
-                                    "district" to district,
-                                    "block" to block,
-                                    "visitDate" to visitDate,
-                                    "year" to year,
-                                    "index" to (index + 1)
-                                )
+                                val metadata = StorageMetadata.Builder()
+                                    .setContentType(mime)
+                                    .setCustomMetadata("visitId", safeVisitId)
+                                    .setCustomMetadata("schoolId", safeSchoolId)
+                                    .setCustomMetadata("employeeId", employeeId)
+                                    .setCustomMetadata("categoryId", categoryId)
+                                    .setCustomMetadata("photoId", photoId)
+                                    .setCustomMetadata("fileName", fileName)
+                                    .build()
 
-                                val callable = functions.getHttpsCallable("uploadPhotoToDrive").apply {
-                                    setTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+                                val uploadTask = storageRef.putBytes(bytes, metadata)
+                                Tasks.await(uploadTask)
+
+                                val downloadUrlTask = storageRef.downloadUrl
+                                val downloadUrl = Tasks.await(downloadUrlTask).toString()
+
+                                // Save photo metadata to Firestore: visits/{visitId}/photos/{photoId}
+                                if (firestore != null && safeVisitId.isNotBlank()) {
+                                    try {
+                                        val now = System.currentTimeMillis()
+                                        val photoMeta = hashMapOf(
+                                            "photoId" to photoId,
+                                            "visitId" to safeVisitId,
+                                            "schoolId" to safeSchoolId,
+                                            "employeeId" to employeeId,
+                                            "category" to categoryId,
+                                            "storagePath" to storagePath,
+                                            "downloadUrl" to downloadUrl,
+                                            "createdAt" to now,
+                                            "uploadedAt" to now,
+                                            "status" to "UPLOADED",
+                                            "fileName" to fileName,
+                                            "contentType" to mime,
+                                            "fileSize" to bytes.size.toLong()
+                                        )
+
+                                        val metaTask = firestore.collection("visits")
+                                            .document(safeVisitId)
+                                            .collection("photos")
+                                            .document(photoId)
+                                            .set(photoMeta)
+                                        Tasks.await(metaTask)
+                                    } catch (metaErr: Exception) {
+                                        Log.w("MediaStorageHelper", "Error saving photo metadata in Firestore: ${metaErr.message}")
+                                    }
                                 }
-                                val task = callable.call(payload)
-                                val result = Tasks.await(task)
-                                val dataMap = result.data as? Map<*, *>
-                                val driveUrl = (dataMap?.get("url") as? String)
-                                    ?: (dataMap?.get("directUrl") as? String)
-                                    ?: (dataMap?.get("webViewLink") as? String)
 
-                                if (!driveUrl.isNullOrBlank()) {
-                                    Log.d("MediaStorageHelper", "Successfully uploaded $fileName to Drive: $driveUrl")
-                                    updatedUris.add(driveUrl)
-                                } else {
-                                    Log.w("MediaStorageHelper", "Drive returned blank URL for $fileName, response: $dataMap")
-                                    updatedUris.add(uriStr)
-                                }
+                                Log.d("MediaStorageHelper", "Successfully uploaded $fileName to Firebase Storage: $downloadUrl")
+                                updatedUris.add(downloadUrl)
                             } catch (e: Exception) {
-                                Log.e("MediaStorageHelper", "Drive upload failed for $uriStr, keeping local reference: ${e.message}", e)
+                                Log.e("MediaStorageHelper", "Firebase Storage upload failed for $uriStr, keeping local reference: ${e.message}", e)
                                 updatedUris.add(uriStr)
                             }
                         } else {
-                            if (functions == null) Log.e("MediaStorageHelper", "FirebaseFunctions instance is null")
-                            if (bytes == null || bytes.isEmpty()) Log.e("MediaStorageHelper", "Failed to read bytes for media URI: $uriStr")
+                            Log.e("MediaStorageHelper", "Failed to read bytes for media URI: $uriStr")
                             updatedUris.add(uriStr)
                         }
+                        processedItems++
+                        onProgress?.invoke(processedItems, totalItems)
                     }
                 }
                 updatedMap[categoryId] = updatedUris
@@ -202,13 +235,13 @@ object MediaStorageHelper {
 
             photosAdapter.toJson(updatedMap)
         } catch (e: Exception) {
-            Log.e("MediaStorageHelper", "Error processing photosJson for Google Drive upload", e)
+            Log.e("MediaStorageHelper", "Error processing photosJson for Firebase Storage upload", e)
             photosJson
         }
     }
 
     /**
-     * Backward-compatible delegation to Google Drive upload.
+     * Backward-compatible overload.
      */
     suspend fun uploadPhotosJsonToFirebaseStorage(
         context: Context,
@@ -216,16 +249,52 @@ object MediaStorageHelper {
         visitId: String,
         photosJson: String
     ): String {
-        return uploadPhotosJsonToGoogleDrive(
+        return uploadPhotosJsonToFirebaseStorage(
             context = context,
-            schoolName = schoolId,
-            udiseCode = "",
-            state = "Rajasthan",
-            district = "",
-            block = "",
-            visitDate = "",
+            visitId = visitId,
+            schoolId = schoolId,
+            employeeId = "",
             photosJson = photosJson
         )
+    }
+
+    /**
+     * Deletes a photo from Firebase Storage and deletes its metadata from Firestore.
+     */
+    suspend fun deletePhotoFromFirebaseStorage(
+        visitId: String,
+        photoUrlOrPath: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val storage = FirebaseUtils.storage ?: return@withContext false
+            val firestore = FirebaseUtils.firestore
+
+            if (photoUrlOrPath.startsWith("http://") || photoUrlOrPath.startsWith("https://") || photoUrlOrPath.startsWith("gs://")) {
+                val ref = storage.getReferenceFromUrl(photoUrlOrPath)
+                val deleteTask = ref.delete()
+                Tasks.await(deleteTask)
+
+                // Try to find and delete photo metadata doc in Firestore
+                if (firestore != null && visitId.isNotBlank()) {
+                    try {
+                        val photosCol = firestore.collection("visits").document(visitId).collection("photos")
+                        val queryTask = photosCol.whereEqualTo("downloadUrl", photoUrlOrPath).get()
+                        val snap = Tasks.await(queryTask)
+                        for (doc in snap.documents) {
+                            Tasks.await(doc.reference.delete())
+                        }
+                    } catch (e: Exception) {
+                        Log.w("MediaStorageHelper", "Failed to delete photo metadata document: ${e.message}")
+                    }
+                }
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            Log.e("MediaStorageHelper", "Error deleting photo from Firebase Storage: ${e.message}", e)
+            false
+        }
     }
 
     private fun readMediaBytes(context: Context, uriStr: String): ByteArray? {
@@ -294,24 +363,15 @@ object MediaStorageHelper {
     }
 
     /**
-     * Generates structured Google Drive folder path:
-     * SOE VISIT / State / District / Block / School Name / Visit Date /
+     * Generates structured Storage folder path:
+     * visits / visitId / schoolId / category
      */
-    fun getDriveFolderPath(
-        state: String,
-        district: String,
-        block: String,
-        schoolName: String,
-        visitDate: String
+    fun getStorageFolderPath(
+        visitId: String,
+        schoolId: String,
+        category: String
     ): String {
-        fun sanitize(s: String) = s.replace("/", "-").replace("\\", "-").trim().ifBlank { "Unknown" }
-        val sState = sanitize(state.ifBlank { "Rajasthan" })
-        val sDistrict = sanitize(district)
-        val sBlock = sanitize(block)
-        val sSchool = sanitize(schoolName)
-        val sDate = sanitize(visitDate)
-
-        return "SOE VISIT/$sState/$sDistrict/$sBlock/$sSchool/$sDate"
+        return "visits/$visitId/$schoolId/$category"
     }
 
     /**

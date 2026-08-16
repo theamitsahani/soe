@@ -59,6 +59,13 @@ service cloud.firestore {
       allow create: if isAdmin() || (isEmployee() && request.resource.data.employeeId == request.auth.uid);
       allow update: if isAdmin() || (isEmployee() && resource.data.employeeId == request.auth.uid);
       allow delete: if isAdmin();
+
+      // Photos subcollection for photo metadata
+      match /photos/{photoId} {
+        allow read: if isAuthenticated();
+        allow create, update: if isAuthenticated();
+        allow delete: if isAdmin() || isAuthenticated();
+      }
     }
 
     // Default deny all other collections

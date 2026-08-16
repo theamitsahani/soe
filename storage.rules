@@ -14,6 +14,13 @@ service firebase.storage {
           && (request.resource.contentType.matches('image/.*') || request.resource.contentType.matches('video/.*'));
     }
 
+    // Structured visit photos path: visits/{visitId}/{schoolId}/{categoryId}/{photoId}_{fileName}
+    match /visits/{visitId}/{schoolId}/{category}/{fileName} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isValidMedia();
+      allow delete: if isAuthenticated();
+    }
+
     // School visit photos and media
     match /schools/{schoolId}/visits/{visitId}/{allPaths=**} {
       allow read: if isAuthenticated();
