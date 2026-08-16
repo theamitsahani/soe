@@ -150,6 +150,10 @@ object MediaStorageHelper {
                                 val ext = if (isVideo) "mp4" else "jpg"
                                 val fileName = getStandardizedFileName(categoryId, index, ext)
 
+                                val year = if (visitDate.isNotBlank()) {
+                                    Regex("""\b(20\d\d)\b""").find(visitDate)?.value ?: ""
+                                } else ""
+
                                 val payload = hashMapOf(
                                     "base64Data" to base64Data,
                                     "mimeType" to mime,
@@ -161,6 +165,7 @@ object MediaStorageHelper {
                                     "district" to district,
                                     "block" to block,
                                     "visitDate" to visitDate,
+                                    "year" to year,
                                     "index" to (index + 1)
                                 )
 
@@ -309,13 +314,13 @@ object MediaStorageHelper {
      */
     fun getStandardizedFileName(categoryId: String, index: Int, extension: String = "jpg"): String {
         val ext = extension.trimStart('.')
-        return when (categoryId.lowercase()) {
-            "school_photo" -> "School_Photo.$ext"
-            "explaining_app" -> "Explaining_App.$ext"
-            "students_smart_board" -> "Smart_Board.$ext"
-            "principal_photo" -> "Principal.$ext"
-            "letter_photo" -> "Letter.$ext"
-            else -> "Other_${String.format("%02d", index + 1)}.$ext"
+        return when (categoryId.lowercase().trim()) {
+            "school_photo" -> "01_School_Photo.$ext"
+            "explaining_app" -> "02_Explaining_App.$ext"
+            "students_smart_board", "smart_board" -> "03_Smart_Board.$ext"
+            "principal_photo", "principal" -> "04_Principal.$ext"
+            "letter_photo", "letter" -> "05_Letter.$ext"
+            else -> "06_Other_Media_${index + 1}.$ext"
         }
     }
 

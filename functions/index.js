@@ -182,7 +182,7 @@ exports.uploadPhotoToDrive = functions
     if (!context.auth || !context.auth.uid) {
       throw new functions.https.HttpsError(
         "unauthenticated",
-        "You must be authenticated to upload visit media."
+        "Authentication required: You must be logged in to upload visit photos."
       );
     }
 
@@ -199,16 +199,31 @@ exports.uploadPhotoToDrive = functions
       visitDate,
       year,
       index
-    } = data;
+    } = data || {};
 
-    if (!base64Data) {
-      throw new functions.https.HttpsError("invalid-argument", "Missing media base64Data.");
+    if (!base64Data || typeof base64Data !== "string") {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Invalid argument: Missing or empty base64Data for media upload."
+      );
     }
 
-    const drive = getDriveClient();
-
+    // 2. Initialize Drive Client
+    let drive;
     try {
-      const { targetFolderId, path } = await resolveCategoryFolderId(drive, {
+      drive = getDriveClient();
+    } catch (authErr) {
+      console.error("Google Drive Auth Initialization Failure:", authErr.message);
+      throw new functions.https.HttpsError(
+        "unauthenticated",
+        "Google Drive authentication failed. Please verify runtime service account configuration."
+      );
+    }
+
+    // 3. Resolve folder hierarchy
+    let folderInfo;
+    try {
+      folderInfo = await resolveCategoryFolderId(drive, {
         year,
         state,
         district,
@@ -218,8 +233,25 @@ exports.uploadPhotoToDrive = functions
         visitDate,
         categoryId
       });
+    } catch (folderErr) {
+      console.error("Google Drive Folder Creation Failure:", folderErr.message);
+      if (folderErr.status === 403 || folderErr.code === 403 || (folderErr.message && folderErr.message.includes("permission"))) {
+        throw new functions.https.HttpsError(
+          "permission-denied",
+          "Google Drive permission denied when accessing target root folder. Ensure service account has Editor access."
+        );
+      }
+      throw new functions.https.HttpsError(
+        "internal",
+        `Failed to create or resolve Drive folder structure: ${folderErr.message}`
+      );
+    }
 
-      const effectiveFileName = getStandardFileName(categoryId, fileName, index || 1);
+    // 4. File upload to Drive
+    const { targetFolderId, path } = folderInfo;
+    const effectiveFileName = getStandardFileName(categoryId, fileName, index || 1);
+
+    try {
       const fileBuffer = Buffer.from(base64Data, "base64");
       const bufferStream = new stream.PassThrough();
       bufferStream.end(fileBuffer);
@@ -238,24 +270,12 @@ exports.uploadPhotoToDrive = functions
       });
 
       const fileId = createRes.data.id;
-
-      // Set public reader permission so Android Coil and web viewers can load the media
-      try {
-        await drive.permissions.create({
-          fileId: fileId,
-          requestBody: {
-            role: "reader",
-            type: "anyone"
-          },
-          supportsAllDrives: true
-        });
-      } catch (permErr) {
-        console.warn("Could not set reader permission:", permErr.message);
+      if (!fileId) {
+        throw new Error("Drive API returned an empty file ID.");
       }
 
-      // High performance direct URL for Coil / Image loaders
-      const directUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
       const viewUrl = createRes.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
+      const directUrl = createRes.data.webContentLink || `https://drive.google.com/uc?export=download&id=${fileId}`;
 
       return {
         success: true,
@@ -268,9 +288,18 @@ exports.uploadPhotoToDrive = functions
         folderId: targetFolderId,
         drivePath: path
       };
-    } catch (err) {
-      console.error("Failed to upload photo to Google Drive:", err);
-      throw new functions.https.HttpsError("internal", err.message || "Failed to upload photo to Google Drive.");
+    } catch (uploadErr) {
+      console.error("Google Drive File Upload Failure:", uploadErr.message);
+      if (uploadErr.status === 403 || uploadErr.code === 403) {
+        throw new functions.https.HttpsError(
+          "permission-denied",
+          "Google Drive permission denied during file upload."
+        );
+      }
+      throw new functions.https.HttpsError(
+        "internal",
+        `Failed to upload file to Google Drive: ${uploadErr.message}`
+      );
     }
   });
 
