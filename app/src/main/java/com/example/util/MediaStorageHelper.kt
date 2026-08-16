@@ -114,68 +114,75 @@ object MediaStorageHelper {
     }
 
     /**
-     * Uploads all photos/videos in photosJson to Firebase Storage and returns updated photosJson
-     * containing the permanent public/download URLs.
+     * Uploads all photos/videos in photosJson to Google Drive via Firebase Cloud Function
+     * and returns updated photosJson containing the permanent Google Drive direct URLs.
      */
-    suspend fun uploadPhotosJsonToFirebaseStorage(
+    suspend fun uploadPhotosJsonToGoogleDrive(
         context: Context,
-        schoolId: String,
-        visitId: String,
+        schoolName: String,
+        udiseCode: String = "",
+        state: String = "Rajasthan",
+        district: String = "",
+        block: String = "",
+        visitDate: String = "",
         photosJson: String
     ): String = withContext(Dispatchers.IO) {
-        val storage = FirebaseUtils.storage ?: return@withContext photosJson
-        val storageRef = storage.reference
+        if (photosJson.isBlank() || photosJson == "{}") return@withContext photosJson
 
         try {
             val originalMap = photosAdapter.fromJson(photosJson) ?: return@withContext photosJson
             val updatedMap = mutableMapOf<String, List<String>>()
+            val functions = FirebaseUtils.functions
 
             for ((categoryId, uriList) in originalMap) {
                 val updatedUris = mutableListOf<String>()
                 for ((index, uriStr) in uriList.withIndex()) {
                     if (uriStr.startsWith("http://") || uriStr.startsWith("https://")) {
-                        // Already uploaded to Firebase Storage or remote URL
+                        // Already uploaded to Google Drive or remote URL
                         updatedUris.add(uriStr)
                     } else {
-                        // Upload local file or content URI to Firebase Storage
-                        try {
-                            val isVideo = isMediaVideo(uriStr, context)
-                            val ext = if (isVideo) "mp4" else "jpg"
-                            val fileName = getStandardizedFileName(categoryId, index, ext)
-                            val cleanSchoolId = schoolId.ifBlank { "general" }
-                            val cleanVisitId = visitId.ifBlank { UUID.randomUUID().toString() }
-                            val destinationPath = "schools/$cleanSchoolId/visits/$cleanVisitId/${System.currentTimeMillis()}_$fileName"
-                            val itemRef = storageRef.child(destinationPath)
+                        val bytes = readMediaBytes(context, uriStr)
+                        if (bytes != null && bytes.isNotEmpty() && functions != null) {
+                            try {
+                                val isVideo = isMediaVideo(uriStr, context)
+                                val mime = if (isVideo) "video/mp4" else "image/jpeg"
+                                val base64Data = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                                val ext = if (isVideo) "mp4" else "jpg"
+                                val fileName = getStandardizedFileName(categoryId, index, ext)
 
-                            val uploadUri = when {
-                                uriStr.startsWith("file://") -> {
-                                    val file = File(Uri.parse(uriStr).path ?: "")
-                                    if (file.exists()) Uri.fromFile(file) else Uri.parse(uriStr)
+                                val payload = hashMapOf(
+                                    "base64Data" to base64Data,
+                                    "mimeType" to mime,
+                                    "fileName" to fileName,
+                                    "categoryId" to categoryId,
+                                    "schoolName" to schoolName,
+                                    "udiseCode" to udiseCode,
+                                    "state" to state.ifBlank { "Rajasthan" },
+                                    "district" to district,
+                                    "block" to block,
+                                    "visitDate" to visitDate,
+                                    "index" to (index + 1)
+                                )
+
+                                val callable = functions.getHttpsCallable("uploadPhotoToDrive")
+                                val task = callable.call(payload)
+                                val result = Tasks.await(task)
+                                val dataMap = result.data as? Map<*, *>
+                                val driveUrl = (dataMap?.get("url") as? String)
+                                    ?: (dataMap?.get("directUrl") as? String)
+                                    ?: (dataMap?.get("webViewLink") as? String)
+
+                                if (!driveUrl.isNullOrBlank()) {
+                                    Log.d("MediaStorageHelper", "Successfully uploaded $fileName to Drive: $driveUrl")
+                                    updatedUris.add(driveUrl)
+                                } else {
+                                    updatedUris.add(uriStr)
                                 }
-                                uriStr.startsWith("/") -> {
-                                    val file = File(uriStr)
-                                    if (file.exists()) Uri.fromFile(file) else Uri.parse("file://$uriStr")
-                                }
-                                else -> Uri.parse(uriStr)
+                            } catch (e: Exception) {
+                                Log.w("MediaStorageHelper", "Drive upload failed for $uriStr, keeping local reference: ${e.message}")
+                                updatedUris.add(uriStr)
                             }
-
-                            val mime = if (isVideo) "video/mp4" else "image/jpeg"
-                            val metadata = StorageMetadata.Builder()
-                                .setContentType(mime)
-                                .setCustomMetadata("categoryId", categoryId)
-                                .setCustomMetadata("schoolId", cleanSchoolId)
-                                .setCustomMetadata("visitId", cleanVisitId)
-                                .build()
-
-                            val uploadTask = itemRef.putFile(uploadUri, metadata)
-                            Tasks.await(uploadTask)
-
-                            val downloadUrlTask = itemRef.downloadUrl
-                            val downloadUri = Tasks.await(downloadUrlTask)
-                            updatedUris.add(downloadUri.toString())
-                            Log.d("MediaStorageHelper", "Successfully uploaded $fileName to Firebase Storage: $downloadUri")
-                        } catch (e: Exception) {
-                            Log.w("MediaStorageHelper", "Failed to upload photo to Firebase Storage, keeping local URI: $uriStr", e)
+                        } else {
                             updatedUris.add(uriStr)
                         }
                     }
@@ -185,8 +192,54 @@ object MediaStorageHelper {
 
             photosAdapter.toJson(updatedMap)
         } catch (e: Exception) {
-            Log.e("MediaStorageHelper", "Error processing photosJson for Firebase Storage upload", e)
+            Log.e("MediaStorageHelper", "Error processing photosJson for Google Drive upload", e)
             photosJson
+        }
+    }
+
+    /**
+     * Backward-compatible delegation to Google Drive upload.
+     */
+    suspend fun uploadPhotosJsonToFirebaseStorage(
+        context: Context,
+        schoolId: String,
+        visitId: String,
+        photosJson: String
+    ): String {
+        return uploadPhotosJsonToGoogleDrive(
+            context = context,
+            schoolName = schoolId,
+            udiseCode = "",
+            state = "Rajasthan",
+            district = "",
+            block = "",
+            visitDate = "",
+            photosJson = photosJson
+        )
+    }
+
+    private fun readMediaBytes(context: Context, uriStr: String): ByteArray? {
+        return try {
+            when {
+                uriStr.startsWith("content://") -> {
+                    context.contentResolver.openInputStream(Uri.parse(uriStr))?.use { it.readBytes() }
+                }
+                uriStr.startsWith("file://") -> {
+                    val file = File(Uri.parse(uriStr).path ?: "")
+                    if (file.exists()) file.readBytes() else null
+                }
+                uriStr.startsWith("/") -> {
+                    val file = File(uriStr)
+                    if (file.exists()) file.readBytes() else null
+                }
+                else -> {
+                    val file = File(uriStr)
+                    if (file.exists()) file.readBytes() else null
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("MediaStorageHelper", "Error reading media bytes for $uriStr", e)
+            null
         }
     }
 

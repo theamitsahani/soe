@@ -142,12 +142,23 @@ class SyncManager(private val context: Context) {
     suspend fun uploadSingleVisitToServer(visit: Visit): Boolean = withContext(Dispatchers.IO) {
         val fStore = firestore ?: return@withContext false
         try {
-            // 1. Upload photos to Firebase Storage and get permanent download URLs
+            // 1. Upload photos to Google Drive and get permanent direct URLs
+            val answers = try {
+                val moshi = com.squareup.moshi.Moshi.Builder().addLast(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory()).build()
+                moshi.adapter(com.example.data.model.VisitAnswers::class.java).fromJson(visit.answersJson)
+            } catch (_: Exception) {
+                null
+            }
+
             val updatedPhotosJson = try {
-                MediaStorageHelper.uploadPhotosJsonToFirebaseStorage(
+                MediaStorageHelper.uploadPhotosJsonToGoogleDrive(
                     context = context,
-                    schoolId = visit.schoolId,
-                    visitId = visit.visitId,
+                    schoolName = visit.schoolName.ifBlank { answers?.q3_schoolName ?: "School" },
+                    udiseCode = answers?.q4_udiseCode ?: "",
+                    state = visit.state.ifBlank { answers?.q23_state ?: "Rajasthan" },
+                    district = visit.district.ifBlank { answers?.q5_district ?: "" },
+                    block = visit.block.ifBlank { answers?.q6_block ?: "" },
+                    visitDate = visit.visitDate.ifBlank { answers?.q2_visitDate ?: "" },
                     photosJson = visit.photosJson
                 )
             } catch (e: Exception) {
