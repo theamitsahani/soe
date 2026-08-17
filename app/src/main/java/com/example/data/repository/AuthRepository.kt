@@ -743,22 +743,7 @@ class AuthRepository(private val context: Context) {
             // Check local duplicate email for new user or email change
             val existingLocal = db.userDao().getUserByEmail(cleanEmail)
             if (existingLocal != null && existingLocal.userId != userId && !existingLocal.isDeleted) {
-                // If local user exists, check if it actually exists in Firestore or if it was a failed local orphan
-                var existsInRemote = true
-                val fStore = firestore
-                if (fStore != null) {
-                    try {
-                        val queryTask = fStore.collection("users").whereEqualTo("email", cleanEmail).limit(1).get()
-                        val snap = Tasks.await(queryTask)
-                        if (snap.isEmpty) {
-                            existsInRemote = false
-                            db.userDao().deleteUserById(existingLocal.userId)
-                        }
-                    } catch (_: Exception) {}
-                }
-                if (existsInRemote) {
-                    return@withContext Result.failure(Exception("An officer with email $cleanEmail already exists. Please use a different email address."))
-                }
+                return@withContext Result.failure(Exception("An officer with email $cleanEmail already exists. Please use a different email address."))
             }
 
             // If new user, create Firebase Auth account using secondary auth with a secure temporary password
@@ -802,7 +787,24 @@ class AuthRepository(private val context: Context) {
             // For newly created employees, set mustChangePassword = true so they set their own password on first login
             val mustChangePassword = if (isNewUser) true else user.mustChangePassword
 
-            // Update directly in Firestore users collection FIRST
+            // Update in local Room database cache
+            val entity = UserEntity(
+                userId = userId,
+                name = cleanName,
+                email = cleanEmail,
+                mobile = cleanMobile,
+                state = cleanState,
+                district = cleanDistrict,
+                role = UserRole.EMPLOYEE.name,
+                status = user.status.name,
+                isDeleted = user.isDeleted,
+                deletedAt = user.deletedAt,
+                mustChangePassword = mustChangePassword,
+                createdAt = if (user.createdAt > 0L) user.createdAt else System.currentTimeMillis()
+            )
+            db.userDao().insertUser(entity)
+
+            // Update directly in Firestore users collection
             if (fStore != null) {
                 val userMap = mutableMapOf<String, Any>(
                     "userId" to userId,
@@ -825,23 +827,6 @@ class AuthRepository(private val context: Context) {
                 val setTask = fStore.collection("users").document(userId).set(userMap, SetOptions.merge())
                 Tasks.await(setTask)
             }
-
-            // Update in local Room database cache ONLY AFTER Firestore write succeeds
-            val entity = UserEntity(
-                userId = userId,
-                name = cleanName,
-                email = cleanEmail,
-                mobile = cleanMobile,
-                state = cleanState,
-                district = cleanDistrict,
-                role = UserRole.EMPLOYEE.name,
-                status = user.status.name,
-                isDeleted = user.isDeleted,
-                deletedAt = user.deletedAt,
-                mustChangePassword = mustChangePassword,
-                createdAt = if (user.createdAt > 0L) user.createdAt else System.currentTimeMillis()
-            )
-            db.userDao().insertUser(entity)
 
             return@withContext Result.success(generatedPassword)
         } catch (e: Exception) {
