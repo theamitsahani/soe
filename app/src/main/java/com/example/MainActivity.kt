@@ -298,7 +298,8 @@ class MainActivity : ComponentActivity() {
                                                                 employeeId = emp.userId,
                                                                 employeeName = emp.name,
                                                                 visitDate = date,
-                                                                notes = notes
+                                                                notes = notes,
+                                                                employeeEmail = emp.email
                                                             )
                                                             callback(res)
                                                         }

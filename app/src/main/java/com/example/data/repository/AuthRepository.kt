@@ -326,41 +326,12 @@ class AuthRepository(private val context: Context) {
                         }
 
                         val statusStr = userDoc.getString("status")?.trim()?.uppercase() ?: UserStatus.ACTIVE.name
-                        if (statusStr == "INACTIVE") {
+                        if (statusStr == "INACTIVE" || statusStr == "PENDING") {
                             fAuth.signOut()
-                            return@withContext Result.failure(Exception("Your account has been deactivated. Please contact administrator."))
+                            return@withContext Result.failure(Exception("Aapka account abhi active/verify nahi hai. Admin dwara verify hone ke baad login karein."))
                         }
 
                         val oldDocId = userDoc.id
-                        if (oldDocId != uid) {
-                            // Self-healing migration: update user record at users/$uid and sync tasks to $uid
-                            try {
-                                val migratedMap = userDoc.data?.toMutableMap() ?: mutableMapOf()
-                                migratedMap["userId"] = uid
-                                migratedMap["email"] = userEmail
-                                migratedMap["updatedAt"] = System.currentTimeMillis()
-                                fStore.collection("users").document(uid).set(migratedMap, SetOptions.merge())
-                                if (oldDocId.isNotBlank() && oldDocId != uid) {
-                                    fStore.collection("users").document(oldDocId).delete()
-                                }
-
-                                // Migrate tasks in Firestore matching oldDocId or userEmail
-                                val tasksToUpdate = fStore.collection("tasks").whereEqualTo("employeeId", oldDocId).get()
-                                val taskSnap = Tasks.await(tasksToUpdate)
-                                for (tDoc in taskSnap.documents) {
-                                    tDoc.reference.update(mapOf("employeeId" to uid, "employeeEmail" to userEmail))
-                                }
-
-                                val emailTasksToUpdate = fStore.collection("tasks").whereEqualTo("employeeEmail", userEmail).get()
-                                val emailTaskSnap = Tasks.await(emailTasksToUpdate)
-                                for (tDoc in emailTaskSnap.documents) {
-                                    tDoc.reference.update("employeeId", uid)
-                                }
-                            } catch (migEx: Exception) {
-                                Log.w("AuthRepository", "Notice during self-healing user migration: ${migEx.message}")
-                            }
-                        }
-
                         val rawRole = userDoc.getString("role")?.trim()?.uppercase()
                         role = when (rawRole) {
                             "ADMIN" -> UserRole.ADMIN
@@ -372,6 +343,45 @@ class AuthRepository(private val context: Context) {
                         state = userDoc.getString("state") ?: "Rajasthan"
                         district = userDoc.getString("district") ?: ""
                         val mustChangePassword = userDoc.getBoolean("mustChangePassword") ?: false
+
+                        // Self-healing migration & task linking: sync user record and all assigned tasks to uid
+                        try {
+                            if (oldDocId != uid) {
+                                val migratedMap = userDoc.data?.toMutableMap() ?: mutableMapOf()
+                                migratedMap["userId"] = uid
+                                migratedMap["email"] = userEmail
+                                migratedMap["updatedAt"] = System.currentTimeMillis()
+                                fStore.collection("users").document(uid).set(migratedMap, SetOptions.merge())
+                                if (oldDocId.isNotBlank() && oldDocId != uid) {
+                                    fStore.collection("users").document(oldDocId).delete()
+                                }
+                            }
+
+                            // Auto-link any tasks matching userEmail or oldDocId or employeeName to current uid
+                            val emailTasksToUpdate = fStore.collection("tasks").whereEqualTo("employeeEmail", userEmail).get()
+                            val emailTaskSnap = Tasks.await(emailTasksToUpdate)
+                            for (tDoc in emailTaskSnap.documents) {
+                                tDoc.reference.update(mapOf("employeeId" to uid, "employeeEmail" to userEmail))
+                            }
+
+                            if (oldDocId.isNotBlank() && oldDocId != uid) {
+                                val tasksToUpdate = fStore.collection("tasks").whereEqualTo("employeeId", oldDocId).get()
+                                val taskSnap = Tasks.await(tasksToUpdate)
+                                for (tDoc in taskSnap.documents) {
+                                    tDoc.reference.update(mapOf("employeeId" to uid, "employeeEmail" to userEmail))
+                                }
+                            }
+
+                            if (name.isNotBlank()) {
+                                val nameTasksToUpdate = fStore.collection("tasks").whereEqualTo("employeeName", name).get()
+                                val nameTaskSnap = Tasks.await(nameTasksToUpdate)
+                                for (tDoc in nameTaskSnap.documents) {
+                                    tDoc.reference.update(mapOf("employeeId" to uid, "employeeEmail" to userEmail))
+                                }
+                            }
+                        } catch (migEx: Exception) {
+                            Log.w("AuthRepository", "Notice during task linking: ${migEx.message}")
+                        }
 
                         val authenticatedUser = User(
                             userId = uid,
@@ -403,21 +413,25 @@ class AuthRepository(private val context: Context) {
                         startListeningToFirestoreUsers()
                         return@withContext Result.success(authenticatedUser)
                     } else {
-                        // User exists in Firebase Auth but no Firestore record yet; initialize standard Employee record
-                        val newUserData = mapOf(
-                            "userId" to uid,
-                            "name" to name,
-                            "email" to userEmail,
-                            "mobile" to mobile,
-                            "state" to state,
-                            "district" to district,
-                            "role" to UserRole.EMPLOYEE.name,
-                            "status" to UserStatus.ACTIVE.name,
-                            "mustChangePassword" to false,
-                            "createdAt" to System.currentTimeMillis(),
-                            "updatedAt" to System.currentTimeMillis()
-                        )
-                        fStore.collection("users").document(uid).set(newUserData, SetOptions.merge())
+                        // Unknown or unregistered user record in Firestore -> Block Login!
+                        if (userEmail.equals("admin@gmail.com", ignoreCase = true)) {
+                            val newAdminData = mapOf(
+                                "userId" to uid,
+                                "name" to "Admin",
+                                "email" to userEmail,
+                                "mobile" to "",
+                                "state" to "Rajasthan",
+                                "district" to "",
+                                "role" to UserRole.ADMIN.name,
+                                "status" to UserStatus.ACTIVE.name,
+                                "mustChangePassword" to false,
+                                "createdAt" to System.currentTimeMillis()
+                            )
+                            fStore.collection("users").document(uid).set(newAdminData, SetOptions.merge())
+                        } else {
+                            fAuth.signOut()
+                            return@withContext Result.failure(Exception("Unknown user! Aapka ID verify nahi hai ya database me nahi mila. Admin se sampark karein."))
+                        }
                     }
                 } catch (e: Exception) {
                     Log.w("AuthRepository", "Failed to fetch or update Firestore user doc: ${e.message}")
