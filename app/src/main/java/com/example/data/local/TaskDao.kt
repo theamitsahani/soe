@@ -13,7 +13,7 @@ interface TaskDao {
     @Query("SELECT * FROM tasks ORDER BY createdAt DESC")
     fun getAllTasks(): Flow<List<Task>>
 
-    @Query("SELECT * FROM tasks WHERE employeeId = :employeeId OR (employeeEmail = :userEmail AND :userEmail != '') OR employeeId = :userEmail ORDER BY createdAt DESC")
+    @Query("SELECT * FROM tasks WHERE LOWER(TRIM(employeeId)) = LOWER(TRIM(:employeeId)) OR (:userEmail != '' AND LOWER(TRIM(employeeEmail)) = LOWER(TRIM(:userEmail))) OR (:userEmail != '' AND LOWER(TRIM(employeeId)) = LOWER(TRIM(:userEmail))) OR (:employeeId != '' AND LOWER(TRIM(employeeEmail)) = LOWER(TRIM(:employeeId))) ORDER BY createdAt DESC")
     fun getTasksByEmployee(employeeId: String, userEmail: String = ""): Flow<List<Task>>
 
     @Query("SELECT * FROM tasks WHERE taskId = :taskId LIMIT 1")

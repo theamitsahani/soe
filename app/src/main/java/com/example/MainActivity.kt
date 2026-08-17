@@ -353,14 +353,22 @@ class MainActivity : ComponentActivity() {
                                     EmployeeMainScreen(
                                         employeeUser = state.employeeUser,
                                         tasks = tasks.filter { task ->
-                                            task.employeeId == state.employeeUser.userId ||
-                                            (state.employeeUser.email.isNotBlank() && (task.employeeId.equals(state.employeeUser.email, ignoreCase = true) || task.employeeEmail.equals(state.employeeUser.email, ignoreCase = true))) ||
-                                            (state.employeeUser.name.isNotBlank() && task.employeeName.equals(state.employeeUser.name, ignoreCase = true))
+                                            val empId = state.employeeUser.userId.trim()
+                                            val empEmail = state.employeeUser.email.trim()
+                                            val empName = state.employeeUser.name.trim()
+
+                                            (empId.isNotBlank() && (task.employeeId.trim().equals(empId, ignoreCase = true) || task.employeeEmail.trim().equals(empId, ignoreCase = true))) ||
+                                            (empEmail.isNotBlank() && (task.employeeId.trim().equals(empEmail, ignoreCase = true) || task.employeeEmail.trim().equals(empEmail, ignoreCase = true))) ||
+                                            (empName.isNotBlank() && (task.employeeName.trim().equals(empName, ignoreCase = true) || task.employeeId.trim().equals(empName, ignoreCase = true)))
                                         },
                                         completedVisits = visits.filter { visit ->
-                                            visit.employeeId == state.employeeUser.userId ||
-                                            (state.employeeUser.email.isNotBlank() && visit.employeeId.equals(state.employeeUser.email, ignoreCase = true)) ||
-                                            (state.employeeUser.name.isNotBlank() && visit.employeeName.equals(state.employeeUser.name, ignoreCase = true))
+                                            val empId = state.employeeUser.userId.trim()
+                                            val empEmail = state.employeeUser.email.trim()
+                                            val empName = state.employeeUser.name.trim()
+
+                                            (empId.isNotBlank() && (visit.employeeId.trim().equals(empId, ignoreCase = true) || visit.employeeId.trim().equals(empEmail, ignoreCase = true))) ||
+                                            (empEmail.isNotBlank() && visit.employeeId.trim().equals(empEmail, ignoreCase = true)) ||
+                                            (empName.isNotBlank() && (visit.employeeName.trim().equals(empName, ignoreCase = true) || visit.employeeId.trim().equals(empName, ignoreCase = true)))
                                         },
                                         schools = schools,
                                         isOnline = isOnline,

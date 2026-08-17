@@ -148,16 +148,13 @@ fun AssignVisitsTab(
     var selectedVisitForDetails by remember { mutableStateOf<Visit?>(null) }
     var showAllTasksDialog by remember { mutableStateOf(false) }
 
-    // Exclude schools that are already assigned to a task or have a visit completed/submitted/reviewed
-    val completedOrAssignedSchoolIds = remember(assignedTasks, visits, schools) {
-        val fromTasks = assignedTasks.map { it.schoolId }
-        val fromVisits = visits.map { it.schoolId }
-        val fromSchoolDates = schools.filter { it.visitDate.isNotBlank() }.map { it.schoolId }
-        (fromTasks + fromVisits + fromSchoolDates).toSet()
+    // Exclude schools that currently have an active pending ASSIGNED task so they aren't assigned twice at the same time
+    val currentlyAssignedSchoolIds = remember(assignedTasks) {
+        assignedTasks.filter { it.status == com.example.data.model.VisitStatus.ASSIGNED }.map { it.schoolId }.toSet()
     }
 
-    val availableSchools = remember(schools, completedOrAssignedSchoolIds) {
-        schools.filter { school -> !completedOrAssignedSchoolIds.contains(school.schoolId) }
+    val availableSchools = remember(schools, currentlyAssignedSchoolIds) {
+        schools.filter { school -> !currentlyAssignedSchoolIds.contains(school.schoolId) }
     }
 
     val stateList = remember(availableSchools) {

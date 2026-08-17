@@ -24,7 +24,7 @@ class TaskRepository(private val context: Context) {
 
     fun getAllTasks(): Flow<List<Task>> = db.taskDao().getAllTasks()
 
-    fun getTasksByEmployee(employeeId: String): Flow<List<Task>> = db.taskDao().getTasksByEmployee(employeeId)
+    fun getTasksByEmployee(employeeId: String, userEmail: String = ""): Flow<List<Task>> = db.taskDao().getTasksByEmployee(employeeId, userEmail)
 
     fun startTasksRealtimeListener(role: UserRole? = null, userId: String? = null) {
         if (tasksListenerRegistration != null) return
@@ -75,7 +75,10 @@ class TaskRepository(private val context: Context) {
         val taskId = doc.getString("taskId")?.ifBlank { doc.id } ?: doc.id
         if (taskId.isBlank()) return null
         val schoolId = doc.getString("schoolId") ?: ""
-        val employeeId = doc.getString("employeeId") ?: ""
+        val employeeId = (doc.getString("employeeId") ?: doc.getString("empId") ?: doc.getString("userId") ?: "").trim()
+        val employeeEmail = (doc.getString("employeeEmail") ?: doc.getString("email") ?: doc.getString("userEmail") ?: "").trim()
+        val employeeName = (doc.getString("employeeName") ?: doc.getString("name") ?: doc.getString("userName") ?: "").trim()
+        
         var schoolName = doc.getString("schoolName") ?: ""
         if (schoolName.isBlank() && schoolId.isNotBlank()) {
             schoolName = db.schoolDao().getSchoolById(schoolId)?.schoolName ?: "School ($schoolId)"
@@ -88,6 +91,8 @@ class TaskRepository(private val context: Context) {
         val statusStr = doc.getString("status") ?: VisitStatus.ASSIGNED.name
         var status = try { VisitStatus.valueOf(statusStr) } catch (e: Exception) { VisitStatus.ASSIGNED }
 
+        val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+
         // If local database has this task marked as SUBMITTED or REVIEWED, or if matching visit exists, preserve it
         if (status == VisitStatus.ASSIGNED) {
             val localTask = db.taskDao().getTaskById(taskId)
@@ -95,8 +100,11 @@ class TaskRepository(private val context: Context) {
                 status = localTask.status
             } else if (visitId.isNotBlank() && db.visitDao().getVisitById(visitId) != null) {
                 status = VisitStatus.SUBMITTED
-            } else if (schoolId.isNotBlank() && db.visitDao().getVisitsListBySchool(schoolId).isNotEmpty()) {
-                status = VisitStatus.SUBMITTED
+            } else if (schoolId.isNotBlank()) {
+                val matchingVisits = db.visitDao().getVisitsListBySchool(schoolId)
+                if (matchingVisits.any { it.createdAt >= createdAt || it.updatedAt >= createdAt || (visitId.isNotBlank() && it.visitId == visitId) }) {
+                    status = VisitStatus.SUBMITTED
+                }
             }
         }
 
@@ -105,8 +113,8 @@ class TaskRepository(private val context: Context) {
             visitId = visitId,
             schoolId = schoolId,
             employeeId = employeeId,
-            employeeEmail = doc.getString("employeeEmail") ?: "",
-            employeeName = doc.getString("employeeName") ?: "",
+            employeeEmail = employeeEmail,
+            employeeName = employeeName,
             schoolName = schoolName,
             district = doc.getString("district") ?: "",
             block = doc.getString("block") ?: "",
@@ -114,7 +122,7 @@ class TaskRepository(private val context: Context) {
             visitDate = doc.getString("visitDate") ?: "",
             status = status,
             notes = doc.getString("notes") ?: "",
-            createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+            createdAt = createdAt
         )
     }
 
