@@ -20,11 +20,16 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayCircleFilled
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -36,9 +41,11 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,9 +65,13 @@ import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.example.data.model.PhotoCategory
 import com.example.data.model.Visit
+import com.example.ui.theme.Amber100
+import com.example.ui.theme.Amber600
 import com.example.ui.theme.Indigo600
 import com.example.ui.theme.Navy900
 import com.example.ui.theme.Red600
+import com.example.ui.theme.Slate100
+import com.example.ui.theme.Slate400
 import com.example.ui.theme.Slate500
 import com.example.ui.theme.Slate700
 import com.example.util.ExcelHelper
@@ -82,6 +93,13 @@ data class PhotoGridItem(
     val date: String
 )
 
+data class CategoryFolderData(
+    val categoryName: String,
+    val categoryId: String,
+    val photos: List<PhotoGridItem>,
+    val schoolCount: Int
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PhotoGalleryTab(
@@ -93,6 +111,8 @@ fun PhotoGalleryTab(
     var selectedBlock by remember { mutableStateOf("All Blocks") }
     var selectedSchoolName by remember { mutableStateOf("All Schools") }
     var selectedCategory by remember { mutableStateOf("All Categories") }
+
+    var openedCategoryName by remember { mutableStateOf<String?>(null) }
 
     var stateExpanded by remember { mutableStateOf(false) }
     var districtExpanded by remember { mutableStateOf(false) }
@@ -176,27 +196,79 @@ fun PhotoGalleryTab(
         }
     }
 
-    val filterDescription = remember(selectedState, selectedDistrict, selectedBlock, selectedSchoolName, selectedCategory) {
+    // Grouping by Category Folders based on current filter state
+    val categoryFolders = remember(filteredPhotos, selectedCategory) {
+        val groups = filteredPhotos.groupBy { it.categoryName }
+        if (selectedCategory != "All Categories") {
+            val photosForCat = groups[selectedCategory] ?: emptyList()
+            if (photosForCat.isNotEmpty()) {
+                listOf(
+                    CategoryFolderData(
+                        categoryName = selectedCategory,
+                        categoryId = photosForCat.first().categoryId,
+                        photos = photosForCat,
+                        schoolCount = photosForCat.map { it.schoolName }.distinct().size
+                    )
+                )
+            } else {
+                emptyList()
+            }
+        } else {
+            groups.map { (catName, pList) ->
+                CategoryFolderData(
+                    categoryName = catName,
+                    categoryId = pList.firstOrNull()?.categoryId ?: "",
+                    photos = pList,
+                    schoolCount = pList.map { it.schoolName }.distinct().size
+                )
+            }.sortedByDescending { it.photos.size }
+        }
+    }
+
+    val filterDescription = remember(selectedState, selectedDistrict, selectedBlock, selectedSchoolName, selectedCategory, openedCategoryName) {
         val parts = mutableListOf<String>()
         if (selectedState != "All States") parts.add(selectedState)
         if (selectedDistrict != "All Districts") parts.add(selectedDistrict)
         if (selectedBlock != "All Blocks") parts.add(selectedBlock)
         if (selectedSchoolName != "All Schools") parts.add(selectedSchoolName)
-        if (selectedCategory != "All Categories") parts.add(selectedCategory)
+        if (openedCategoryName != null) parts.add(openedCategoryName!!)
+        else if (selectedCategory != "All Categories") parts.add(selectedCategory)
         if (parts.isEmpty()) "All_Schools_Photos" else parts.joinToString("_")
     }
 
     val scope = rememberCoroutineScope()
-    var previewMediaUrl by remember { mutableStateOf<String?>(null) }
     var isExportingZip by remember { mutableStateOf(false) }
     var exportProgressText by remember { mutableStateOf("") }
     var exportErrorMessage by remember { mutableStateOf<String?>(null) }
+
+    fun downloadZip(photosToExport: List<PhotoGridItem>, desc: String) {
+        if (photosToExport.isEmpty() || isExportingZip) return
+        isExportingZip = true
+        exportProgressText = "Preparing ${photosToExport.size} photos..."
+        exportErrorMessage = null
+        scope.launch {
+            try {
+                ExcelHelper.exportPhotosAsZip(
+                    context = context,
+                    photos = photosToExport,
+                    filterDescription = desc
+                ) { current, total ->
+                    exportProgressText = "Archiving photo $current of $total..."
+                }
+            } catch (e: Exception) {
+                exportErrorMessage = e.localizedMessage ?: "Failed to export ZIP file."
+            } finally {
+                isExportingZip = false
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
+        // Top Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -204,31 +276,25 @@ fun PhotoGalleryTab(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("School Photo Gallery", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Navy900)
-                Text("${filteredPhotos.size} photos matching filters", fontSize = 12.sp, color = Slate500)
+                Text(
+                    text = if (openedCategoryName != null) {
+                        "Folder: $openedCategoryName (${filteredPhotos.count { it.categoryName == openedCategoryName }} photos)"
+                    } else {
+                        "${categoryFolders.size} Categories • ${filteredPhotos.size} Total Photos"
+                    },
+                    fontSize = 12.sp,
+                    color = Slate500
+                )
             }
 
             Button(
                 onClick = {
-                    if (filteredPhotos.isNotEmpty()) {
-                        isExportingZip = true
-                        exportProgressText = "Preparing ${filteredPhotos.size} photos..."
-                        exportErrorMessage = null
-                        scope.launch {
-                            try {
-                                ExcelHelper.exportPhotosAsZip(
-                                    context = context,
-                                    photos = filteredPhotos,
-                                    filterDescription = filterDescription
-                                ) { current, total ->
-                                    exportProgressText = "Archiving photo $current of $total..."
-                                }
-                            } catch (e: Exception) {
-                                exportErrorMessage = e.localizedMessage ?: "Failed to export ZIP file."
-                            } finally {
-                                isExportingZip = false
-                            }
-                        }
+                    val targetPhotos = if (openedCategoryName != null) {
+                        filteredPhotos.filter { it.categoryName == openedCategoryName }
+                    } else {
+                        filteredPhotos
                     }
+                    downloadZip(targetPhotos, filterDescription)
                 },
                 enabled = filteredPhotos.isNotEmpty() && !isExportingZip,
                 shape = RoundedCornerShape(10.dp),
@@ -246,7 +312,8 @@ fun PhotoGalleryTab(
                 } else {
                     Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Export ZIP (${filteredPhotos.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    val count = if (openedCategoryName != null) filteredPhotos.count { it.categoryName == openedCategoryName } else filteredPhotos.size
+                    Text("Export ZIP ($count)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -282,10 +349,10 @@ fun PhotoGalleryTab(
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // 1. Location Filters: State, District, Block
-        Text("1. Location Category Filters (स्थान फ़िल्टर)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Indigo600)
+        Text("1. Location Filters (स्थान फ़िल्टर)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Indigo600)
         Spacer(modifier = Modifier.height(6.dp))
 
         Row(
@@ -394,8 +461,8 @@ fun PhotoGalleryTab(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // 2. Photo Style & School Category Filters
-        Text("2. Photo Style & School Category Filters (फोटो स्टाइल एवं स्कूल फ़िल्टर)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Indigo600)
+        // 2. Photo Category & School Filters
+        Text("2. Category & School Filters (श्रेणी एवं स्कूल फ़िल्टर)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Indigo600)
         Spacer(modifier = Modifier.height(6.dp))
 
         Row(
@@ -406,13 +473,13 @@ fun PhotoGalleryTab(
             ExposedDropdownMenuBox(
                 expanded = categoryExpanded,
                 onExpandedChange = { categoryExpanded = !categoryExpanded },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1.1f)
             ) {
                 OutlinedTextField(
                     value = selectedCategory,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Photo Style / Category", fontSize = 11.sp) },
+                    label = { Text("Category Filter", fontSize = 11.sp) },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.menuAnchor()
@@ -426,6 +493,7 @@ fun PhotoGalleryTab(
                             text = { Text(cName, fontSize = 12.sp) },
                             onClick = {
                                 selectedCategory = cName
+                                openedCategoryName = null // Reset opened view to show the folder
                                 categoryExpanded = false
                             }
                         )
@@ -437,13 +505,13 @@ fun PhotoGalleryTab(
             ExposedDropdownMenuBox(
                 expanded = schoolExpanded,
                 onExpandedChange = { schoolExpanded = !schoolExpanded },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(0.9f)
             ) {
                 OutlinedTextField(
                     value = selectedSchoolName,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Filter by School", fontSize = 11.sp) },
+                    label = { Text("Filter School", fontSize = 11.sp) },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = schoolExpanded) },
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.menuAnchor()
@@ -467,79 +535,285 @@ fun PhotoGalleryTab(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        if (filteredPhotos.isEmpty()) {
+        // VIEW RENDERING: Opened Folder vs Folders Overview
+        if (openedCategoryName != null) {
+            // INSIDE AN OPENED CATEGORY FOLDER
+            val currentCatName = openedCategoryName!!
+            val currentPhotos = filteredPhotos.filter { it.categoryName == currentCatName }
+
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Amber100),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(28.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = Slate500, modifier = Modifier.size(44.dp))
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text("No photos found for selected filters", fontSize = 14.sp, color = Slate500)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        IconButton(
+                            onClick = { openedCategoryName = null },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color.White)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back to Folders",
+                                tint = Amber600,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.FolderOpen, contentDescription = null, tint = Amber600, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = currentCatName,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Navy900
+                                )
+                            }
+                            Text(
+                                text = "${currentPhotos.size} Photos from ${currentPhotos.map { it.schoolName }.distinct().size} Schools" +
+                                        if (selectedBlock != "All Blocks") " • $selectedBlock" else if (selectedDistrict != "All Districts") " • $selectedDistrict" else "",
+                                fontSize = 11.sp,
+                                color = Slate700
+                            )
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = { downloadZip(currentPhotos, "${filterDescription}_${currentCatName}") },
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Amber600),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Folder ZIP", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(filteredPhotos) { photo ->
-                    val isVideo = MediaStorageHelper.isMediaVideo(photo.url, context)
-                    Card(
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                        modifier = Modifier.clickable {
-                            if (isVideo) {
-                                MediaStorageHelper.openMedia(context, photo.url)
-                            } else {
-                                selectedPhotoItem = photo
-                            }
-                        }
-                    ) {
-                        Column {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(130.dp)
-                            ) {
-                                AsyncImage(
-                                    model = photo.url,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
 
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (currentPhotos.isEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(28.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = Slate500, modifier = Modifier.size(44.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text("No photos in this folder for current filters", fontSize = 14.sp, color = Slate500)
+                    }
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(currentPhotos) { photo ->
+                        val isVideo = MediaStorageHelper.isMediaVideo(photo.url, context)
+                        Card(
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                            modifier = Modifier.clickable {
                                 if (isVideo) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(Color.Black.copy(alpha = 0.35f)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            Icon(
-                                                Icons.Default.PlayCircleFilled,
-                                                contentDescription = "Play Video",
-                                                tint = Color.White,
-                                                modifier = Modifier.size(36.dp)
-                                            )
-                                            Text("VIDEO", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    MediaStorageHelper.openMedia(context, photo.url)
+                                } else {
+                                    selectedPhotoItem = photo
+                                }
+                            }
+                        ) {
+                            Column {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(130.dp)
+                                ) {
+                                    AsyncImage(
+                                        model = photo.url,
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+
+                                    if (isVideo) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(Color.Black.copy(alpha = 0.35f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Icon(
+                                                    Icons.Default.PlayCircleFilled,
+                                                    contentDescription = "Play Video",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(36.dp)
+                                                )
+                                                Text("VIDEO", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                            }
                                         }
                                     }
                                 }
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text(photo.schoolName, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Navy900, maxLines = 1)
+                                    Text(
+                                        text = "${photo.block} • ${photo.date}",
+                                        fontSize = 10.sp,
+                                        color = Slate500,
+                                        maxLines = 1
+                                    )
+                                }
                             }
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                Text(photo.categoryName, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Navy900)
-                                Text(photo.schoolName, fontSize = 11.sp, color = Slate500, maxLines = 1)
+                        }
+                    }
+                }
+            }
+        } else {
+            // CATEGORY FOLDERS LIST / OVERVIEW
+            if (categoryFolders.isEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(28.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.Folder, contentDescription = null, tint = Slate500, modifier = Modifier.size(44.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text("No photo folders found for selected filters", fontSize = 14.sp, color = Slate500)
+                    }
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(1),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(categoryFolders) { folder ->
+                        Card(
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    openedCategoryName = folder.categoryName
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = Amber100,
+                                        modifier = Modifier.size(48.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                Icons.Default.Folder,
+                                                contentDescription = null,
+                                                tint = Amber600,
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    Column {
+                                        Text(
+                                            text = folder.categoryName,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Navy900
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = Slate100,
+                                                modifier = Modifier.padding(end = 6.dp)
+                                            ) {
+                                                Text(
+                                                    text = "${folder.photos.size} Photos",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Indigo600,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                            Text(
+                                                text = "From ${folder.schoolCount} Schools" +
+                                                        if (selectedBlock != "All Blocks") " • $selectedBlock" else if (selectedDistrict != "All Districts") " • $selectedDistrict" else "",
+                                                fontSize = 11.sp,
+                                                color = Slate500
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = {
+                                            downloadZip(folder.photos, "${filterDescription}_${folder.categoryName}")
+                                        },
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(Slate100)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Download,
+                                            contentDescription = "Download Folder ZIP",
+                                            tint = Slate700,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(6.dp))
+
+                                    Icon(
+                                        Icons.Default.ChevronRight,
+                                        contentDescription = "Open Folder",
+                                        tint = Slate400,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -583,7 +857,7 @@ fun PhotoGalleryTab(
                                     .background(Red600.copy(alpha = 0.85f))
                             ) {
                                 Icon(
-                                    androidx.compose.material.icons.Icons.Default.Delete,
+                                    Icons.Default.Delete,
                                     contentDescription = "Delete Photo",
                                     tint = Color.White
                                 )
@@ -621,7 +895,7 @@ fun PhotoGalleryTab(
 
     // Delete Photo Confirmation Dialog for Admin
     photoToDelete?.let { item ->
-        androidx.compose.material3.AlertDialog(
+        AlertDialog(
             onDismissRequest = { photoToDelete = null },
             title = { Text("Delete Photo?", fontWeight = FontWeight.Bold, color = Navy900) },
             text = { Text("Are you sure you want to permanently delete this photo from ${item.schoolName}?", color = Slate700) },
@@ -639,7 +913,7 @@ fun PhotoGalleryTab(
                 }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { photoToDelete = null }) {
+                TextButton(onClick = { photoToDelete = null }) {
                     Text("Cancel", color = Slate700)
                 }
             }
@@ -652,7 +926,9 @@ fun PhotoGalleryTab(
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
             ) {
                 Column(
                     modifier = Modifier

@@ -929,13 +929,35 @@ object ExcelHelper {
                     val bytes = readMediaBytes(context, item.url)
                     if (bytes != null && bytes.isNotEmpty()) {
                         val ext = getExtensionFromUrl(item.url)
-                        val safeSchool = item.schoolName.replace(Regex("[^a-zA-Z0-9_ -]"), "_").trim().ifBlank { "School" }
-                        val safeCategory = item.categoryName.replace(Regex("[^a-zA-Z0-9_ -]"), "_").trim().ifBlank { "Photo" }
-                        val safeDistrict = item.district.replace(Regex("[^a-zA-Z0-9_ -]"), "_").trim().ifBlank { "District" }
+                        val safeSchool = item.schoolName
+                            .replace(Regex("[^a-zA-Z0-9_ -]"), "")
+                            .trim()
+                            .replace(Regex("\\s+"), "_")
+                            .ifBlank { "School" }
+                        val cleanCat = item.categoryName
+                            .split("(").first()
+                            .replace(Regex("[^a-zA-Z0-9_ -]"), "")
+                            .trim()
+                            .replace(Regex("\\s+"), "_")
+                            .ifBlank { "Photo" }
+                        val safeCategory = cleanCat
+                        val safeBlock = item.block
+                            .replace(Regex("[^a-zA-Z0-9_ -]"), "")
+                            .trim()
+                            .replace(Regex("\\s+"), "_")
 
-                        var entryName = "$safeDistrict/$safeSchool/${safeCategory}_${index + 1}.$ext"
+                        val fileName = "${safeSchool}_${safeCategory}_${index + 1}.$ext"
+                        var entryName = if (photos.map { it.categoryName }.distinct().size > 1) {
+                            "$safeCategory/$fileName"
+                        } else {
+                            fileName
+                        }
                         if (usedEntryNames.contains(entryName)) {
-                            entryName = "$safeDistrict/$safeSchool/${safeCategory}_${index + 1}_${System.currentTimeMillis() % 1000}.$ext"
+                            entryName = if (photos.map { it.categoryName }.distinct().size > 1) {
+                                "$safeCategory/${safeSchool}_${safeCategory}_${index + 1}_${System.currentTimeMillis() % 1000}.$ext"
+                            } else {
+                                "${safeSchool}_${safeCategory}_${index + 1}_${System.currentTimeMillis() % 1000}.$ext"
+                            }
                         }
                         usedEntryNames.add(entryName)
 
