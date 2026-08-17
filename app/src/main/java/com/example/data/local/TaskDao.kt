@@ -34,6 +34,16 @@ interface TaskDao {
     @Query("DELETE FROM tasks WHERE schoolId = :schoolId")
     suspend fun deleteTasksBySchool(schoolId: String)
 
+    @Query("DELETE FROM tasks WHERE taskId NOT IN (:validTaskIds)")
+    suspend fun deleteTasksNotIn(validTaskIds: List<String>)
+
+    @Query("DELETE FROM tasks")
+    suspend fun deleteAllTasks()
+
+    @Query("DELETE FROM tasks WHERE LOWER(TRIM(employeeId)) = LOWER(TRIM(:employeeId)) OR (:userEmail != '' AND LOWER(TRIM(employeeEmail)) = LOWER(TRIM(:userEmail)))")
+    suspend fun deleteTasksForEmployee(employeeId: String, userEmail: String = "")
+
+
     @Query("UPDATE tasks SET status = 'SUBMITTED' WHERE (employeeId = :employeeId OR employeeEmail = :employeeId) AND schoolId = :schoolId")
     suspend fun markTaskSubmittedForEmployeeAndSchool(employeeId: String, schoolId: String)
 }

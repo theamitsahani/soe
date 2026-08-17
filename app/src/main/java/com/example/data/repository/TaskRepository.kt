@@ -60,6 +60,9 @@ class TaskRepository(private val context: Context) {
                             }
                             if (tasks.isNotEmpty()) {
                                 db.taskDao().insertTasks(tasks)
+                                db.taskDao().deleteTasksNotIn(tasks.map { it.taskId })
+                            } else {
+                                db.taskDao().deleteAllTasks()
                             }
                         } catch (e: Exception) {
                             Log.e("TaskRepository", "Failed to cache tasks from listener", e)
@@ -198,6 +201,9 @@ class TaskRepository(private val context: Context) {
                 val tasks = snapshot.documents.mapNotNull { doc -> parseDocToTask(doc) }
                 if (tasks.isNotEmpty()) {
                     db.taskDao().insertTasks(tasks)
+                    db.taskDao().deleteTasksNotIn(tasks.map { it.taskId })
+                } else {
+                    db.taskDao().deleteAllTasks()
                 }
                 Result.success(tasks.size)
             } else {
@@ -276,6 +282,9 @@ class TaskRepository(private val context: Context) {
 
                 if (tasks.isNotEmpty()) {
                     db.taskDao().insertTasks(tasks)
+                    db.taskDao().deleteTasksNotIn(tasks.map { it.taskId })
+                } else {
+                    db.taskDao().deleteTasksForEmployee(currentUid, cleanEmail)
                 }
                 Result.success(tasks.size)
             }
@@ -482,11 +491,45 @@ class TaskRepository(private val context: Context) {
 
     suspend fun deleteTask(taskId: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
+            val task = db.taskDao().getTaskById(taskId)
             db.taskDao().deleteTask(taskId)
+
+            if (task != null) {
+                if (task.visitId.isNotBlank()) {
+                    db.visitDao().deleteVisitById(task.visitId)
+                }
+                if (task.schoolId.isNotBlank()) {
+                    db.visitDao().deleteVisitsBySchool(task.schoolId)
+                }
+            }
+
             val fStore = firestore
             if (fStore != null) {
                 val deleteTaskTask = fStore.collection("tasks").document(taskId).delete()
                 com.google.android.gms.tasks.Tasks.await(deleteTaskTask)
+
+                if (task != null) {
+                    try {
+                        if (task.visitId.isNotBlank()) {
+                            val vstDocs1 = com.google.android.gms.tasks.Tasks.await(
+                                fStore.collection("visits").whereEqualTo("visitId", task.visitId).get()
+                            )
+                            for (doc in vstDocs1.documents) {
+                                fStore.collection("visits").document(doc.id).delete()
+                            }
+                        }
+                        if (task.schoolId.isNotBlank()) {
+                            val vstDocs2 = com.google.android.gms.tasks.Tasks.await(
+                                fStore.collection("visits").whereEqualTo("schoolId", task.schoolId).get()
+                            )
+                            for (doc in vstDocs2.documents) {
+                                fStore.collection("visits").document(doc.id).delete()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w("TaskRepository", "Notice deleting associated visits in Firestore: ${e.message}")
+                    }
+                }
             }
             Result.success(Unit)
         } catch (e: Exception) {

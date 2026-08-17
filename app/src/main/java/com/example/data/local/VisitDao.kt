@@ -43,4 +43,14 @@ interface VisitDao {
 
     @Query("DELETE FROM visits WHERE schoolId = :schoolId")
     suspend fun deleteVisitsBySchool(schoolId: String)
+
+    @Query("DELETE FROM visits WHERE visitId NOT IN (:validVisitIds)")
+    suspend fun deleteVisitsNotIn(validVisitIds: List<String>)
+
+    @Query("DELETE FROM visits")
+    suspend fun deleteAllVisits()
+
+    @Query("DELETE FROM visits WHERE employeeId = :employeeId")
+    suspend fun deleteVisitsForEmployee(employeeId: String)
+
 }

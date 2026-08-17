@@ -118,10 +118,17 @@ class VisitRepository(private val context: Context) {
 
             if (cleanVisits.isNotEmpty()) {
                 db.visitDao().insertVisits(cleanVisits)
+                db.visitDao().deleteVisitsNotIn(cleanVisits.map { it.visitId })
                 for (v in cleanVisits) {
                     if (v.status == VisitStatus.SUBMITTED || v.status == VisitStatus.REVIEWED) {
                         db.taskDao().markTaskSubmittedForEmployeeAndSchool(v.employeeId, v.schoolId)
                     }
+                }
+            } else {
+                if (!isEmployee) {
+                    db.visitDao().deleteAllVisits()
+                } else if (currentUid.isNotBlank()) {
+                    db.visitDao().deleteVisitsForEmployee(currentUid)
                 }
             }
             Result.success(cleanVisits.size)
