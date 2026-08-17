@@ -113,6 +113,25 @@ object MediaStorageHelper {
     }
 
     /**
+     * Derives a stable identifier for a *local* media URI, based on the file itself
+     * (saveMediaLocally names files uniquely as img_<timestamp>_<uuid> / vid_<timestamp>_<uuid>).
+     * This makes the Cloudinary publicId depend only on which physical photo it is,
+     * never on its position in the category list — so adding/removing/reordering other
+     * photos can't cause this one to be re-uploaded as a duplicate or matched to the wrong URL.
+     */
+    private fun stableLocalMediaToken(uriStr: String): String {
+        return try {
+            val uri = Uri.parse(uriStr)
+            val lastSegment = (uri.lastPathSegment ?: uriStr).substringAfterLast('/')
+            val withoutExt = lastSegment.substringBeforeLast('.', lastSegment)
+            val sanitized = withoutExt.replace(Regex("[^A-Za-z0-9_-]"), "_")
+            sanitized.ifBlank { uriStr.hashCode().toString() }
+        } catch (e: Exception) {
+            uriStr.hashCode().toString()
+        }
+    }
+
+    /**
      * Uploads all photos/videos in photosJson directly to Firebase Storage
      * and saves photo metadata to Firestore ("visits/{visitId}/photos/{photoId}").
      * Returns updated photosJson containing permanent Firebase Storage download URLs.
@@ -139,9 +158,6 @@ object MediaStorageHelper {
             val safeSchoolId = schoolId.ifBlank { "unknown_school" }
 
             val dbVisit = try { db.visitDao().getVisitById(safeVisitId) } catch (_: Exception) { null }
-            val dbPhotoMap = try {
-                if (dbVisit != null && dbVisit.photosJson.isNotBlank()) photosAdapter.fromJson(dbVisit.photosJson) else null
-            } catch (_: Exception) { null }
 
             var totalItems = 0
             originalMap.values.forEach { totalItems += it.distinct().size }
@@ -151,10 +167,12 @@ object MediaStorageHelper {
                 val updatedUris = mutableListOf<String>()
                 val cleanUriList = uriList.distinct()
 
-                val dbCategoryUrls = dbPhotoMap?.get(categoryId) ?: emptyList()
-
                 for ((index, uriStr) in cleanUriList.withIndex()) {
-                    val mediaId = "${safeVisitId}_${categoryId}_$index"
+                    // Stable id derived from the actual local file (not list position), so
+                    // reordering/adding/removing other photos in the category can never make
+                    // this photo re-upload as a duplicate or wrongly reuse another photo's URL.
+                    val localToken = stableLocalMediaToken(uriStr)
+                    val mediaId = "${safeVisitId}_${categoryId}_$localToken"
                     val deterministicPhotoId = mediaId
 
                     if (uriStr.startsWith("http://") || uriStr.startsWith("https://") || uriStr.startsWith("gs://")) {
@@ -165,20 +183,36 @@ object MediaStorageHelper {
                         }
                         processedItems++
                         onProgress?.invoke(processedItems, totalItems)
-                    } else if (index < dbCategoryUrls.size && (dbCategoryUrls[index].startsWith("http://") || dbCategoryUrls[index].startsWith("https://"))) {
-                        // Found existing Cloudinary URL in local database for this photo index!
-                        val existingRemoteUrl = dbCategoryUrls[index]
-                        Log.d("MEDIA_UPLOAD_SKIPPED_ALREADY_UPLOADED", "Skipping upload for media $mediaId because stored remote URL exists: $existingRemoteUrl")
-                        if (!updatedUris.contains(existingRemoteUrl)) {
-                            updatedUris.add(existingRemoteUrl)
+                        continue
+                    }
+
+                    val isVideo = isMediaVideo(uriStr, context)
+
+                    // Fast path: ask Cloudinary directly (source of truth) whether this exact
+                    // photo was already uploaded in a previous attempt, before reading its bytes.
+                    val existingAsset = try {
+                        CloudinaryUploader.checkAsset(safeVisitId, safeSchoolId, categoryId, mediaId, isVideo)
+                    } catch (_: Exception) { null }
+
+                    if (existingAsset != null) {
+                        Log.d("MEDIA_UPLOAD_SKIPPED_ALREADY_UPLOADED", "Skipping upload for media $mediaId, already found on Cloudinary: ${existingAsset.downloadUrl}")
+                        if (!updatedUris.contains(existingAsset.downloadUrl)) {
+                            updatedUris.add(existingAsset.downloadUrl)
                         }
+                        try {
+                            if (dbVisit != null) {
+                                val tempMap = updatedMap.toMutableMap()
+                                tempMap[categoryId] = updatedUris
+                                val tempJson = photosAdapter.toJson(tempMap)
+                                db.visitDao().updateVisit(dbVisit.copy(photosJson = tempJson))
+                            }
+                        } catch (_: Exception) {}
                         processedItems++
                         onProgress?.invoke(processedItems, totalItems)
                     } else {
                         val bytes = readMediaBytes(context, uriStr)
                         if (bytes != null && bytes.isNotEmpty()) {
                             try {
-                                val isVideo = isMediaVideo(uriStr, context)
                                 val mime = if (isVideo) "video/mp4" else "image/jpeg"
                                 val ext = if (isVideo) "mp4" else "jpg"
                                 val fileName = getStandardizedFileName(categoryId, index, ext)
