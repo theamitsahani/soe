@@ -110,10 +110,10 @@ class MainActivity : ComponentActivity() {
                                 launch { authRepository.syncEmployeesFromFirestore() }
                             }
                             schoolRepository.startSchoolsRealtimeListener()
-                            taskRepository.startTasksRealtimeListener(sessionUser.role, sessionUser.userId)
+                            taskRepository.startTasksRealtimeListener(sessionUser.role, sessionUser.userId, sessionUser.email, sessionUser.name)
                             launch { schoolRepository.syncSchoolsFromFirestore() }
                             launch { visitRepository.syncVisitsFromFirestore(sessionUser.role, sessionUser.userId) }
-                            launch { taskRepository.syncTasksFromFirestore(sessionUser.role, sessionUser.userId) }
+                            launch { taskRepository.syncTasksFromFirestore(sessionUser.role, sessionUser.userId, sessionUser.email, sessionUser.name) }
                         }
 
                         syncManager.checkPendingCount()
@@ -145,10 +145,10 @@ class MainActivity : ComponentActivity() {
                                                         currentScreen = ScreenState.Employee(user)
                                                     }
                                                     schoolRepository.startSchoolsRealtimeListener()
-                                                    taskRepository.startTasksRealtimeListener(user.role, user.userId)
+                                                    taskRepository.startTasksRealtimeListener(user.role, user.userId, user.email, user.name)
                                                     launch { schoolRepository.syncSchoolsFromFirestore() }
                                                     launch { visitRepository.syncVisitsFromFirestore(user.role, user.userId) }
-                                                    launch { taskRepository.syncTasksFromFirestore(user.role, user.userId) }
+                                                    launch { taskRepository.syncTasksFromFirestore(user.role, user.userId, user.email, user.name) }
 
                                                     onResult(Result.success(Unit))
                                                 } else {
@@ -171,7 +171,7 @@ class MainActivity : ComponentActivity() {
                                             scope.launch {
                                                 schoolRepository.syncSchoolsFromFirestore()
                                                 visitRepository.syncVisitsFromFirestore(state.adminUser.role, state.adminUser.userId)
-                                                taskRepository.syncTasksFromFirestore(state.adminUser.role, state.adminUser.userId)
+                                                taskRepository.syncTasksFromFirestore(state.adminUser.role, state.adminUser.userId, state.adminUser.email, state.adminUser.name)
                                                 authRepository.refreshEmployeesFromFirestore()
                                             }
                                         },
@@ -382,7 +382,7 @@ class MainActivity : ComponentActivity() {
                                                 syncManager.syncPendingData()
                                                 schoolRepository.syncSchoolsFromFirestore()
                                                 visitRepository.syncVisitsFromFirestore(state.employeeUser.role, state.employeeUser.userId)
-                                                taskRepository.syncTasksFromFirestore(state.employeeUser.role, state.employeeUser.userId)
+                                                taskRepository.syncTasksFromFirestore(state.employeeUser.role, state.employeeUser.userId, state.employeeUser.email, state.employeeUser.name)
                                             }
                                         },
                                         onStartVisit = { task ->
