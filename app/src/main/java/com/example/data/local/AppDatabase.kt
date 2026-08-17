@@ -20,9 +20,15 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
     }
 }
 
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE visits ADD COLUMN taskId TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 @Database(
     entities = [School::class, Visit::class, Task::class, UserEntity::class, AppNotification::class],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -43,7 +49,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "soe_school_visit.db"
                 )
-                    .addMigrations(MIGRATION_6_7)
+                    .addMigrations(MIGRATION_6_7, MIGRATION_8_9)
                     .fallbackToDestructiveMigration(true)
                     .build()
                 INSTANCE = instance

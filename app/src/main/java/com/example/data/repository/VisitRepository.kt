@@ -63,6 +63,7 @@ class VisitRepository(private val context: Context) {
 
             val rawVisits = snapshot.documents.mapNotNull { doc ->
                 val visitId = doc.getString("visitId") ?: doc.id
+                val taskId = doc.getString("taskId") ?: ""
                 val schoolId = doc.getString("schoolId") ?: ""
                 val employeeId = doc.getString("employeeId") ?: ""
                 val schoolName = doc.getString("schoolName") ?: ""
@@ -73,6 +74,7 @@ class VisitRepository(private val context: Context) {
 
                 Visit(
                     visitId = visitId,
+                    taskId = taskId,
                     schoolId = schoolId,
                     employeeId = employeeId,
                     employeeName = doc.getString("employeeName") ?: "",
@@ -121,7 +123,11 @@ class VisitRepository(private val context: Context) {
                 db.visitDao().deleteVisitsNotIn(cleanVisits.map { it.visitId })
                 for (v in cleanVisits) {
                     if (v.status == VisitStatus.SUBMITTED || v.status == VisitStatus.REVIEWED) {
-                        db.taskDao().markTaskSubmittedForEmployeeAndSchool(v.employeeId, v.schoolId)
+                        if (v.taskId.isNotBlank()) {
+                            db.taskDao().markTaskSubmittedById(v.taskId, v.visitId)
+                        } else {
+                            db.taskDao().markTaskSubmittedByVisitId(v.visitId)
+                        }
                     }
                 }
             } else {
@@ -143,9 +149,19 @@ class VisitRepository(private val context: Context) {
     suspend fun submitVisit(visit: Visit): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val isOnline = syncManager.isNetworkAvailable()
-            val initialSyncStatus = if (isOnline) SyncStatus.PENDING else SyncStatus.PENDING
+            val initialSyncStatus = SyncStatus.PENDING
+
+            // If taskId is blank, attempt to resolve matching active task
+            var resolvedTaskId = visit.taskId
+            if (resolvedTaskId.isBlank()) {
+                val activeTask = db.taskDao().getActiveTask(visit.employeeId, visit.schoolId, visit.visitDate)
+                if (activeTask != null) {
+                    resolvedTaskId = activeTask.taskId
+                }
+            }
 
             val finalVisit = visit.copy(
+                taskId = resolvedTaskId,
                 status = VisitStatus.SUBMITTED,
                 syncStatus = initialSyncStatus,
                 updatedAt = System.currentTimeMillis()
@@ -154,20 +170,33 @@ class VisitRepository(private val context: Context) {
             // Step 1: Save to Room DB locally first (ensures 100% offline durability)
             db.visitDao().insertVisit(finalVisit)
             
-            // Step 2: Mark the assigned task for this employee & school as SUBMITTED
-            db.taskDao().markTaskSubmittedForEmployeeAndSchool(finalVisit.employeeId, finalVisit.schoolId)
+            // Step 2: Mark ONLY the exact assigned task as SUBMITTED
+            if (finalVisit.taskId.isNotBlank()) {
+                db.taskDao().markTaskSubmittedById(finalVisit.taskId, finalVisit.visitId)
+            } else {
+                db.taskDao().markTaskSubmittedByVisitId(finalVisit.visitId)
+            }
 
             val fStore = firestore
             if (fStore != null && isOnline) {
                 try {
-                    // Update matching tasks in Firestore
-                    val taskQuery = fStore.collection("tasks")
-                        .whereEqualTo("employeeId", finalVisit.employeeId)
-                        .whereEqualTo("schoolId", finalVisit.schoolId)
-                        .get()
-                    val taskDocs = com.google.android.gms.tasks.Tasks.await(taskQuery)
-                    for (doc in taskDocs.documents) {
-                        fStore.collection("tasks").document(doc.id).update("status", VisitStatus.SUBMITTED.name)
+                    // Update exact task in Firestore
+                    if (finalVisit.taskId.isNotBlank()) {
+                        fStore.collection("tasks").document(finalVisit.taskId).update(
+                            mapOf(
+                                "status" to VisitStatus.SUBMITTED.name,
+                                "visitId" to finalVisit.visitId,
+                                "updatedAt" to System.currentTimeMillis()
+                            )
+                        )
+                    } else {
+                        val taskQuery = fStore.collection("tasks")
+                            .whereEqualTo("visitId", finalVisit.visitId)
+                            .get()
+                        val taskDocs = com.google.android.gms.tasks.Tasks.await(taskQuery)
+                        for (doc in taskDocs.documents) {
+                            doc.reference.update("status", VisitStatus.SUBMITTED.name)
+                        }
                     }
                 } catch (e: Exception) {
                     android.util.Log.w("VisitRepository", "Notice updating task status in Firestore: ${e.message}")

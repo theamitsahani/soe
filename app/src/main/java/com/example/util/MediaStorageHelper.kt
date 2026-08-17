@@ -154,8 +154,12 @@ object MediaStorageHelper {
                 val dbCategoryUrls = dbPhotoMap?.get(categoryId) ?: emptyList()
 
                 for ((index, uriStr) in cleanUriList.withIndex()) {
+                    val mediaId = "visit_${safeVisitId}_${categoryId}_$index"
+                    val deterministicPhotoId = "${safeVisitId}_${categoryId}_$index"
+
                     if (uriStr.startsWith("http://") || uriStr.startsWith("https://") || uriStr.startsWith("gs://")) {
                         // Already uploaded to Cloudinary or remote URL
+                        Log.d("MEDIA_UPLOAD_SKIPPED_ALREADY_UPLOADED", "Skipping upload for media $mediaId because remote URL already exists: $uriStr")
                         if (!updatedUris.contains(uriStr)) {
                             updatedUris.add(uriStr)
                         }
@@ -164,6 +168,7 @@ object MediaStorageHelper {
                     } else if (index < dbCategoryUrls.size && (dbCategoryUrls[index].startsWith("http://") || dbCategoryUrls[index].startsWith("https://"))) {
                         // Found existing Cloudinary URL in local database for this photo index!
                         val existingRemoteUrl = dbCategoryUrls[index]
+                        Log.d("MEDIA_UPLOAD_SKIPPED_ALREADY_UPLOADED", "Skipping upload for media $mediaId because stored remote URL exists: $existingRemoteUrl")
                         if (!updatedUris.contains(existingRemoteUrl)) {
                             updatedUris.add(existingRemoteUrl)
                         }
@@ -177,14 +182,17 @@ object MediaStorageHelper {
                                 val mime = if (isVideo) "video/mp4" else "image/jpeg"
                                 val ext = if (isVideo) "mp4" else "jpg"
                                 val fileName = getStandardizedFileName(categoryId, index, ext)
-                                val photoId = UUID.randomUUID().toString()
+
+                                Log.d("MEDIA_UPLOAD_START", "Starting upload for media $mediaId (visitId=$safeVisitId, schoolId=$safeSchoolId, categoryId=$categoryId)")
 
                                 val uploadResult = CloudinaryUploader.uploadBytes(
                                     bytes = bytes,
                                     visitId = safeVisitId,
                                     schoolId = safeSchoolId,
                                     categoryId = categoryId,
-                                    isVideo = isVideo
+                                    isVideo = isVideo,
+                                    mediaIndex = index,
+                                    publicId = mediaId
                                 )
 
                                 if (uploadResult != null) {
@@ -193,12 +201,12 @@ object MediaStorageHelper {
                                     val resourceType = uploadResult.resourceType
                                     val storagePath = "${uploadResult.folder}/$publicId"
 
-                                    // Save photo metadata to Firestore: visits/{visitId}/photos/{photoId}
+                                    // Save photo metadata to Firestore deterministically: visits/{visitId}/photos/{photoId}
                                     if (firestore != null && safeVisitId.isNotBlank()) {
                                         try {
                                             val now = System.currentTimeMillis()
                                             val photoMeta = hashMapOf(
-                                                "photoId" to photoId,
+                                                "photoId" to deterministicPhotoId,
                                                 "visitId" to safeVisitId,
                                                 "schoolId" to safeSchoolId,
                                                 "employeeId" to employeeId,
@@ -218,15 +226,15 @@ object MediaStorageHelper {
                                             val metaTask = firestore.collection("visits")
                                                 .document(safeVisitId)
                                                 .collection("photos")
-                                                .document(photoId)
-                                                .set(photoMeta)
+                                                .document(deterministicPhotoId)
+                                                .set(photoMeta, com.google.firebase.firestore.SetOptions.merge())
                                             Tasks.await(metaTask)
                                         } catch (metaErr: Exception) {
                                             Log.w("MediaStorageHelper", "Error saving photo metadata in Firestore: ${metaErr.message}")
                                         }
                                     }
 
-                                    Log.d("MediaStorageHelper", "Successfully uploaded $fileName to Cloudinary: $downloadUrl")
+                                    Log.d("MEDIA_UPLOAD_SUCCESS", "Successfully uploaded media $mediaId to Cloudinary: $downloadUrl")
                                     if (!updatedUris.contains(downloadUrl)) {
                                         updatedUris.add(downloadUrl)
                                     }
@@ -241,19 +249,19 @@ object MediaStorageHelper {
                                         }
                                     } catch (_: Exception) {}
                                 } else {
-                                    Log.e("MediaStorageHelper", "Cloudinary upload failed for $uriStr, keeping local reference")
+                                    Log.e("MEDIA_UPLOAD_FAILED", "Cloudinary upload failed for media $mediaId, keeping local reference")
                                     if (!updatedUris.contains(uriStr)) {
                                         updatedUris.add(uriStr)
                                     }
                                 }
                             } catch (e: Exception) {
-                                Log.e("MediaStorageHelper", "Cloudinary upload failed for $uriStr, keeping local reference: ${e.message}", e)
+                                Log.e("MEDIA_UPLOAD_FAILED", "Cloudinary upload failed for media $mediaId: ${e.message}", e)
                                 if (!updatedUris.contains(uriStr)) {
                                     updatedUris.add(uriStr)
                                 }
                             }
                         } else {
-                            Log.e("MediaStorageHelper", "Failed to read bytes for media URI: $uriStr")
+                            Log.e("MEDIA_UPLOAD_FAILED", "Failed to read bytes for media URI: $uriStr")
                             if (!updatedUris.contains(uriStr)) {
                                 updatedUris.add(uriStr)
                             }

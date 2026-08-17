@@ -59,13 +59,18 @@ object CloudinaryUploader {
         visitId: String,
         schoolId: String,
         categoryId: String,
-        isVideo: Boolean
+        isVideo: Boolean,
+        mediaIndex: Int = -1,
+        publicId: String = ""
     ): CloudinaryUploadResult? {
         var attempts = 0
         val maxAttempts = 3
         while (attempts < maxAttempts) {
             attempts++
-            val result = tryUploadBytes(bytes, visitId, schoolId, categoryId, isVideo)
+            if (attempts > 1) {
+                Log.w("MEDIA_UPLOAD_RETRY", "Retrying upload for media $publicId attempt $attempts")
+            }
+            val result = tryUploadBytes(bytes, visitId, schoolId, categoryId, isVideo, mediaIndex, publicId)
             if (result != null) {
                 return result
             }
@@ -82,7 +87,9 @@ object CloudinaryUploader {
         visitId: String,
         schoolId: String,
         categoryId: String,
-        isVideo: Boolean
+        isVideo: Boolean,
+        mediaIndex: Int = -1,
+        publicId: String = ""
     ): CloudinaryUploadResult? {
         return try {
             val idToken = getFirebaseIdToken()
@@ -99,6 +106,8 @@ object CloudinaryUploader {
                 put("visitId", visitId)
                 put("schoolId", schoolId)
                 put("category", categoryId)
+                if (publicId.isNotBlank()) put("publicId", publicId)
+                if (mediaIndex >= 0) put("mediaIndex", mediaIndex)
             }.toString().toRequestBody(jsonMediaType)
 
             val sigRequest = Request.Builder()

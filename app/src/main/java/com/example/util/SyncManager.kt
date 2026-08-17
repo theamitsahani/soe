@@ -185,10 +185,13 @@ class SyncManager(private val context: Context) {
             val isAllMediaUploaded = MediaStorageHelper.isAllMediaUploaded(updatedPhotosJson)
             val finalSyncStatus = if (isAllMediaUploaded) SyncStatus.SYNCED else SyncStatus.PENDING
 
+            android.util.Log.d("VISIT_SYNC_START", "Starting visit sync for visitId=${visit.visitId}, schoolId=${visit.schoolId}, employeeId=${visit.employeeId}")
+
             // 3. Set timeout for Firestore write
             val success = withTimeoutOrNull(120000L) {
                 val visitMap = hashMapOf(
                     "visitId" to visit.visitId,
+                    "taskId" to visit.taskId,
                     "schoolId" to visit.schoolId,
                     "employeeId" to visit.employeeId,
                     "employeeName" to visit.employeeName,
@@ -213,23 +216,38 @@ class SyncManager(private val context: Context) {
                 // Update local Room database with permanent photo URLs and current sync status
                 db.visitDao().updateVisit(visit.copy(photosJson = updatedPhotosJson, syncStatus = finalSyncStatus))
 
-                // Also update the specific assigned task for this employee and school in Firestore
+                // Update exact assigned task in Firestore
                 try {
-                    val taskQuery = fStore.collection("tasks")
-                        .whereEqualTo("employeeId", visit.employeeId)
-                        .whereEqualTo("schoolId", visit.schoolId)
-                        .get()
-                    val taskSnap = com.google.android.gms.tasks.Tasks.await(taskQuery)
-                    for (taskDoc in taskSnap.documents) {
-                        taskDoc.reference.update(
+                    if (visit.taskId.isNotBlank()) {
+                        fStore.collection("tasks").document(visit.taskId).update(
                             mapOf(
                                 "status" to "SUBMITTED",
                                 "visitId" to visit.visitId,
                                 "updatedAt" to System.currentTimeMillis()
                             )
                         )
+                    } else {
+                        val taskQuery = fStore.collection("tasks")
+                            .whereEqualTo("visitId", visit.visitId)
+                            .get()
+                        val taskSnap = com.google.android.gms.tasks.Tasks.await(taskQuery)
+                        for (taskDoc in taskSnap.documents) {
+                            taskDoc.reference.update(
+                                mapOf(
+                                    "status" to "SUBMITTED",
+                                    "visitId" to visit.visitId,
+                                    "updatedAt" to System.currentTimeMillis()
+                                )
+                            )
+                        }
                     }
                 } catch (_: Exception) {}
+
+                if (finalSyncStatus == SyncStatus.SYNCED) {
+                    android.util.Log.d("VISIT_SYNC_SUCCESS", "Visit ${visit.visitId} synced successfully with all Cloudinary media uploaded.")
+                } else {
+                    android.util.Log.w("VISIT_SYNC_PENDING", "Visit ${visit.visitId} written to Firestore but media is pending Cloudinary upload.")
+                }
 
                 true
             }

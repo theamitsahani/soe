@@ -12,6 +12,7 @@ import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
@@ -24,7 +25,8 @@ class TaskRepository(private val context: Context) {
 
     fun getAllTasks(): Flow<List<Task>> = db.taskDao().getAllTasks()
 
-    fun getTasksByEmployee(employeeId: String, userEmail: String = ""): Flow<List<Task>> = db.taskDao().getTasksByEmployee(employeeId, userEmail)
+    fun getTasksByEmployee(employeeId: String, userEmail: String = ""): Flow<List<Task>> =
+        db.taskDao().getTasksByEmployee(employeeId)
 
     fun startTasksRealtimeListener(
         role: UserRole? = null,
@@ -58,11 +60,22 @@ class TaskRepository(private val context: Context) {
                             val tasks = snapshot.documents.mapNotNull { doc ->
                                 parseDocToTask(doc)
                             }
-                            if (tasks.isNotEmpty()) {
-                                db.taskDao().insertTasks(tasks)
-                                db.taskDao().deleteTasksNotIn(tasks.map { it.taskId })
+                            if (isEmployee) {
+                                val taskIds = tasks.map { it.taskId }
+                                if (tasks.isNotEmpty()) {
+                                    db.taskDao().insertTasks(tasks)
+                                    db.taskDao().deleteTasksForEmployeeNotIn(currentUid, taskIds)
+                                } else {
+                                    db.taskDao().deleteTasksForEmployee(currentUid)
+                                }
                             } else {
-                                db.taskDao().deleteAllTasks()
+                                val taskIds = tasks.map { it.taskId }
+                                if (tasks.isNotEmpty()) {
+                                    db.taskDao().insertTasks(tasks)
+                                    db.taskDao().deleteTasksNotIn(taskIds)
+                                } else {
+                                    db.taskDao().deleteAllTasks()
+                                }
                             }
                         } catch (e: Exception) {
                             Log.e("TaskRepository", "Failed to cache tasks from listener", e)
@@ -101,7 +114,6 @@ class TaskRepository(private val context: Context) {
         var district = doc.getString("district") ?: doc.getString("districtName") ?: ""
         var block = doc.getString("block") ?: doc.getString("blockName") ?: ""
 
-        // Backward compatibility: Look up missing principal/school details from local Room School
         if (schoolId.isNotBlank()) {
             val localSchool = db.schoolDao().getSchoolById(schoolId)
             if (localSchool != null) {
@@ -122,24 +134,8 @@ class TaskRepository(private val context: Context) {
 
         val visitId = doc.getString("visitId") ?: ""
         val statusStr = doc.getString("status") ?: VisitStatus.ASSIGNED.name
-        var status = try { VisitStatus.valueOf(statusStr) } catch (e: Exception) { VisitStatus.ASSIGNED }
-
+        val status = try { VisitStatus.valueOf(statusStr) } catch (_: Exception) { VisitStatus.ASSIGNED }
         val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
-
-        // If local database has this task marked as SUBMITTED or REVIEWED, or if matching visit exists, preserve it
-        if (status == VisitStatus.ASSIGNED) {
-            val localTask = db.taskDao().getTaskById(taskId)
-            if (localTask != null && (localTask.status == VisitStatus.SUBMITTED || localTask.status == VisitStatus.REVIEWED)) {
-                status = localTask.status
-            } else if (visitId.isNotBlank() && db.visitDao().getVisitById(visitId) != null) {
-                status = VisitStatus.SUBMITTED
-            } else if (schoolId.isNotBlank()) {
-                val matchingVisits = db.visitDao().getVisitsListBySchool(schoolId)
-                if (matchingVisits.any { (employeeId.isNotBlank() && it.employeeId.trim().equals(employeeId, ignoreCase = true)) && (it.createdAt >= createdAt || it.updatedAt >= createdAt || (visitId.isNotBlank() && it.visitId == visitId)) }) {
-                    status = VisitStatus.SUBMITTED
-                }
-            }
-        }
 
         return Task(
             taskId = taskId,
@@ -176,9 +172,6 @@ class TaskRepository(private val context: Context) {
             val fStore = firestore ?: return@withContext Result.failure(Exception("Firestore not initialized"))
 
             val currentUid = (userId ?: currentFbUser?.uid ?: "").trim()
-            val cleanEmail = (userEmail ?: currentFbUser?.email ?: "").trim().lowercase()
-            val cleanName = (userName ?: currentFbUser?.displayName ?: "").trim()
-
             var isEmployee = (role == UserRole.EMPLOYEE)
 
             if (role == null && currentUid.isNotBlank()) {
@@ -192,108 +185,64 @@ class TaskRepository(private val context: Context) {
                 }
             }
 
+            Log.d("TASK_SYNC_START", "Starting task sync for employeeId=$currentUid, role=${if (isEmployee) "EMPLOYEE" else "ADMIN"}")
+
             if (!isEmployee) {
                 // ADMIN ROLE: Sync all tasks
-                val query = fStore.collection("tasks")
-                val snapshotTask = query.get()
+                val snapshotTask = fStore.collection("tasks").get()
                 val snapshot = com.google.android.gms.tasks.Tasks.await(snapshotTask)
 
+                Log.d("TASK_SYNC_FIRESTORE_COUNT", "Fetched ${snapshot.documents.size} tasks from Firestore for ADMIN")
+
                 val tasks = snapshot.documents.mapNotNull { doc -> parseDocToTask(doc) }
+                val localTasksBefore = db.taskDao().getAllTasks().firstOrNull()?.size ?: 0
+                Log.d("TASK_SYNC_LOCAL_BEFORE", "Local task count before sync: $localTasksBefore")
+
+                val firestoreTaskIds = tasks.map { it.taskId }
                 if (tasks.isNotEmpty()) {
                     db.taskDao().insertTasks(tasks)
-                    db.taskDao().deleteTasksNotIn(tasks.map { it.taskId })
+                    db.taskDao().deleteTasksNotIn(firestoreTaskIds)
                 } else {
                     db.taskDao().deleteAllTasks()
                 }
+
+                val localTasksAfter = db.taskDao().getAllTasks().firstOrNull()?.size ?: 0
+                Log.d("TASK_SYNC_LOCAL_AFTER", "Local task count after sync: $localTasksAfter")
+
                 Result.success(tasks.size)
             } else {
-                // EMPLOYEE ROLE: Fetch tasks assigned specifically to this employee
-                val allEmployeeDocs = mutableMapOf<String, DocumentSnapshot>()
+                // EMPLOYEE ROLE: Fetch tasks assigned specifically to currentUid ONLY
+                if (currentUid.isBlank()) return@withContext Result.success(0)
 
-                // 1. Primary Query: employeeId == currentUid
-                if (currentUid.isNotBlank()) {
-                    try {
-                        val uidQuery = fStore.collection("tasks").whereEqualTo("employeeId", currentUid).get()
-                        val uidSnap = com.google.android.gms.tasks.Tasks.await(uidQuery)
-                        uidSnap.documents.forEach { allEmployeeDocs[it.id] = it }
-                    } catch (e: Exception) {
-                        Log.w("TaskRepository", "Query tasks by employeeId notice: ${e.message}")
-                    }
-                }
+                val uidQuery = fStore.collection("tasks").whereEqualTo("employeeId", currentUid).get()
+                val uidSnap = com.google.android.gms.tasks.Tasks.await(uidQuery)
 
-                // 2. Legacy Fallback Query: employeeEmail == cleanEmail
-                if (cleanEmail.isNotBlank()) {
-                    try {
-                        val emailQuery = fStore.collection("tasks").whereEqualTo("employeeEmail", cleanEmail).get()
-                        val emailSnap = com.google.android.gms.tasks.Tasks.await(emailQuery)
-                        emailSnap.documents.forEach { doc ->
-                            allEmployeeDocs[doc.id] = doc
-                            val docEmpId = doc.getString("employeeId") ?: ""
-                            if (currentUid.isNotBlank() && docEmpId != currentUid) {
-                                try {
-                                    doc.reference.update(
-                                        mapOf(
-                                            "employeeId" to currentUid,
-                                            "employeeEmail" to cleanEmail
-                                        )
-                                    )
-                                } catch (e: Exception) {
-                                    Log.w("TaskRepository", "Legacy task migration notice: ${e.message}")
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.w("TaskRepository", "Query tasks by employeeEmail notice: ${e.message}")
-                    }
-                }
+                Log.d("TASK_SYNC_FIRESTORE_COUNT", "Fetched ${uidSnap.documents.size} tasks from Firestore for employeeId=$currentUid")
 
-                // 3. Legacy Fallback Query: employeeName == cleanName
-                if (cleanName.isNotBlank()) {
-                    try {
-                        val nameQuery = fStore.collection("tasks").whereEqualTo("employeeName", cleanName).get()
-                        val nameSnap = com.google.android.gms.tasks.Tasks.await(nameQuery)
-                        nameSnap.documents.forEach { doc ->
-                            allEmployeeDocs[doc.id] = doc
-                            val docEmpId = doc.getString("employeeId") ?: ""
-                            if (currentUid.isNotBlank() && docEmpId != currentUid) {
-                                try {
-                                    doc.reference.update(
-                                        mapOf(
-                                            "employeeId" to currentUid,
-                                            "employeeEmail" to cleanEmail
-                                        )
-                                    )
-                                } catch (e: Exception) {
-                                    Log.w("TaskRepository", "Legacy task migration notice: ${e.message}")
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.w("TaskRepository", "Query tasks by employeeName notice: ${e.message}")
-                    }
-                }
+                val tasks = uidSnap.documents.mapNotNull { doc -> parseDocToTask(doc) }
+                val localTasksBefore = db.taskDao().getTasksByEmployee(currentUid).firstOrNull()?.size ?: 0
+                Log.d("TASK_SYNC_LOCAL_BEFORE", "Local task count before sync for $currentUid: $localTasksBefore")
 
-                val tasks = allEmployeeDocs.values.mapNotNull { doc ->
-                    val task = parseDocToTask(doc)
-                    if (task != null && currentUid.isNotBlank() && task.employeeId != currentUid) {
-                        task.copy(employeeId = currentUid, employeeEmail = cleanEmail)
-                    } else task
-                }
-
+                val firestoreTaskIds = tasks.map { it.taskId }
                 if (tasks.isNotEmpty()) {
                     db.taskDao().insertTasks(tasks)
-                    db.taskDao().deleteTasksNotIn(tasks.map { it.taskId })
+                    db.taskDao().deleteTasksForEmployeeNotIn(currentUid, firestoreTaskIds)
                 } else {
-                    db.taskDao().deleteTasksForEmployee(currentUid, cleanEmail)
+                    db.taskDao().deleteTasksForEmployee(currentUid)
                 }
+
+                val localTasksAfter = db.taskDao().getTasksByEmployee(currentUid).firstOrNull()?.size ?: 0
+                Log.d("TASK_SYNC_LOCAL_AFTER", "Local task count after sync for $currentUid: $localTasksAfter")
+
                 Result.success(tasks.size)
             }
         } catch (e: Exception) {
+            Log.e("TaskRepository", "Error syncing tasks from Firestore", e)
             Result.failure(e)
         }
     }
 
-    private suspend fun resolveFirebaseUidForEmployee(
+    suspend fun resolveFirebaseUidForEmployee(
         rawEmployeeId: String,
         email: String,
         name: String
@@ -303,13 +252,11 @@ class TaskRepository(private val context: Context) {
         val cleanName = name.trim()
         val fStore = firestore
 
-        // 1. If rawEmployeeId is already an actual Firebase Auth UID (not starting with "emp_")
         if (cleanRaw.isNotBlank() && !cleanRaw.startsWith("emp_") && cleanRaw.length >= 15) {
             return@withContext cleanRaw
         }
 
         if (fStore != null) {
-            // 2. Search "users" collection by email
             if (cleanEmail.isNotBlank()) {
                 try {
                     val emailQuery = fStore.collection("users").whereEqualTo("email", cleanEmail).limit(1).get()
@@ -328,7 +275,6 @@ class TaskRepository(private val context: Context) {
                 }
             }
 
-            // 3. Search "users" collection by name
             if (cleanName.isNotBlank()) {
                 try {
                     val nameQuery = fStore.collection("users").whereEqualTo("name", cleanName).limit(1).get()
@@ -348,7 +294,6 @@ class TaskRepository(private val context: Context) {
             }
         }
 
-        // 4. Local Room user search
         try {
             val localUsers = db.userDao().getAllUsersList()
             val match = localUsers.find { 
@@ -391,7 +336,40 @@ class TaskRepository(private val context: Context) {
                 name = cleanName
             )
 
-            // Fetch school from Room database as source of truth
+            val fStore = firestore
+
+            // Check for existing active task using employeeId + schoolId + visitDate
+            var existingTask: Task? = db.taskDao().getActiveTask(resolvedEmployeeUid, schoolId, visitDate)
+
+            if (existingTask == null && fStore != null) {
+                try {
+                    val checkQuery = fStore.collection("tasks")
+                        .whereEqualTo("employeeId", resolvedEmployeeUid)
+                        .whereEqualTo("schoolId", schoolId)
+                        .whereEqualTo("visitDate", visitDate)
+                        .get()
+                    val checkSnap = com.google.android.gms.tasks.Tasks.await(checkQuery)
+                    val existingDoc = checkSnap.documents.firstOrNull { doc ->
+                        val st = doc.getString("status") ?: ""
+                        st != "SUBMITTED" && st != "REVIEWED"
+                    }
+                    if (existingDoc != null) {
+                        existingTask = parseDocToTask(existingDoc)
+                    }
+                } catch (e: Exception) {
+                    Log.w("TaskRepository", "Check existing task notice: ${e.message}")
+                }
+            }
+
+            if (existingTask != null) {
+                Log.w(
+                    "TASK_ASSIGN_DUPLICATE_BLOCKED",
+                    "Duplicate task blocked for employee $resolvedEmployeeUid, school $schoolId, date $visitDate, existingTaskId ${existingTask.taskId}"
+                )
+                db.taskDao().insertTask(existingTask)
+                return@withContext Result.success(existingTask)
+            }
+
             val localSchool = try {
                 db.schoolDao().getSchoolById(schoolId)
             } catch (e: Exception) {
@@ -435,8 +413,6 @@ class TaskRepository(private val context: Context) {
 
             db.taskDao().insertTask(task)
 
-            // Sync to Firestore task document
-            val fStore = firestore
             if (fStore != null) {
                 val setTask = fStore.collection("tasks").document(taskId).set(
                     mapOf(
@@ -464,7 +440,6 @@ class TaskRepository(private val context: Context) {
                 com.google.android.gms.tasks.Tasks.await(setTask)
             }
 
-            // Trigger notification for assigned employee
             try {
                 NotificationRepository(
                     db.appNotificationDao(),
@@ -513,46 +488,72 @@ class TaskRepository(private val context: Context) {
             val task = db.taskDao().getTaskById(taskId)
             db.taskDao().deleteTask(taskId)
 
-            if (task != null) {
-                if (task.visitId.isNotBlank()) {
-                    db.visitDao().deleteVisitById(task.visitId)
-                }
-                if (task.schoolId.isNotBlank()) {
-                    db.visitDao().deleteVisitsBySchool(task.schoolId)
-                }
-            }
-
             val fStore = firestore
             if (fStore != null) {
-                val deleteTaskTask = fStore.collection("tasks").document(taskId).delete()
-                com.google.android.gms.tasks.Tasks.await(deleteTaskTask)
+                val deleteTaskDoc = fStore.collection("tasks").document(taskId).delete()
+                com.google.android.gms.tasks.Tasks.await(deleteTaskDoc)
+            }
 
-                if (task != null) {
-                    try {
-                        if (task.visitId.isNotBlank()) {
-                            val vstDocs1 = com.google.android.gms.tasks.Tasks.await(
-                                fStore.collection("visits").whereEqualTo("visitId", task.visitId).get()
-                            )
-                            for (doc in vstDocs1.documents) {
-                                fStore.collection("visits").document(doc.id).delete()
+            if (task != null) {
+                if (task.visitId.isNotBlank()) {
+                    val v = db.visitDao().getVisitById(task.visitId)
+                    if (v != null) {
+                        if (v.status == VisitStatus.ASSIGNED || v.status == VisitStatus.STARTED || v.status == VisitStatus.IN_PROGRESS) {
+                            db.visitDao().deleteVisitById(task.visitId)
+                            if (fStore != null) {
+                                try {
+                                    val deleteVisitDoc = fStore.collection("visits").document(task.visitId).delete()
+                                    com.google.android.gms.tasks.Tasks.await(deleteVisitDoc)
+                                } catch (e: Exception) {
+                                    Log.w("TaskRepository", "Notice deleting draft visit in Firestore: ${e.message}")
+                                }
                             }
                         }
-                        if (task.schoolId.isNotBlank()) {
-                            val vstDocs2 = com.google.android.gms.tasks.Tasks.await(
-                                fStore.collection("visits").whereEqualTo("schoolId", task.schoolId).get()
-                            )
-                            for (doc in vstDocs2.documents) {
-                                fStore.collection("visits").document(doc.id).delete()
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.w("TaskRepository", "Notice deleting associated visits in Firestore: ${e.message}")
                     }
                 }
+                Log.d("TASK_DELETED", "Deleted task $taskId for school ${task.schoolId}, employee ${task.employeeId}")
             }
+
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e("TaskRepository", "Error deleting task $taskId", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun cleanupDuplicateTasks(): Result<Int> = withContext(Dispatchers.IO) {
+        try {
+            val fStore = firestore ?: return@withContext Result.success(0)
+            val snapshotTask = fStore.collection("tasks").get()
+            val snapshot = com.google.android.gms.tasks.Tasks.await(snapshotTask)
+
+            val allTasks = snapshot.documents.mapNotNull { parseDocToTask(it) }
+            val grouped = allTasks.groupBy { "${it.employeeId}_${it.schoolId}_${it.visitDate}" }
+
+            var removedCount = 0
+            for ((_, list) in grouped) {
+                if (list.size > 1) {
+                    val sorted = list.sortedByDescending { it.createdAt }
+                    val winner = sorted.first()
+                    val duplicates = sorted.drop(1)
+
+                    for (dup in duplicates) {
+                        if (dup.status != VisitStatus.SUBMITTED && dup.status != VisitStatus.REVIEWED) {
+                            try {
+                                fStore.collection("tasks").document(dup.taskId).delete()
+                                db.taskDao().deleteTask(dup.taskId)
+                                removedCount++
+                                Log.d("TaskRepository", "Cleaned up duplicate task ${dup.taskId}")
+                            } catch (e: Exception) {
+                                Log.w("TaskRepository", "Error cleaning up duplicate task ${dup.taskId}: ${e.message}")
+                            }
+                        }
+                    }
+                }
+            }
+            Result.success(removedCount)
+        } catch (e: Exception) {
+            Log.w("TaskRepository", "Error running duplicate task cleanup: ${e.message}")
             Result.failure(e)
         }
     }

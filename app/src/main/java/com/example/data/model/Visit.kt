@@ -20,6 +20,7 @@ enum class SyncStatus {
 @Entity(tableName = "visits")
 data class Visit(
     @PrimaryKey val visitId: String,
+    val taskId: String = "",
     val schoolId: String,
     val employeeId: String,
     val employeeName: String = "",
