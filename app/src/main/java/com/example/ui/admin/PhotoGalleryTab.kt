@@ -130,12 +130,14 @@ fun PhotoGalleryTab(
 
     val allPhotos = remember(visits) {
         val list = mutableListOf<PhotoGridItem>()
-        for (v in visits) {
+        val cleanVisits = visits.distinctBy { "${it.schoolId}_${it.employeeId}" }
+        for (v in cleanVisits) {
             try {
                 val photoMap = photosAdapter.fromJson(v.photosJson) ?: emptyMap()
                 for ((catId, urls) in photoMap) {
                     val catObj = PhotoCategory.fromId(catId)
-                    for (u in urls) {
+                    val cleanUrls = urls.distinct()
+                    for (u in cleanUrls) {
                         list.add(
                             PhotoGridItem(
                                 url = u,
@@ -153,7 +155,7 @@ fun PhotoGalleryTab(
                 }
             } catch (_: Exception) {}
         }
-        list
+        list.distinctBy { "${it.visitId}_${it.categoryId}_${it.url}" }
     }
 
     val stateList = remember(allPhotos) {

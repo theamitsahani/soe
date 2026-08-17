@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -32,6 +33,8 @@ class SyncManager(private val context: Context) {
 
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
+    private val syncMutex = Mutex()
 
     private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
@@ -107,21 +110,34 @@ class SyncManager(private val context: Context) {
      * Uploads all pending offline/slow-network saved visits to the server safely.
      */
     suspend fun syncPendingData(): Boolean = withContext(Dispatchers.IO) {
-        updateNetworkState()
-        if (!_isOnline.value) return@withContext false
-        if (_isSyncing.value) return@withContext false
-
-        _isSyncing.value = true
+        if (!syncMutex.tryLock()) {
+            android.util.Log.d("SyncManager", "Sync is already in progress, skipping duplicate call.")
+            return@withContext false
+        }
         try {
+            updateNetworkState()
+            if (!_isOnline.value) return@withContext false
+
+            _isSyncing.value = true
             val pendingVisits = db.visitDao().getVisitsBySyncStatus(SyncStatus.PENDING)
             if (pendingVisits.isEmpty()) {
                 _pendingSyncCount.value = 0
-                _isSyncing.value = false
                 return@withContext true
             }
 
+            // Deduplicate pending visits by (schoolId + employeeId), taking the latest one
+            val uniqueVisitsMap = pendingVisits.groupBy { "${it.schoolId}_${it.employeeId}" }
+            val cleanPendingVisits = uniqueVisitsMap.values.map { list -> list.maxByOrNull { it.updatedAt }!! }
+
+            // Delete extra local duplicate pending records if any
+            for (p in pendingVisits) {
+                if (!cleanPendingVisits.contains(p)) {
+                    db.visitDao().deleteVisitById(p.visitId)
+                }
+            }
+
             var anySuccess = false
-            for (visit in pendingVisits) {
+            for (visit in cleanPendingVisits) {
                 val uploadSuccess = uploadSingleVisitToServer(visit)
                 if (uploadSuccess) {
                     db.visitDao().updateVisit(visit.copy(syncStatus = SyncStatus.SYNCED))
@@ -130,12 +146,13 @@ class SyncManager(private val context: Context) {
             }
 
             checkPendingCount()
-            _isSyncing.value = false
             anySuccess
         } catch (e: Exception) {
             e.printStackTrace()
-            _isSyncing.value = false
             false
+        } finally {
+            _isSyncing.value = false
+            syncMutex.unlock()
         }
     }
 

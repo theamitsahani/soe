@@ -53,14 +53,16 @@ import com.example.ui.theme.Slate900
 fun SyncStatusBanner(
     isOnline: Boolean,
     pendingCount: Int,
+    isSyncing: Boolean = false,
     onSyncClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val bgColor = if (!isOnline) Color(0xFFFEF2F2) else if (pendingCount > 0) Color(0xFFFFFBEB) else Color(0xFFF0FDF4)
-    val contentColor = if (!isOnline) Color(0xFFDC2626) else if (pendingCount > 0) Color(0xFFD97706) else Color(0xFF059669)
-    val borderColor = if (!isOnline) Color(0xFFFEE2E2) else if (pendingCount > 0) Color(0xFFFEF3C7) else Color(0xFFDCFCE7)
+    val bgColor = if (!isOnline) Color(0xFFFEF2F2) else if (isSyncing || pendingCount > 0) Color(0xFFFFFBEB) else Color(0xFFF0FDF4)
+    val contentColor = if (!isOnline) Color(0xFFDC2626) else if (isSyncing || pendingCount > 0) Color(0xFFD97706) else Color(0xFF059669)
+    val borderColor = if (!isOnline) Color(0xFFFEE2E2) else if (isSyncing || pendingCount > 0) Color(0xFFFEF3C7) else Color(0xFFDCFCE7)
     val icon = if (!isOnline) Icons.Default.CloudOff else if (pendingCount > 0) Icons.Default.CloudQueue else Icons.Default.CheckCircle
     val text = if (!isOnline) "Offline · Data saved locally"
+    else if (isSyncing) "Syncing data to cloud..."
     else if (pendingCount > 0) "$pendingCount Visit(s) Pending Sync"
     else "Online · All data synced"
 
@@ -83,12 +85,20 @@ fun SyncStatusBanner(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = contentColor,
-                    modifier = Modifier.size(18.dp)
-                )
+                if (isSyncing) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = contentColor,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = contentColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
                 Text(
                     text = text,
                     fontSize = 13.sp,
@@ -99,12 +109,13 @@ fun SyncStatusBanner(
 
             if (pendingCount > 0 && isOnline) {
                 OutlinedButton(
-                    onClick = onSyncClick,
+                    onClick = { if (!isSyncing) onSyncClick() },
+                    enabled = !isSyncing,
                     modifier = Modifier.padding(0.dp),
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = contentColor)
                 ) {
-                    Text("Sync Now", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(if (isSyncing) "Syncing..." else "Sync Now", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

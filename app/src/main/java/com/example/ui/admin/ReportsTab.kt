@@ -106,25 +106,29 @@ fun ReportsTab(
 
     val statusList = listOf("All Statuses", "Completed", "Data Required on Hard Disk", "Follow-up Required", "Pending")
 
-    val stateList = remember(visits) {
-        listOf("All States") + visits.map { if (it.state.isNotBlank()) it.state else "Rajasthan" }.distinct()
+    val uniqueVisits = remember(visits) {
+        visits.distinctBy { "${it.schoolId}_${it.employeeId}" }
     }
 
-    val districtList = remember(visits, selectedState) {
-        val base = if (selectedState == "All States") visits else visits.filter { (it.state.ifBlank { "Rajasthan" }) == selectedState }
+    val stateList = remember(uniqueVisits) {
+        listOf("All States") + uniqueVisits.map { if (it.state.isNotBlank()) it.state else "Rajasthan" }.distinct()
+    }
+
+    val districtList = remember(uniqueVisits, selectedState) {
+        val base = if (selectedState == "All States") uniqueVisits else uniqueVisits.filter { (it.state.ifBlank { "Rajasthan" }) == selectedState }
         listOf("All Districts") + base.map { it.district }.filter { it.isNotBlank() }.distinct()
     }
 
-    val blockList = remember(visits, selectedState, selectedDistrict) {
-        val base = visits.filter {
+    val blockList = remember(uniqueVisits, selectedState, selectedDistrict) {
+        val base = uniqueVisits.filter {
             (selectedState == "All States" || (it.state.ifBlank { "Rajasthan" }) == selectedState) &&
             (selectedDistrict == "All Districts" || it.district == selectedDistrict)
         }
         listOf("All Blocks") + base.map { it.block }.filter { it.isNotBlank() }.distinct()
     }
 
-    val filteredVisits = remember(visits, searchQuery, selectedStatus, selectedState, selectedDistrict, selectedBlock) {
-        visits.filter { v ->
+    val filteredVisits = remember(uniqueVisits, searchQuery, selectedStatus, selectedState, selectedDistrict, selectedBlock) {
+        uniqueVisits.filter { v ->
             val vState = v.state.ifBlank { "Rajasthan" }
             val matchState = selectedState == "All States" || vState == selectedState
             val matchDistrict = selectedDistrict == "All Districts" || v.district == selectedDistrict

@@ -117,7 +117,8 @@ fun VisitDetailDialog(
             val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
             val mapType = Types.newParameterizedType(Map::class.java, String::class.java, List::class.java)
             val adapter = moshi.adapter<Map<String, List<String>>>(mapType)
-            adapter.fromJson(visit.photosJson) ?: emptyMap()
+            val rawMap = adapter.fromJson(visit.photosJson) ?: emptyMap()
+            rawMap.mapValues { entry -> entry.value.distinct() }
         } catch (e: Exception) {
             emptyMap()
         }

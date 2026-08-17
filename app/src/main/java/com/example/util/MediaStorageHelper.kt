@@ -133,17 +133,40 @@ object MediaStorageHelper {
             val originalMap = photosAdapter.fromJson(photosJson) ?: return@withContext photosJson
             val updatedMap = mutableMapOf<String, List<String>>()
             val firestore = FirebaseUtils.firestore
+            val db = com.example.data.local.AppDatabase.getDatabase(context)
+
+            val safeVisitId = visitId.ifBlank { "unknown_visit" }
+            val safeSchoolId = schoolId.ifBlank { "unknown_school" }
+
+            val dbVisit = try { db.visitDao().getVisitById(safeVisitId) } catch (_: Exception) { null }
+            val dbPhotoMap = try {
+                if (dbVisit != null && dbVisit.photosJson.isNotBlank()) photosAdapter.fromJson(dbVisit.photosJson) else null
+            } catch (_: Exception) { null }
 
             var totalItems = 0
-            originalMap.values.forEach { totalItems += it.size }
+            originalMap.values.forEach { totalItems += it.distinct().size }
             var processedItems = 0
 
             for ((categoryId, uriList) in originalMap) {
                 val updatedUris = mutableListOf<String>()
-                for ((index, uriStr) in uriList.withIndex()) {
+                val cleanUriList = uriList.distinct()
+
+                val dbCategoryUrls = dbPhotoMap?.get(categoryId) ?: emptyList()
+
+                for ((index, uriStr) in cleanUriList.withIndex()) {
                     if (uriStr.startsWith("http://") || uriStr.startsWith("https://") || uriStr.startsWith("gs://")) {
                         // Already uploaded to Cloudinary or remote URL
-                        updatedUris.add(uriStr)
+                        if (!updatedUris.contains(uriStr)) {
+                            updatedUris.add(uriStr)
+                        }
+                        processedItems++
+                        onProgress?.invoke(processedItems, totalItems)
+                    } else if (index < dbCategoryUrls.size && (dbCategoryUrls[index].startsWith("http://") || dbCategoryUrls[index].startsWith("https://"))) {
+                        // Found existing Cloudinary URL in local database for this photo index!
+                        val existingRemoteUrl = dbCategoryUrls[index]
+                        if (!updatedUris.contains(existingRemoteUrl)) {
+                            updatedUris.add(existingRemoteUrl)
+                        }
                         processedItems++
                         onProgress?.invoke(processedItems, totalItems)
                     } else {
@@ -155,9 +178,6 @@ object MediaStorageHelper {
                                 val ext = if (isVideo) "mp4" else "jpg"
                                 val fileName = getStandardizedFileName(categoryId, index, ext)
                                 val photoId = UUID.randomUUID().toString()
-
-                                val safeVisitId = visitId.ifBlank { "unknown_visit" }
-                                val safeSchoolId = schoolId.ifBlank { "unknown_school" }
 
                                 val uploadResult = CloudinaryUploader.uploadBytes(
                                     bytes = bytes,
@@ -207,18 +227,36 @@ object MediaStorageHelper {
                                     }
 
                                     Log.d("MediaStorageHelper", "Successfully uploaded $fileName to Cloudinary: $downloadUrl")
-                                    updatedUris.add(downloadUrl)
+                                    if (!updatedUris.contains(downloadUrl)) {
+                                        updatedUris.add(downloadUrl)
+                                    }
+
+                                    // Immediately update Room DB to store the new remote URL so any retry or subsequent read uses it
+                                    try {
+                                        if (dbVisit != null) {
+                                            val tempMap = updatedMap.toMutableMap()
+                                            tempMap[categoryId] = updatedUris
+                                            val tempJson = photosAdapter.toJson(tempMap)
+                                            db.visitDao().updateVisit(dbVisit.copy(photosJson = tempJson))
+                                        }
+                                    } catch (_: Exception) {}
                                 } else {
                                     Log.e("MediaStorageHelper", "Cloudinary upload failed for $uriStr, keeping local reference")
-                                    updatedUris.add(uriStr)
+                                    if (!updatedUris.contains(uriStr)) {
+                                        updatedUris.add(uriStr)
+                                    }
                                 }
                             } catch (e: Exception) {
                                 Log.e("MediaStorageHelper", "Cloudinary upload failed for $uriStr, keeping local reference: ${e.message}", e)
-                                updatedUris.add(uriStr)
+                                if (!updatedUris.contains(uriStr)) {
+                                    updatedUris.add(uriStr)
+                                }
                             }
                         } else {
                             Log.e("MediaStorageHelper", "Failed to read bytes for media URI: $uriStr")
-                            updatedUris.add(uriStr)
+                            if (!updatedUris.contains(uriStr)) {
+                                updatedUris.add(uriStr)
+                            }
                         }
                         processedItems++
                         onProgress?.invoke(processedItems, totalItems)

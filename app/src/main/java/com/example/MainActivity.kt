@@ -91,6 +91,7 @@ class MainActivity : ComponentActivity() {
 
                     val isOnline by syncManager.isOnline.collectAsState()
                     val pendingSyncCount by syncManager.pendingSyncCount.collectAsState()
+                    val isSyncing by syncManager.isSyncing.collectAsState()
 
                     val scope = rememberCoroutineScope()
 
@@ -364,6 +365,7 @@ class MainActivity : ComponentActivity() {
                                         schools = schools,
                                         isOnline = isOnline,
                                         pendingSyncCount = pendingSyncCount,
+                                        isSyncing = isSyncing,
                                         onSyncClick = {
                                             scope.launch { syncManager.syncPendingData() }
                                         },

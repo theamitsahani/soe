@@ -494,8 +494,8 @@ fun VisitFormScreen(
                                     val mapType = Types.newParameterizedType(Map::class.java, String::class.java, List::class.java)
                                     val photosAdapter = moshi.adapter<Map<String, List<String>>>(mapType)
 
-                                    val visitId = existingVisit?.visitId ?: task?.visitId ?: ("vst_" + UUID.randomUUID().toString().take(8))
                                     val schoolId = existingVisit?.schoolId ?: task?.schoolId ?: initialSchool?.schoolId ?: ("sch_" + UUID.randomUUID().toString().take(8))
+                                    val visitId = existingVisit?.visitId ?: task?.visitId?.takeIf { it.isNotBlank() } ?: "vst_${schoolId}_${employeeUser.userId}"
 
                                     val finalVisit = Visit(
                                         visitId = visitId,

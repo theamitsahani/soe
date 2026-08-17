@@ -61,7 +61,7 @@ class VisitRepository(private val context: Context) {
             val snapshotTask = query.get()
             val snapshot = com.google.android.gms.tasks.Tasks.await(snapshotTask)
 
-            val visits = snapshot.documents.mapNotNull { doc ->
+            val rawVisits = snapshot.documents.mapNotNull { doc ->
                 val visitId = doc.getString("visitId") ?: doc.id
                 val schoolId = doc.getString("schoolId") ?: ""
                 val employeeId = doc.getString("employeeId") ?: ""
@@ -90,15 +90,41 @@ class VisitRepository(private val context: Context) {
                 )
             }
 
-            if (visits.isNotEmpty()) {
-                db.visitDao().insertVisits(visits)
-                for (v in visits) {
+            // Group visits by (schoolId + employeeId) to remove duplicates created by multiple clicks
+            val cleanVisits = mutableListOf<Visit>()
+            val groupedBySchoolEmp = rawVisits.groupBy { "${it.schoolId}_${it.employeeId}" }
+
+            for ((_, group) in groupedBySchoolEmp) {
+                if (group.size == 1) {
+                    cleanVisits.add(group.first())
+                } else {
+                    // Pick the most recent visit
+                    val winner = group.maxByOrNull { it.updatedAt } ?: group.first()
+                    cleanVisits.add(winner)
+
+                    // Clean up extra duplicate documents from Firestore and local DB
+                    for (duplicate in group) {
+                        if (duplicate.visitId != winner.visitId) {
+                            try {
+                                fStore.collection("visits").document(duplicate.visitId).delete()
+                                db.visitDao().deleteVisitById(duplicate.visitId)
+                            } catch (e: Exception) {
+                                android.util.Log.w("VisitRepository", "Could not delete duplicate visit ${duplicate.visitId}: ${e.message}")
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (cleanVisits.isNotEmpty()) {
+                db.visitDao().insertVisits(cleanVisits)
+                for (v in cleanVisits) {
                     if (v.status == VisitStatus.SUBMITTED || v.status == VisitStatus.REVIEWED) {
                         db.taskDao().markTaskSubmittedForEmployeeAndSchool(v.employeeId, v.schoolId)
                     }
                 }
             }
-            Result.success(visits.size)
+            Result.success(cleanVisits.size)
         } catch (e: Exception) {
             Result.failure(e)
         }

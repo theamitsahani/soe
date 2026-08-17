@@ -105,6 +105,7 @@ fun EmployeeMainScreen(
     schools: List<School> = emptyList(),
     isOnline: Boolean,
     pendingSyncCount: Int,
+    isSyncing: Boolean = false,
     onSyncClick: () -> Unit,
     onStartVisit: (Task) -> Unit,
     onEditVisit: (Visit) -> Unit = {},
@@ -113,6 +114,10 @@ fun EmployeeMainScreen(
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = EmployeeNavTab.entries
+
+    val cleanCompletedVisits = remember(completedVisits) {
+        completedVisits.distinctBy { "${it.schoolId}_${it.employeeId}" }
+    }
 
     Scaffold(
         topBar = {
@@ -178,6 +183,7 @@ fun EmployeeMainScreen(
             SyncStatusBanner(
                 isOnline = isOnline,
                 pendingCount = pendingSyncCount,
+                isSyncing = isSyncing,
                 onSyncClick = onSyncClick
             )
 
@@ -198,7 +204,7 @@ fun EmployeeMainScreen(
                     TasksListSection(
                         title = "Today's Assigned Tasks (${todayTasks.size})",
                         tasks = todayTasks,
-                        completedVisits = completedVisits,
+                        completedVisits = cleanCompletedVisits,
                         schools = schools,
                         onStartVisit = onStartVisit
                     )
@@ -207,14 +213,14 @@ fun EmployeeMainScreen(
                     TasksListSection(
                         title = "Upcoming Field Tasks (${upcomingTasks.size})",
                         tasks = upcomingTasks,
-                        completedVisits = completedVisits,
+                        completedVisits = cleanCompletedVisits,
                         schools = schools,
                         onStartVisit = onStartVisit
                     )
                 }
                 EmployeeNavTab.COMPLETED -> {
                     CompletedVisitsSection(
-                        visits = completedVisits,
+                        visits = cleanCompletedVisits,
                         schools = schools,
                         onEditVisit = onEditVisit
                     )
