@@ -1,5 +1,6 @@
 package com.example.ui.admin
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,12 +20,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.AssignmentTurnedIn
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -40,6 +45,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +58,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -64,8 +72,14 @@ import com.example.ui.components.StatusChip
 import com.example.ui.components.VisitDetailDialog
 import com.example.ui.theme.Indigo600
 import com.example.ui.theme.Navy900
+import com.example.ui.theme.Slate100
+import com.example.ui.theme.Slate200
+import com.example.ui.theme.Slate300
+import com.example.ui.theme.Slate400
 import com.example.ui.theme.Slate500
+import com.example.ui.theme.Slate600
 import com.example.ui.theme.Slate700
+import com.example.ui.theme.Slate900
 
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -132,6 +146,7 @@ fun AssignVisitsTab(
     var isSubmitting by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var selectedVisitForDetails by remember { mutableStateOf<Visit?>(null) }
+    var showAllTasksDialog by remember { mutableStateOf(false) }
 
     // Exclude schools that are already assigned to a task or have a visit completed/submitted/reviewed
     val completedOrAssignedSchoolIds = remember(assignedTasks, visits, schools) {
@@ -604,7 +619,38 @@ fun AssignVisitsTab(
         }
 
         item {
-            Text("Recently Assigned Tasks", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Navy900)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Recently Assigned Tasks (${assignedTasks.take(6).size}/${assignedTasks.size})",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Navy900
+                )
+                if (assignedTasks.isNotEmpty()) {
+                    TextButton(
+                        onClick = { showAllTasksDialog = true },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "View All (${assignedTasks.size})",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Indigo600
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "View All Assigned Tasks",
+                            tint = Indigo600,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                }
+            }
         }
 
         if (assignedTasks.isEmpty()) {
@@ -627,7 +673,8 @@ fun AssignVisitsTab(
                 }
             }
         } else {
-            items(assignedTasks) { task ->
+            val recentTasks = assignedTasks.take(6)
+            items(recentTasks) { task ->
                 val matchedVisit = remember(task, visits) {
                     visits.find { it.schoolId == task.schoolId || it.schoolName == task.schoolName }
                 }
@@ -664,6 +711,18 @@ fun AssignVisitsTab(
         }
     }
 
+    // All Assigned Tasks Full Dialog
+    if (showAllTasksDialog) {
+        AllAssignedTasksDialog(
+            assignedTasks = assignedTasks,
+            visits = visits,
+            onDismiss = { showAllTasksDialog = false },
+            onSelectVisit = { visit ->
+                selectedVisitForDetails = visit
+            }
+        )
+    }
+
     selectedVisitForDetails?.let { visit ->
         val matchedSchool = remember(visit.schoolId, schools) {
             schools.find { it.schoolId == visit.schoolId }
@@ -672,7 +731,261 @@ fun AssignVisitsTab(
         VisitDetailDialog(
             visit = visit,
             school = matchedSchool,
+            isAdmin = true,
             onDismiss = { selectedVisitForDetails = null }
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AllAssignedTasksDialog(
+    assignedTasks: List<Task>,
+    visits: List<Visit>,
+    onDismiss: () -> Unit,
+    onSelectVisit: (Visit) -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedStatus by remember { mutableStateOf("All") }
+
+    val filteredTasks = remember(assignedTasks, searchQuery, selectedStatus) {
+        assignedTasks.filter { task ->
+            val matchesQuery = searchQuery.isBlank() ||
+                    task.schoolName.contains(searchQuery, ignoreCase = true) ||
+                    task.employeeName.contains(searchQuery, ignoreCase = true) ||
+                    task.district.contains(searchQuery, ignoreCase = true) ||
+                    task.block.contains(searchQuery, ignoreCase = true) ||
+                    task.visitDate.contains(searchQuery, ignoreCase = true)
+
+            val matchesStatus = selectedStatus == "All" || task.status.name.equals(selectedStatus, ignoreCase = true)
+
+            matchesQuery && matchesStatus
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            shape = RoundedCornerShape(20.dp),
+            color = Slate100
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Header
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color.White,
+                    shadowElevation = 2.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "All Assigned Tasks",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Navy900
+                            )
+                            Text(
+                                text = "Total ${assignedTasks.size} tasks assigned to officers",
+                                fontSize = 12.sp,
+                                color = Slate500
+                            )
+                        }
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, contentDescription = "Close Dialog", tint = Slate700)
+                        }
+                    }
+                }
+
+                // Search and Filter Bar
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White)
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Search by school, officer, block, date...") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Indigo600) },
+                        trailingIcon = {
+                            if (searchQuery.isNotBlank()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = Slate500)
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Indigo600,
+                            unfocusedBorderColor = Slate300
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Status Filters
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("All", "ASSIGNED", "SUBMITTED", "REVIEWED").forEach { status ->
+                            val isSelected = selectedStatus == status
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = if (isSelected) Indigo600 else Slate200,
+                                modifier = Modifier.clickable { selectedStatus = status }
+                            ) {
+                                Text(
+                                    text = status,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) Color.White else Slate700,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Task List
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    item {
+                        Text(
+                            text = "Showing ${filteredTasks.size} of ${assignedTasks.size} tasks",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Slate600
+                        )
+                    }
+
+                    if (filteredTasks.isEmpty()) {
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(32.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(Icons.Default.SearchOff, contentDescription = null, tint = Slate400, modifier = Modifier.size(48.dp))
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Text("No matching tasks found", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Navy900)
+                                    Text("Try adjusting your search query or filter", fontSize = 12.sp, color = Slate500)
+                                }
+                            }
+                        }
+                    } else {
+                        items(filteredTasks) { task ->
+                            val matchedVisit = remember(task, visits) {
+                                visits.find { it.schoolId == task.schoolId || it.schoolName == task.schoolName }
+                            }
+
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (matchedVisit != null) {
+                                            onSelectVisit(matchedVisit)
+                                        }
+                                    },
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = task.schoolName,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Navy900,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        StatusChip(statusName = task.status.name)
+                                    }
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "${task.district} • ${task.block}",
+                                        fontSize = 12.sp,
+                                        color = Slate500
+                                    )
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "Assigned To: ${task.employeeName}",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Slate700
+                                        )
+                                        Text(
+                                            text = "Date: ${task.visitDate}",
+                                            fontSize = 12.sp,
+                                            color = Indigo600,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+
+                                    if (task.notes.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "Note: ${task.notes}",
+                                            fontSize = 11.sp,
+                                            color = Slate600
+                                        )
+                                    }
+
+                                    if (matchedVisit != null) {
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = Color(0xFFEFF6FF)
+                                        ) {
+                                            Text(
+                                                text = "✓ Visit Report Available - Tap to view full report",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Indigo600,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

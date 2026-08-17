@@ -314,11 +314,23 @@ class MainActivity : ComponentActivity() {
                                                         scope.launch {
                                                             visitRepository.updateVisitAnswers(visitId, updatedAnswers)
                                                         }
+                                                    },
+                                                    onDeletePhoto = { visitId, categoryId, photoUrl ->
+                                                        scope.launch {
+                                                            visitRepository.deletePhotoFromVisit(visitId, categoryId, photoUrl)
+                                                        }
                                                     }
                                                 )
                                             }
                                             AdminTab.PHOTO_GALLERY -> {
-                                                PhotoGalleryTab(visits = visits)
+                                                PhotoGalleryTab(
+                                                    visits = visits,
+                                                    onDeletePhoto = { visitId, categoryId, photoUrl ->
+                                                        scope.launch {
+                                                            visitRepository.deletePhotoFromVisit(visitId, categoryId, photoUrl)
+                                                        }
+                                                    }
+                                                )
                                             }
                                             AdminTab.SETTINGS -> {
                                                 SettingsTab(

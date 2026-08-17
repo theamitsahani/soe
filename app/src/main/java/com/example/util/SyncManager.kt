@@ -171,6 +171,7 @@ class SyncManager(private val context: Context) {
                     "status" to visit.status.name,
                     "answersJson" to visit.answersJson,
                     "photosJson" to updatedPhotosJson,
+                    "editCount" to visit.editCount,
                     "createdAt" to visit.createdAt,
                     "updatedAt" to System.currentTimeMillis()
                 )

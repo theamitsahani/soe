@@ -83,6 +83,7 @@ class VisitRepository(private val context: Context) {
                     status = status,
                     answersJson = doc.getString("answersJson") ?: "{}",
                     photosJson = doc.getString("photosJson") ?: "{}",
+                    editCount = (doc.getLong("editCount") ?: 0L).toInt(),
                     syncStatus = SyncStatus.SYNCED,
                     createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis(),
                     updatedAt = doc.getLong("updatedAt") ?: System.currentTimeMillis()
@@ -91,6 +92,11 @@ class VisitRepository(private val context: Context) {
 
             if (visits.isNotEmpty()) {
                 db.visitDao().insertVisits(visits)
+                for (v in visits) {
+                    if (v.status == VisitStatus.SUBMITTED || v.status == VisitStatus.REVIEWED) {
+                        db.taskDao().markTaskSubmittedForEmployeeAndSchool(v.employeeId, v.schoolId)
+                    }
+                }
             }
             Result.success(visits.size)
         } catch (e: Exception) {
@@ -184,6 +190,50 @@ class VisitRepository(private val context: Context) {
                     com.google.android.gms.tasks.Tasks.await(task)
                 } catch (e: Exception) {
                     android.util.Log.w("VisitRepository", "Notice updating answers in Firestore: ${e.message}")
+                }
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deletePhotoFromVisit(visitId: String, categoryId: String, photoUrl: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val existing = db.visitDao().getVisitById(visitId) ?: return@withContext Result.failure(Exception("Visit not found"))
+            val moshi = com.squareup.moshi.Moshi.Builder().addLast(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory()).build()
+            val mapType = com.squareup.moshi.Types.newParameterizedType(Map::class.java, String::class.java, List::class.java)
+            val adapter = moshi.adapter<Map<String, List<String>>>(mapType)
+            val currentMap = try { adapter.fromJson(existing.photosJson) ?: emptyMap() } catch (e: Exception) { emptyMap() }
+            
+            val updatedMap = currentMap.toMutableMap()
+            val currentList = updatedMap[categoryId]?.toMutableList() ?: mutableListOf()
+            currentList.remove(photoUrl)
+            if (currentList.isEmpty()) {
+                updatedMap.remove(categoryId)
+            } else {
+                updatedMap[categoryId] = currentList
+            }
+            
+            val updatedPhotosJson = adapter.toJson(updatedMap)
+            val updatedVisit = existing.copy(
+                photosJson = updatedPhotosJson,
+                updatedAt = System.currentTimeMillis()
+            )
+            db.visitDao().updateVisit(updatedVisit)
+
+            val fStore = firestore
+            if (fStore != null && syncManager.isNetworkAvailable()) {
+                try {
+                    val task = fStore.collection("visits").document(visitId).update(
+                        mapOf(
+                            "photosJson" to updatedPhotosJson,
+                            "updatedAt" to updatedVisit.updatedAt
+                        )
+                    )
+                    com.google.android.gms.tasks.Tasks.await(task)
+                } catch (e: Exception) {
+                    android.util.Log.w("VisitRepository", "Notice updating deleted photo in Firestore: ${e.message}")
                 }
             }
             Result.success(Unit)

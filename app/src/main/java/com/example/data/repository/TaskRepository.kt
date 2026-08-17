@@ -88,20 +88,25 @@ class TaskRepository(private val context: Context) {
             schoolName = "School Visit Task"
         }
 
+        val visitId = doc.getString("visitId") ?: ""
         val statusStr = doc.getString("status") ?: VisitStatus.ASSIGNED.name
         var status = try { VisitStatus.valueOf(statusStr) } catch (e: Exception) { VisitStatus.ASSIGNED }
 
-        // If local database has this task marked as SUBMITTED or REVIEWED, preserve it
+        // If local database has this task marked as SUBMITTED or REVIEWED, or if matching visit exists, preserve it
         if (status == VisitStatus.ASSIGNED) {
             val localTask = db.taskDao().getTaskById(taskId)
             if (localTask != null && (localTask.status == VisitStatus.SUBMITTED || localTask.status == VisitStatus.REVIEWED)) {
                 status = localTask.status
+            } else if (visitId.isNotBlank() && db.visitDao().getVisitById(visitId) != null) {
+                status = VisitStatus.SUBMITTED
+            } else if (schoolId.isNotBlank() && db.visitDao().getVisitsListBySchool(schoolId).isNotEmpty()) {
+                status = VisitStatus.SUBMITTED
             }
         }
 
         return Task(
             taskId = taskId,
-            visitId = doc.getString("visitId") ?: "",
+            visitId = visitId,
             schoolId = schoolId,
             employeeId = employeeId,
             employeeName = doc.getString("employeeName") ?: "",

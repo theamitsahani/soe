@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PlayCircleFilled
@@ -289,6 +290,15 @@ fun VisitFormScreen(
         "Review"
     )
 
+    val isExistingVisitEditable = remember(existingVisit) {
+        if (existingVisit == null) true
+        else {
+            val timeSinceSubmission = System.currentTimeMillis() - existingVisit.createdAt
+            val twelveHoursMillis = 12 * 60 * 60 * 1000L
+            (timeSinceSubmission in 0..twelveHoursMillis) && existingVisit.editCount < 1
+        }
+    }
+
     Scaffold(
         containerColor = FormBackground,
         topBar = {
@@ -436,6 +446,11 @@ fun VisitFormScreen(
                                         return@clickable
                                     }
 
+                                    if (existingVisit != null && !isExistingVisitEditable) {
+                                        submitError = if (existingVisit.editCount >= 1) "यह रिपोर्ट 1 बार संशोधित हो चुकी है (1/1 Edit Limit Reached)। और बदलाव नहीं किए जा सकते।" else "12 घंटे की संशोधन अवधि समाप्त हो चुकी है।"
+                                        return@clickable
+                                    }
+
                                     // Final Submission logic
                                     isSubmitting = true
                                     submitError = null
@@ -495,6 +510,7 @@ fun VisitFormScreen(
                                         status = VisitStatus.SUBMITTED,
                                         answersJson = answersAdapter.toJson(answers),
                                         photosJson = photosAdapter.toJson(photoMap.mapValues { it.value.toList() }),
+                                        editCount = if (existingVisit != null) existingVisit.editCount + 1 else 0,
                                         createdAt = existingVisit?.createdAt ?: System.currentTimeMillis(),
                                         updatedAt = System.currentTimeMillis()
                                     )
@@ -521,9 +537,11 @@ fun VisitFormScreen(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .background(
-                                    Brush.horizontalGradient(
-                                        colors = listOf(BrandPurple, BrandPurpleDark)
-                                    )
+                                    if (currentStep == totalSteps && existingVisit != null && !isExistingVisitEditable) {
+                                        Brush.horizontalGradient(colors = listOf(Slate500, Slate700))
+                                    } else {
+                                        Brush.horizontalGradient(colors = listOf(BrandPurple, BrandPurpleDark))
+                                    }
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
@@ -535,13 +553,17 @@ fun VisitFormScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Text(
-                                        text = if (currentStep == totalSteps) "Submit Report" else "Next Step",
+                                        text = if (currentStep == totalSteps) {
+                                            if (existingVisit != null && !isExistingVisitEditable) "Report Locked (1/1 Limit)" else "Submit Report"
+                                        } else "Next Step",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 16.sp,
                                         color = Color.White
                                     )
                                     Icon(
-                                        imageVector = if (currentStep == totalSteps) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
+                                        imageVector = if (currentStep == totalSteps) {
+                                            if (existingVisit != null && !isExistingVisitEditable) Icons.Default.Lock else Icons.Default.Check
+                                        } else Icons.AutoMirrored.Filled.ArrowForward,
                                         contentDescription = null,
                                         tint = Color.White,
                                         modifier = Modifier.size(18.dp)
@@ -566,6 +588,36 @@ fun VisitFormScreen(
                 pendingCount = pendingSyncCount,
                 onSyncClick = {}
             )
+
+            // Edit Limit / Lock Banner
+            if (existingVisit != null && !isExistingVisitEditable) {
+                Surface(
+                    color = Color(0xFFFEF3C7),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = Color(0xFFD97706),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (existingVisit.editCount >= 1) "यह रिपोर्ट 1 बार संशोधित हो चुकी है (1/1 Limit Reached)। और बदलाव मान्य नहीं हैं।" else "12 घंटे की संशोधन अवधि समाप्त हो चुकी है।",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF92400E)
+                        )
+                    }
+                }
+            }
 
             // Step Progress Indicator Header
             Surface(
@@ -884,7 +936,7 @@ fun VisitFormScreen(
                         ) {
                             Column(modifier = Modifier.padding(18.dp)) {
                                 Text(
-                                    text = "भाग लेने वाली कक्षाएं (Participating Classes)",
+                                    text = "11. भाग लेने वाली कक्षाएं (Participating Classes)",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Navy900
@@ -964,7 +1016,7 @@ fun VisitFormScreen(
                         ) {
                             Column(modifier = Modifier.padding(18.dp)) {
                                 Text(
-                                    text = "11. उपस्थित विद्यार्थियों की संख्या",
+                                    text = "12. उपस्थित विद्यार्थियों की संख्या",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Navy900
@@ -998,7 +1050,7 @@ fun VisitFormScreen(
 
                         // School Response
                         ModernSingleChoiceCard(
-                            title = "12. विद्यालय की प्रतिक्रिया",
+                            title = "13. विद्यालय की प्रतिक्रिया",
                             subtitle = "School Response Rating",
                             options = listOf("बहुत अच्छी", "अच्छी", "सामान्य", "कमजोर"),
                             selectedOption = schoolResponse,
@@ -1022,7 +1074,7 @@ fun VisitFormScreen(
                                 verticalArrangement = Arrangement.spacedBy(14.dp)
                             ) {
                                 Text(
-                                    text = "13. BCI संपर्क विवरण (BCI Details)",
+                                    text = "14. BCI संपर्क विवरण (BCI Details)",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Navy900
@@ -1095,7 +1147,7 @@ fun VisitFormScreen(
                         }
 
                         ModernSingleChoiceCard(
-                            title = "14. विद्यालय/SMC WhatsApp समूह में जोड़े गए?",
+                            title = "15. विद्यालय/SMC WhatsApp समूह में जोड़े गए?",
                             subtitle = "Added in WhatsApp Group?",
                             options = listOf("हाँ", "नहीं", "लंबित"),
                             selectedOption = whatsappGroupAdded,
@@ -1103,7 +1155,7 @@ fun VisitFormScreen(
                         )
 
                         ModernSingleChoiceCard(
-                            title = "15. पोस्टर लगाया गया?",
+                            title = "16. पोस्टर लगाया गया?",
                             subtitle = "Poster Installed in School?",
                             options = listOf("हाँ", "नहीं"),
                             selectedOption = posterInstalled,
@@ -1111,7 +1163,7 @@ fun VisitFormScreen(
                         )
 
                         ModernSingleChoiceCard(
-                            title = "21. स्मार्ट क्लास की स्थिति",
+                            title = "17. स्मार्ट क्लास की स्थिति",
                             subtitle = "Smart Class Status & Operations",
                             options = listOf("बहुत अच्छी", "अच्छी", "सामान्य", "खराब", "उपयोग में नहीं है", "स्मार्ट क्लास उपलब्ध नहीं है"),
                             selectedOption = smartClassStatus,
@@ -1124,7 +1176,7 @@ fun VisitFormScreen(
                         // STEP 4: Observations & Follow-up
                         // ==========================================
                         ModernMultilineCard(
-                            title = "16. मुख्य अवलोकन",
+                            title = "18. मुख्य अवलोकन",
                             subtitle = "Key Observations during school visit",
                             value = keyObservations,
                             placeholder = "Write key observations during school visit...",
@@ -1133,7 +1185,7 @@ fun VisitFormScreen(
                         )
 
                         ModernMultilineCard(
-                            title = "17. समस्याएं / सहायता आवश्यकता",
+                            title = "19. समस्याएं / सहायता आवश्यकता",
                             subtitle = "Problems Faced / Assistance Needed",
                             value = problemsOrAssistance,
                             placeholder = "Describe any problems faced or support needed...",
@@ -1142,7 +1194,7 @@ fun VisitFormScreen(
                         )
 
                         ModernSingleChoiceCard(
-                            title = "18. फॉलो-अप आवश्यक है?",
+                            title = "20. फॉलो-अप आवश्यक है?",
                             subtitle = "Follow-up Required?",
                             options = listOf("हाँ", "नहीं"),
                             selectedOption = followupRequired,
@@ -1150,7 +1202,7 @@ fun VisitFormScreen(
                         )
 
                         ModernSingleChoiceCard(
-                            title = "19. हार्ड डिस्क में डेटा आवश्यक है?",
+                            title = "21. हार्ड डिस्क में डेटा आवश्यक है?",
                             subtitle = "Data Required on Hard Disk?",
                             options = listOf("हाँ", "नहीं"),
                             selectedOption = dataRequiredOnHardDisk,
@@ -1158,7 +1210,7 @@ fun VisitFormScreen(
                         )
 
                         ModernMultilineCard(
-                            title = "20. अंतिम टिप्पणी",
+                            title = "22. अंतिम टिप्पणी",
                             subtitle = "Final Remarks / Overall Assessment",
                             value = finalRemarks,
                             placeholder = "Final remarks / overall assessment...",
@@ -1187,7 +1239,7 @@ fun VisitFormScreen(
                                 Icon(Icons.Default.CameraAlt, contentDescription = null, tint = BrandPurple, modifier = Modifier.size(24.dp))
                                 Column {
                                     Text("Photo & Media Uploads", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = BrandPurpleDark)
-                                    Text("Mandatory 5 categories (1 photo each) and unlimited Other photos/videos", fontSize = 12.sp, color = Slate700)
+                                    Text("Upload school photos and videos for the visit record", fontSize = 12.sp, color = Slate700)
                                 }
                             }
                         }
@@ -1214,17 +1266,25 @@ fun VisitFormScreen(
                                             Spacer(modifier = Modifier.height(2.dp))
                                             Surface(
                                                 shape = RoundedCornerShape(8.dp),
-                                                color = if (isSatisfied) Color(0xFFECFDF5) else Color(0xFFFEF2F2)
+                                                color = if (category.minRequired > 0) {
+                                                    if (isSatisfied) Color(0xFFECFDF5) else Color(0xFFFEF2F2)
+                                                } else {
+                                                    if (currentList.isNotEmpty()) Color(0xFFECFDF5) else Color(0xFFF1F5F9)
+                                                }
                                             ) {
                                                 Text(
                                                     text = if (category.minRequired > 0) {
                                                         if (isSatisfied) "✓ Mandatory attached" else "• Mandatory (Min 1 required)"
                                                     } else {
-                                                        "Optional (Unlimited Uploads)"
+                                                        if (currentList.isNotEmpty()) "✓ ${currentList.size} attached" else "Add photo"
                                                     },
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = if (isSatisfied) Emerald600 else Red600,
+                                                    color = if (category.minRequired > 0) {
+                                                        if (isSatisfied) Emerald600 else Red600
+                                                    } else {
+                                                        if (currentList.isNotEmpty()) Emerald600 else Slate500
+                                                    },
                                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                                                 )
                                             }

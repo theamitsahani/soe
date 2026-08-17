@@ -32,6 +32,7 @@ data class Visit(
     // Store answers and photos json/string representations for Room
     val answersJson: String = "",
     val photosJson: String = "", // Map of Category ID -> List of image URIs/URLs
+    val editCount: Int = 0,
     val syncStatus: SyncStatus = SyncStatus.SYNCED,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()

@@ -86,7 +86,8 @@ fun ReportsTab(
     visits: List<Visit>,
     schools: List<School> = emptyList(),
     initialStatusFilter: String = "All Statuses",
-    onUpdateVisitAnswers: ((String, VisitAnswers) -> Unit)? = null
+    onUpdateVisitAnswers: ((String, VisitAnswers) -> Unit)? = null,
+    onDeletePhoto: ((visitId: String, categoryId: String, photoUrl: String) -> Unit)? = null
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedStatus by remember { mutableStateOf(initialStatusFilter) }
@@ -473,9 +474,14 @@ fun ReportsTab(
         VisitDetailDialog(
             visit = visit,
             school = matchedSchool,
+            isAdmin = true,
             onDismiss = { selectedVisitForDetails = null },
             onUpdateAnswers = { updatedAnswers ->
                 onUpdateVisitAnswers?.invoke(visit.visitId, updatedAnswers)
+                selectedVisitForDetails = null
+            },
+            onDeletePhoto = { catId, url ->
+                onDeletePhoto?.invoke(visit.visitId, catId, url)
                 selectedVisitForDetails = null
             }
         )

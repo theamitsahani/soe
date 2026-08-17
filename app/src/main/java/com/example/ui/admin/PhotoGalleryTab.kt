@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayCircleFilled
@@ -71,7 +72,9 @@ import kotlinx.coroutines.launch
 
 data class PhotoGridItem(
     val url: String,
+    val categoryId: String,
     val categoryName: String,
+    val visitId: String,
     val schoolName: String,
     val state: String,
     val district: String,
@@ -82,7 +85,8 @@ data class PhotoGridItem(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PhotoGalleryTab(
-    visits: List<Visit>
+    visits: List<Visit>,
+    onDeletePhoto: ((visitId: String, categoryId: String, photoUrl: String) -> Unit)? = null
 ) {
     var selectedState by remember { mutableStateOf("All States") }
     var selectedDistrict by remember { mutableStateOf("All Districts") }
@@ -95,6 +99,9 @@ fun PhotoGalleryTab(
     var blockExpanded by remember { mutableStateOf(false) }
     var schoolExpanded by remember { mutableStateOf(false) }
     var categoryExpanded by remember { mutableStateOf(false) }
+
+    var selectedPhotoItem by remember { mutableStateOf<PhotoGridItem?>(null) }
+    var photoToDelete by remember { mutableStateOf<PhotoGridItem?>(null) }
 
     val context = LocalContext.current
     val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
@@ -112,7 +119,9 @@ fun PhotoGalleryTab(
                         list.add(
                             PhotoGridItem(
                                 url = u,
+                                categoryId = catId,
                                 categoryName = catObj.displayName,
+                                visitId = v.visitId,
                                 schoolName = v.schoolName,
                                 state = if (v.state.isNotBlank()) v.state else "Rajasthan",
                                 district = v.district,
@@ -492,7 +501,7 @@ fun PhotoGalleryTab(
                             if (isVideo) {
                                 MediaStorageHelper.openMedia(context, photo.url)
                             } else {
-                                previewMediaUrl = photo.url
+                                selectedPhotoItem = photo
                             }
                         }
                     ) {
@@ -540,35 +549,101 @@ fun PhotoGalleryTab(
     }
 
     // Full Media Preview Dialog
-    if (previewMediaUrl != null) {
-        Dialog(onDismissRequest = { previewMediaUrl = null }) {
+    selectedPhotoItem?.let { photo ->
+        Dialog(onDismissRequest = { selectedPhotoItem = null }) {
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = Color.Black,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(420.dp)
+                    .height(460.dp)
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     AsyncImage(
-                        model = previewMediaUrl,
+                        model = photo.url,
                         contentDescription = "Full Preview",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxSize()
                     )
-                    IconButton(
-                        onClick = { previewMediaUrl = null },
+
+                    // Top control bar (Close & Delete for Admin)
+                    Row(
                         modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(8.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.6f))
+                            .fillMaxWidth()
+                            .align(Alignment.TopCenter)
+                            .padding(8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                        if (onDeletePhoto != null) {
+                            IconButton(
+                                onClick = { photoToDelete = photo },
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(Red600.copy(alpha = 0.85f))
+                            ) {
+                                Icon(
+                                    androidx.compose.material.icons.Icons.Default.Delete,
+                                    contentDescription = "Delete Photo",
+                                    tint = Color.White
+                                )
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.size(40.dp))
+                        }
+
+                        IconButton(
+                            onClick = { selectedPhotoItem = null },
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.6f))
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                        }
+                    }
+
+                    // Bottom info caption
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.7f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.BottomCenter)
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                            Text(photo.categoryName, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text("${photo.schoolName} • ${photo.district} • ${photo.date}", color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
+                        }
                     }
                 }
             }
         }
+    }
+
+    // Delete Photo Confirmation Dialog for Admin
+    photoToDelete?.let { item ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { photoToDelete = null },
+            title = { Text("Delete Photo?", fontWeight = FontWeight.Bold, color = Navy900) },
+            text = { Text("Are you sure you want to permanently delete this photo from ${item.schoolName}?", color = Slate700) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val toDel = item
+                        photoToDelete = null
+                        selectedPhotoItem = null
+                        onDeletePhoto?.invoke(toDel.visitId, toDel.categoryId, toDel.url)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Red600)
+                ) {
+                    Text("Delete Permanently", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { photoToDelete = null }) {
+                    Text("Cancel", color = Slate700)
+                }
+            }
+        )
     }
 
     // Export Progress Dialog

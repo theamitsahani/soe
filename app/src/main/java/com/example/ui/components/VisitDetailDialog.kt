@@ -94,11 +94,14 @@ fun VisitDetailDialog(
     onDismiss: () -> Unit,
     onEditClick: (() -> Unit)? = null,
     onUpdateAnswers: ((VisitAnswers) -> Unit)? = null,
+    onDeletePhoto: ((categoryId: String, photoUrl: String) -> Unit)? = null,
+    isAdmin: Boolean = false,
     isEditable: Boolean = false,
     editTimeRemainingText: String = ""
 ) {
     val context = LocalContext.current
     var previewPhotoUrl by remember { mutableStateOf<String?>(null) }
+    var photoToDelete by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     val answers = remember(visit.answersJson) {
         try {
@@ -418,13 +421,14 @@ fun VisitDetailDialog(
                         DetailGridRow("11. Participating Classes (शामिल कक्षाएं)", answers.q22_participatingClasses.ifBlank { "None Selected" })
                         DetailGridRow("12. Student Attendance Count (उपस्थित विद्यार्थी संख्या)", answers.q11_studentCount.ifBlank { "Not Recorded" })
                         DetailGridRow("13. School Response / Reception (विद्यालय प्रतिक्रिया)", answers.q12_schoolResponse.ifBlank { "Not Recorded" })
-                        DetailGridRow("14. Added to WhatsApp Group (WhatsApp ग्रुप में जोड़े गए)", answers.q14_whatsappGroupAdded.ifBlank { "Not Recorded" })
-                        DetailGridRow("15. Poster Installed Status (पोस्टर लगाया गया)", answers.q15_posterInstalled.ifBlank { "Not Recorded" })
-                        DetailGridRow("21. Smart Class Status (स्मार्ट क्लास की स्थिति)", answers.q21_smartClassStatus.ifBlank { "Not Recorded" })
-                        DetailGridRow("16. Key Observations (मुख्य अवलोकन)", answers.q16_keyObservations.ifBlank { "None" })
-                        DetailGridRow("17. Problems / Help Required (समस्याएं / आवश्यकता)", answers.q17_problemsOrAssistance.ifBlank { "None" })
+                        DetailGridRow("14. BCI Officer Details (BCI विवरण)", if (bciName.isNotBlank() || bciMobile.isNotBlank()) "$bciName ($bciMobile)" else "Not Recorded")
+                        DetailGridRow("15. Added to WhatsApp Group (WhatsApp ग्रुप में जोड़े गए)", answers.q14_whatsappGroupAdded.ifBlank { "Not Recorded" })
+                        DetailGridRow("16. Poster Installed Status (पोस्टर लगाया गया)", answers.q15_posterInstalled.ifBlank { "Not Recorded" })
+                        DetailGridRow("17. Smart Class Status (स्मार्ट क्लास की स्थिति)", answers.q21_smartClassStatus.ifBlank { "Not Recorded" })
+                        DetailGridRow("18. Key Observations (मुख्य अवलोकन)", answers.q16_keyObservations.ifBlank { "None" })
+                        DetailGridRow("19. Problems / Help Required (समस्याएं / आवश्यकता)", answers.q17_problemsOrAssistance.ifBlank { "None" })
                         
-                        DetailGridRow("18. Follow-up Required (फॉलो-अप आवश्यकता)", answers.q18_followupRequired.ifBlank { "नहीं" })
+                        DetailGridRow("20. Follow-up Required (फॉलो-अप आवश्यकता)", answers.q18_followupRequired.ifBlank { "नहीं" })
                         if (answers.q18_followupRequired.trim().equals("हाँ", ignoreCase = true) && onUpdateAnswers != null) {
                             Button(
                                 onClick = {
@@ -440,7 +444,7 @@ fun VisitDetailDialog(
                             }
                         }
 
-                        DetailGridRow("19. Data Required on Hard Disk (हार्ड डिस्क डेटा आवश्यक)", answers.q19_dataRequiredOnHardDisk.ifBlank { "नहीं" })
+                        DetailGridRow("21. Data Required on Hard Disk (हार्ड डिस्क डेटा आवश्यक)", answers.q19_dataRequiredOnHardDisk.ifBlank { "नहीं" })
                         if (answers.q19_dataRequiredOnHardDisk.trim().equals("हाँ", ignoreCase = true) && onUpdateAnswers != null) {
                             Button(
                                 onClick = {
@@ -456,7 +460,7 @@ fun VisitDetailDialog(
                             }
                         }
 
-                        DetailGridRow("20. Final Remarks (अंतिम टिप्पणी)", answers.q20_finalRemarks.ifBlank { "None" })
+                        DetailGridRow("22. Final Remarks (अंतिम टिप्पणी)", answers.q20_finalRemarks.ifBlank { "None" })
                     }
 
                     // 5. Uploaded Photos Section
@@ -522,6 +526,28 @@ fun VisitDetailDialog(
                                                                 )
                                                             }
                                                         }
+
+                                                        if (isAdmin && onDeletePhoto != null) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .align(Alignment.TopEnd)
+                                                                    .padding(3.dp)
+                                                                    .size(22.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(Color(0xFFEF4444))
+                                                                    .clickable {
+                                                                        photoToDelete = category.categoryId to url
+                                                                    },
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Icon(
+                                                                    Icons.Default.Close,
+                                                                    contentDescription = "Delete Photo",
+                                                                    tint = Color.White,
+                                                                    modifier = Modifier.size(14.dp)
+                                                                )
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -573,6 +599,34 @@ fun VisitDetailDialog(
                 }
             }
         }
+    }
+
+    // Delete Photo Confirmation Dialog for Admin
+    if (photoToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { photoToDelete = null },
+            title = { Text("Delete Photo?", fontWeight = FontWeight.Bold, color = Navy900) },
+            text = { Text("Are you sure you want to permanently remove this media from this visit report?", color = Slate700) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val toDelete = photoToDelete
+                        photoToDelete = null
+                        if (toDelete != null) {
+                            onDeletePhoto?.invoke(toDelete.first, toDelete.second)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Red600)
+                ) {
+                    Text("Delete", fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { photoToDelete = null }) {
+                    Text("Cancel", color = Slate500)
+                }
+            }
+        )
     }
 
     // Full Photo Preview Dialog

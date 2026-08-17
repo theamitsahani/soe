@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PlayArrow
@@ -197,6 +198,7 @@ fun EmployeeMainScreen(
                     TasksListSection(
                         title = "Today's Assigned Tasks (${todayTasks.size})",
                         tasks = todayTasks,
+                        completedVisits = completedVisits,
                         schools = schools,
                         onStartVisit = onStartVisit
                     )
@@ -205,6 +207,7 @@ fun EmployeeMainScreen(
                     TasksListSection(
                         title = "Upcoming Field Tasks (${upcomingTasks.size})",
                         tasks = upcomingTasks,
+                        completedVisits = completedVisits,
                         schools = schools,
                         onStartVisit = onStartVisit
                     )
@@ -228,6 +231,7 @@ fun EmployeeMainScreen(
 fun TasksListSection(
     title: String,
     tasks: List<Task>,
+    completedVisits: List<Visit> = emptyList(),
     schools: List<School> = emptyList(),
     onStartVisit: (Task) -> Unit
 ) {
@@ -273,6 +277,7 @@ fun TasksListSection(
                 TaskCardItem(
                     task = task,
                     school = matchedSchool,
+                    completedVisits = completedVisits,
                     onStartVisit = { onStartVisit(task) }
                 )
             }
@@ -284,10 +289,15 @@ fun TasksListSection(
 fun TaskCardItem(
     task: Task,
     school: School?,
+    completedVisits: List<Visit> = emptyList(),
     onStartVisit: () -> Unit
 ) {
     val context = LocalContext.current
     var showSchoolDetailsDialog by remember { mutableStateOf(false) }
+
+    val isSubmitted = task.status == VisitStatus.SUBMITTED || 
+                      task.status == VisitStatus.REVIEWED || 
+                      completedVisits.any { it.schoolId == task.schoolId || (task.visitId.isNotBlank() && it.visitId == task.visitId) }
 
     // Outer Preview: School Name, Principal Name, Village Name
     val principalNameDisplay = remember(school) {
@@ -312,7 +322,7 @@ fun TaskCardItem(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                StatusChip(statusName = task.status.name)
+                StatusChip(statusName = if (isSubmitted) VisitStatus.SUBMITTED.name else task.status.name)
                 Text(
                     text = "Date: ${task.visitDate}",
                     fontSize = 12.sp,
@@ -382,8 +392,6 @@ fun TaskCardItem(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            val isSubmitted = task.status == VisitStatus.SUBMITTED || task.status == VisitStatus.REVIEWED
-
             // Action Buttons: View Details & Start Visit
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -445,7 +453,6 @@ fun TaskCardItem(
     if (showSchoolDetailsDialog) {
         val s = school
         val pMobile = s?.principalMobile?.trim() ?: ""
-        val isSubmitted = task.status == VisitStatus.SUBMITTED || task.status == VisitStatus.REVIEWED
 
         AlertDialog(
             onDismissRequest = { showSchoolDetailsDialog = false },
@@ -717,13 +724,20 @@ fun CompletedVisitsSection(
             }
         } else {
             items(visits) { visit ->
-                val timeSinceSubmission = System.currentTimeMillis() - visit.updatedAt
+                val timeSinceSubmission = System.currentTimeMillis() - visit.createdAt
                 val twelveHoursMillis = 12 * 60 * 60 * 1000L
-                val isEditable = timeSinceSubmission in 0..twelveHoursMillis
+                val isWithin12Hours = timeSinceSubmission in 0..twelveHoursMillis
+                val isEditable = isWithin12Hours && visit.editCount < 1
                 val remainingMillis = (twelveHoursMillis - timeSinceSubmission).coerceAtLeast(0L)
                 val remainingHours = remainingMillis / (1000 * 60 * 60)
                 val remainingMins = (remainingMillis / (1000 * 60)) % 60
-                val remainingText = if (isEditable) "${remainingHours}h ${remainingMins}m left" else "Window Closed"
+                val remainingText = if (visit.editCount >= 1) {
+                    "Edit Limit Reached (1/1)"
+                } else if (isWithin12Hours) {
+                    "${remainingHours}h ${remainingMins}m left"
+                } else {
+                    "12h Window Expired"
+                }
 
                 val matchedSchool = remember(visit.schoolId, schools) {
                     schools.find { it.schoolId == visit.schoolId }
@@ -762,27 +776,27 @@ fun CompletedVisitsSection(
                         ) {
                             Text("Visit Date: ${visit.visitDate}", fontSize = 12.sp, color = Slate700, fontWeight = FontWeight.Medium)
 
-                            // 12-hour Window Badge
+                            // 12-hour / 1-edit Window Badge
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
-                                color = if (isEditable) Color(0xFFF0FDF4) else Slate100
+                                color = if (isEditable) Color(0xFFF0FDF4) else if (visit.editCount >= 1) Color(0xFFFEF3C7) else Slate100
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                 ) {
                                     Icon(
-                                        imageVector = if (isEditable) Icons.Default.Schedule else Icons.Default.CheckCircle,
+                                        imageVector = if (isEditable) Icons.Default.Schedule else if (visit.editCount >= 1) Icons.Default.Lock else Icons.Default.CheckCircle,
                                         contentDescription = null,
-                                        tint = if (isEditable) Emerald600 else Slate500,
+                                        tint = if (isEditable) Emerald600 else if (visit.editCount >= 1) Color(0xFFD97706) else Slate500,
                                         modifier = Modifier.size(12.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = if (isEditable) "Editable: $remainingText" else "12h Window Expired",
+                                        text = if (visit.editCount >= 1) "Edited (1/1)" else if (isEditable) "Editable: $remainingText" else "12h Window Expired",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (isEditable) Emerald600 else Slate500
+                                        color = if (isEditable) Emerald600 else if (visit.editCount >= 1) Color(0xFFD97706) else Slate500
                                     )
                                 }
                             }
@@ -817,7 +831,7 @@ fun CompletedVisitsSection(
                                 Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (isEditable) "Edit Visit" else "Locked",
+                                    text = if (visit.editCount >= 1) "Edited (1/1)" else if (isEditable) "Edit Visit" else "Locked",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -831,13 +845,14 @@ fun CompletedVisitsSection(
 
     // Detail View Dialog
     selectedVisitForDetail?.let { visit ->
-        val timeSinceSubmission = System.currentTimeMillis() - visit.updatedAt
+        val timeSinceSubmission = System.currentTimeMillis() - visit.createdAt
         val twelveHoursMillis = 12 * 60 * 60 * 1000L
-        val isEditable = timeSinceSubmission in 0..twelveHoursMillis
+        val isWithin12Hours = timeSinceSubmission in 0..twelveHoursMillis
+        val isEditable = isWithin12Hours && visit.editCount < 1
         val remainingMillis = (twelveHoursMillis - timeSinceSubmission).coerceAtLeast(0L)
         val remainingHours = remainingMillis / (1000 * 60 * 60)
         val remainingMins = (remainingMillis / (1000 * 60)) % 60
-        val remainingText = if (isEditable) "Editable • ${remainingHours}h ${remainingMins}m left" else "Window Expired"
+        val remainingText = if (visit.editCount >= 1) "Edit limit reached (1/1)" else if (isEditable) "Editable • ${remainingHours}h ${remainingMins}m left" else "Window Expired"
 
         val matchedSchool = remember(visit.schoolId, schools) {
             schools.find { it.schoolId == visit.schoolId }
