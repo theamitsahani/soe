@@ -153,9 +153,9 @@ fun AssignVisitsTab(
     var showAllTasksDialog by remember { mutableStateOf(false) }
     var taskToDelete by remember { mutableStateOf<Task?>(null) }
 
-    // Exclude schools that currently have an active pending ASSIGNED task so they aren't assigned twice at the same time
+    // Exclude schools that currently have a task in assignedTasks so a school can only be assigned once unless Admin deletes the previous task
     val currentlyAssignedSchoolIds = remember(assignedTasks) {
-        assignedTasks.filter { it.status == com.example.data.model.VisitStatus.ASSIGNED }.map { it.schoolId }.toSet()
+        assignedTasks.map { it.schoolId }.toSet()
     }
 
     val availableSchools = remember(schools, currentlyAssignedSchoolIds) {
@@ -562,6 +562,10 @@ fun AssignVisitsTab(
                     Button(
                         onClick = {
                             if (selectedSchool != null && selectedEmployee1 != null) {
+                                if (currentlyAssignedSchoolIds.contains(selectedSchool!!.schoolId)) {
+                                    message = "इस स्कूल को पहले से कार्य असाइन है। नया असाइन करने के लिए पहले वाला टास्क डिलीट करें।"
+                                    return@Button
+                                }
                                 isSubmitting = true
                                 var assignedCount = 0
                                 var hasError = false
