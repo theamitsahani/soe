@@ -71,11 +71,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.AppNotification
 import com.example.data.model.School
 import com.example.data.model.Task
 import com.example.data.model.User
 import com.example.data.model.Visit
 import com.example.data.model.VisitStatus
+import com.example.ui.components.NotificationBellIcon
+import com.example.ui.components.NotificationDialog
 import com.example.ui.components.StatusChip
 import com.example.ui.components.SyncStatusBanner
 import com.example.ui.components.VisitDetailDialog
@@ -109,12 +112,16 @@ fun EmployeeMainScreen(
     onSyncClick: () -> Unit,
     onStartVisit: (Task) -> Unit,
     onEditVisit: (Visit) -> Unit = {},
+    notifications: List<AppNotification> = emptyList(),
+    onMarkAllNotificationsRead: () -> Unit = {},
+    onClearAllNotifications: () -> Unit = {},
     onTabSelected: ((Int) -> Unit)? = null,
     onLogoutClick: () -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = EmployeeNavTab.entries
     var showLogoutDialog by remember { mutableStateOf(false) }
+    var showNotificationDialog by remember { mutableStateOf(false) }
 
     val cleanCompletedVisits = remember(completedVisits) {
         completedVisits.distinctBy { "${it.schoolId}_${it.employeeId}" }
@@ -142,6 +149,10 @@ fun EmployeeMainScreen(
                     }
                 },
                 actions = {
+                    NotificationBellIcon(
+                        unreadCount = notifications.count { !it.isRead },
+                        onClick = { showNotificationDialog = true }
+                    )
                     IconButton(onClick = { showLogoutDialog = true }) {
                         Icon(Icons.Default.ExitToApp, contentDescription = "Logout", tint = Slate700)
                     }
@@ -258,6 +269,15 @@ fun EmployeeMainScreen(
                     Text("No / नहीं", fontWeight = FontWeight.Bold)
                 }
             }
+        )
+    }
+
+    if (showNotificationDialog) {
+        NotificationDialog(
+            notifications = notifications,
+            onDismiss = { showNotificationDialog = false },
+            onMarkAllRead = onMarkAllNotificationsRead,
+            onClearAll = onClearAllNotifications
         )
     }
 }

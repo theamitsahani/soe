@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.example.data.model.AppNotification
 import com.example.data.model.School
 import com.example.data.model.Task
 import com.example.data.model.Visit
@@ -20,8 +21,8 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
 }
 
 @Database(
-    entities = [School::class, Visit::class, Task::class, UserEntity::class],
-    version = 7,
+    entities = [School::class, Visit::class, Task::class, UserEntity::class, AppNotification::class],
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -29,6 +30,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun visitDao(): VisitDao
     abstract fun taskDao(): TaskDao
     abstract fun userDao(): UserDao
+    abstract fun appNotificationDao(): AppNotificationDao
 
     companion object {
         @Volatile

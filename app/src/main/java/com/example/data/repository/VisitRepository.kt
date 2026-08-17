@@ -186,6 +186,26 @@ class VisitRepository(private val context: Context) {
             }
 
             syncManager.checkPendingCount()
+
+            // Trigger notification for Admin on report submission
+            try {
+                NotificationRepository(
+                    db.appNotificationDao(),
+                    firestore ?: com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                ).createAndSendNotification(
+                    context = context,
+                    recipientUserId = "ADMIN",
+                    title = "Visit Report Submitted! (रिपोर्ट सबमिट हुई)",
+                    message = "${finalVisit.employeeName} submitted visit report for ${finalVisit.schoolName}.",
+                    type = "REPORT_SUBMITTED",
+                    relatedId = finalVisit.visitId,
+                    schoolName = finalVisit.schoolName,
+                    employeeName = finalVisit.employeeName
+                )
+            } catch (notifErr: Exception) {
+                android.util.Log.w("VisitRepository", "Failed to send report notification: ${notifErr.message}")
+            }
+
             Result.success(Unit)
         } catch (e: Exception) {
             e.printStackTrace()

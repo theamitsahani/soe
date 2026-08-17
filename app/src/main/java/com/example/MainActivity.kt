@@ -26,7 +26,9 @@ import com.example.data.model.Task
 import com.example.data.model.User
 import com.example.data.model.UserRole
 import com.example.data.model.Visit
+import com.example.data.local.AppDatabase
 import com.example.data.repository.AuthRepository
+import com.example.data.repository.NotificationRepository
 import com.example.data.repository.SchoolRepository
 import com.example.data.repository.TaskRepository
 import com.example.data.repository.VisitRepository
@@ -60,6 +62,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var schoolRepository: SchoolRepository
     private lateinit var visitRepository: VisitRepository
     private lateinit var taskRepository: TaskRepository
+    private lateinit var notificationRepository: NotificationRepository
     private lateinit var syncManager: SyncManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,6 +75,10 @@ class MainActivity : ComponentActivity() {
         schoolRepository = SchoolRepository(applicationContext)
         visitRepository = VisitRepository(applicationContext)
         taskRepository = TaskRepository(applicationContext)
+        notificationRepository = NotificationRepository(
+            AppDatabase.getDatabase(applicationContext).appNotificationDao(),
+            FirebaseUtils.firestore ?: com.google.firebase.firestore.FirebaseFirestore.getInstance()
+        )
         syncManager = SyncManager(applicationContext)
 
         setContent {
@@ -89,11 +96,21 @@ class MainActivity : ComponentActivity() {
                     val tasks by taskRepository.getAllTasks().collectAsState(initial = emptyList())
                     val employees by authRepository.getAllEmployees().collectAsState(initial = emptyList())
 
+                    val recipientUserId = if (currentUser?.role == UserRole.ADMIN) "ADMIN" else (currentUser?.userId ?: "")
+                    val notifications by notificationRepository.getNotificationsForUserFlow(recipientUserId).collectAsState(initial = emptyList())
+
                     val isOnline by syncManager.isOnline.collectAsState()
                     val pendingSyncCount by syncManager.pendingSyncCount.collectAsState()
                     val isSyncing by syncManager.isSyncing.collectAsState()
 
                     val scope = rememberCoroutineScope()
+
+                    LaunchedEffect(currentUser) {
+                        if (currentUser != null) {
+                            val rId = if (currentUser?.role == UserRole.ADMIN) "ADMIN" else (currentUser?.userId ?: "")
+                            notificationRepository.syncNotificationsFromFirestore(rId)
+                        }
+                    }
 
                     LaunchedEffect(Unit) {
                         val sessionUser = authRepository.checkCurrentSession()
@@ -166,6 +183,13 @@ class MainActivity : ComponentActivity() {
                                     AdminMainScreen(
                                         adminUser = state.adminUser,
                                         selectedTab = selectedAdminTab,
+                                        notifications = notifications,
+                                        onMarkAllNotificationsRead = {
+                                            scope.launch { notificationRepository.markAllAsRead("ADMIN") }
+                                        },
+                                        onClearAllNotifications = {
+                                            scope.launch { notificationRepository.clearAllForUser("ADMIN") }
+                                        },
                                         onTabSelected = { tab ->
                                             selectedAdminTab = tab
                                             scope.launch {
@@ -386,6 +410,15 @@ class MainActivity : ComponentActivity() {
                                         isSyncing = isSyncing,
                                         onSyncClick = {
                                             scope.launch { syncManager.syncPendingData() }
+                                        },
+                                        notifications = notifications,
+                                        onMarkAllNotificationsRead = {
+                                            val empUid = state.employeeUser.userId
+                                            scope.launch { notificationRepository.markAllAsRead(empUid) }
+                                        },
+                                        onClearAllNotifications = {
+                                            val empUid = state.employeeUser.userId
+                                            scope.launch { notificationRepository.clearAllForUser(empUid) }
                                         },
                                         onTabSelected = { tab ->
                                             scope.launch {

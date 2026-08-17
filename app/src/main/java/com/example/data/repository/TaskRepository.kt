@@ -464,6 +464,25 @@ class TaskRepository(private val context: Context) {
                 com.google.android.gms.tasks.Tasks.await(setTask)
             }
 
+            // Trigger notification for assigned employee
+            try {
+                NotificationRepository(
+                    db.appNotificationDao(),
+                    fStore ?: com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                ).createAndSendNotification(
+                    context = context,
+                    recipientUserId = resolvedEmployeeUid,
+                    title = "New Task Assigned! (नया कार्य असाइन हुआ)",
+                    message = "You have been assigned a new visit for $finalSchoolName on $visitDate.",
+                    type = "TASK_ASSIGNED",
+                    relatedId = taskId,
+                    schoolName = finalSchoolName,
+                    employeeName = cleanName
+                )
+            } catch (notifErr: Exception) {
+                Log.w("TaskRepository", "Failed to send notification: ${notifErr.message}")
+            }
+
             Result.success(task)
         } catch (e: Exception) {
             Log.e("TaskRepository", "Error assigning task", e)

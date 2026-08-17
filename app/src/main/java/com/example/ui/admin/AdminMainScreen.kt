@@ -62,7 +62,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.AppNotification
 import com.example.data.model.User
+import com.example.ui.components.NotificationBellIcon
+import com.example.ui.components.NotificationDialog
 import com.example.ui.theme.Indigo600
 import com.example.ui.theme.Navy800
 import com.example.ui.theme.Navy900
@@ -87,6 +90,9 @@ fun AdminMainScreen(
     adminUser: User,
     selectedTab: Int = 0,
     onTabSelected: (Int) -> Unit = {},
+    notifications: List<AppNotification> = emptyList(),
+    onMarkAllNotificationsRead: () -> Unit = {},
+    onClearAllNotifications: () -> Unit = {},
     onLogoutClick: () -> Unit,
     content: @Composable (AdminTab) -> Unit
 ) {
@@ -94,6 +100,7 @@ fun AdminMainScreen(
     val scope = rememberCoroutineScope()
     val tabs = AdminTab.entries
     var showLogoutDialog by remember { mutableStateOf(false) }
+    var showNotificationDialog by remember { mutableStateOf(false) }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -178,6 +185,10 @@ fun AdminMainScreen(
                         }
                     },
                     actions = {
+                        NotificationBellIcon(
+                            unreadCount = notifications.count { !it.isRead },
+                            onClick = { showNotificationDialog = true }
+                        )
                         IconButton(onClick = { showLogoutDialog = true }) {
                             Icon(Icons.Default.ExitToApp, contentDescription = "Logout", tint = Slate700)
                         }
@@ -254,6 +265,15 @@ fun AdminMainScreen(
                     Text("No / नहीं", fontWeight = FontWeight.Bold)
                 }
             }
+        )
+    }
+
+    if (showNotificationDialog) {
+        NotificationDialog(
+            notifications = notifications,
+            onDismiss = { showNotificationDialog = false },
+            onMarkAllRead = onMarkAllNotificationsRead,
+            onClearAll = onClearAllNotifications
         )
     }
 }
