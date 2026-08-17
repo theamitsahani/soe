@@ -101,6 +101,7 @@ fun AssignVisitsTab(
     assignedTasks: List<Task>,
     visits: List<Visit> = emptyList(),
     onDeleteTask: (String) -> Unit = {},
+    onUpdateVisitAnswers: ((String, VisitAnswers) -> Unit)? = null,
     onAssignTask: (
         school: School,
         employee: User,
@@ -752,7 +753,10 @@ fun AssignVisitsTab(
             visit = visit,
             school = matchedSchool,
             isAdmin = true,
-            onDismiss = { selectedVisitForDetails = null }
+            onDismiss = { selectedVisitForDetails = null },
+            onUpdateAnswers = { updatedAnswers ->
+                onUpdateVisitAnswers?.invoke(visit.visitId, updatedAnswers)
+            }
         )
     }
 

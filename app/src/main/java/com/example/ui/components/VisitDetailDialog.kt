@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -45,9 +46,13 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -102,8 +107,9 @@ fun VisitDetailDialog(
     val context = LocalContext.current
     var previewPhotoUrl by remember { mutableStateOf<String?>(null) }
     var photoToDelete by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var showEditDialog by remember { mutableStateOf(false) }
 
-    val answers = remember(visit.answersJson) {
+    val initialAnswers = remember(visit.answersJson) {
         try {
             val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
             moshi.adapter(VisitAnswers::class.java).fromJson(visit.answersJson) ?: VisitAnswers()
@@ -111,6 +117,8 @@ fun VisitDetailDialog(
             VisitAnswers()
         }
     }
+    var currentAnswers by remember(visit.answersJson) { mutableStateOf(initialAnswers) }
+    val answers = currentAnswers
 
     val photoMap = remember(visit.photosJson) {
         try {
@@ -581,11 +589,15 @@ fun VisitDetailDialog(
                             Text("Close (बंद करें)", fontWeight = FontWeight.SemiBold)
                         }
 
-                        if (isEditable && onEditClick != null) {
+                        if (isAdmin || isEditable || onEditClick != null || onUpdateAnswers != null) {
                             Button(
                                 onClick = {
-                                    onDismiss()
-                                    onEditClick()
+                                    if (onEditClick != null) {
+                                        onDismiss()
+                                        onEditClick()
+                                    } else if (onUpdateAnswers != null) {
+                                        showEditDialog = true
+                                    }
                                 },
                                 shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
@@ -600,6 +612,20 @@ fun VisitDetailDialog(
                 }
             }
         }
+    }
+
+    // Edit Visit Report Modal Dialog for Admin / Editable Mode
+    if (showEditDialog && onUpdateAnswers != null) {
+        EditVisitAnswersDialog(
+            initialAnswers = currentAnswers,
+            schoolName = visit.schoolName,
+            onDismiss = { showEditDialog = false },
+            onSave = { updated ->
+                currentAnswers = updated
+                onUpdateAnswers(updated)
+                showEditDialog = false
+            }
+        )
     }
 
     // Delete Photo Confirmation Dialog for Admin
@@ -716,5 +742,347 @@ private fun DetailGridRow(label: String, value: String) {
             fontWeight = FontWeight.SemiBold,
             color = Slate700
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditVisitAnswersDialog(
+    initialAnswers: VisitAnswers,
+    schoolName: String,
+    onDismiss: () -> Unit,
+    onSave: (VisitAnswers) -> Unit
+) {
+    var q7_principalName by remember { mutableStateOf(initialAnswers.q7_principalName) }
+    var q8_principalMobile by remember { mutableStateOf(initialAnswers.q8_principalMobile) }
+    var q9_metPrincipal by remember { mutableStateOf(initialAnswers.q9_metPrincipal) }
+    var q10_missionGyanAwareness by remember { mutableStateOf(initialAnswers.q10_missionGyanAwareness) }
+    var q22_participatingClasses by remember { mutableStateOf(initialAnswers.q22_participatingClasses) }
+    var q11_studentCount by remember { mutableStateOf(initialAnswers.q11_studentCount) }
+    var q12_schoolResponse by remember { mutableStateOf(initialAnswers.q12_schoolResponse) }
+    var q13_bciName by remember { mutableStateOf(initialAnswers.q13_bciName) }
+    var q13_bciMobile by remember { mutableStateOf(initialAnswers.q13_bciMobile) }
+    var q14_whatsappGroupAdded by remember { mutableStateOf(initialAnswers.q14_whatsappGroupAdded) }
+    var q15_posterInstalled by remember { mutableStateOf(initialAnswers.q15_posterInstalled) }
+    var q21_smartClassStatus by remember { mutableStateOf(initialAnswers.q21_smartClassStatus) }
+    var q16_keyObservations by remember { mutableStateOf(initialAnswers.q16_keyObservations) }
+    var q17_problemsOrAssistance by remember { mutableStateOf(initialAnswers.q17_problemsOrAssistance) }
+    var q18_followupRequired by remember { mutableStateOf(initialAnswers.q18_followupRequired) }
+    var q19_dataRequiredOnHardDisk by remember { mutableStateOf(initialAnswers.q19_dataRequiredOnHardDisk) }
+    var q20_finalRemarks by remember { mutableStateOf(initialAnswers.q20_finalRemarks) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .fillMaxSize(0.92f)
+                .clip(RoundedCornerShape(20.dp)),
+            color = Color.White,
+            shadowElevation = 8.dp
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Header
+                Surface(
+                    color = Indigo600,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Edit Submitted Report (रिपोर्ट संशोधित करें)",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = schoolName,
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontSize = 12.sp,
+                                maxLines = 1
+                            )
+                        }
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.2f))
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+
+                // Scrollable Form Fields
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(Color(0xFFF8FAFC))
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // 1. Principal Section
+                    EditFormSectionCard(title = "1. Principal Information (प्रधानाचार्य विवरण)") {
+                        OutlinedTextField(
+                            value = q7_principalName,
+                            onValueChange = { q7_principalName = it },
+                            label = { Text("Principal Name (प्रधानाचार्य नाम)") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = q8_principalMobile,
+                            onValueChange = { q8_principalMobile = it },
+                            label = { Text("Principal Mobile (प्रधानाचार्य मोबाइल)") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        ChoiceSelectorRow(
+                            label = "Met Principal? (प्रधानाचार्य से मुलाकात)",
+                            options = listOf("हाँ", "नहीं"),
+                            selected = q9_metPrincipal,
+                            onSelect = { q9_metPrincipal = it }
+                        )
+                    }
+
+                    // 2. School Survey Response Section
+                    EditFormSectionCard(title = "2. Survey & Student Response (सर्वे विवरण)") {
+                        ChoiceSelectorRow(
+                            label = "Mission Gyan App Awareness (ऐप की जानकारी)",
+                            options = listOf("हाँ", "नहीं", "थोड़ी जानकारी थी"),
+                            selected = q10_missionGyanAwareness,
+                            onSelect = { q10_missionGyanAwareness = it }
+                        )
+                        OutlinedTextField(
+                            value = q22_participatingClasses,
+                            onValueChange = { q22_participatingClasses = it },
+                            label = { Text("Participating Classes (कक्षाएं e.g. Class 6th, 7th)") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = q11_studentCount,
+                            onValueChange = { q11_studentCount = it },
+                            label = { Text("Student Count (उपस्थित विद्यार्थी संख्या)") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        ChoiceSelectorRow(
+                            label = "School Reception (विद्यालय प्रतिक्रिया)",
+                            options = listOf("बहुत अच्छी", "अच्छी", "सामान्य", "कमजोर"),
+                            selected = q12_schoolResponse,
+                            onSelect = { q12_schoolResponse = it }
+                        )
+                    }
+
+                    // 3. BCI Officer Section
+                    EditFormSectionCard(title = "3. BCI Officer Details (BCI अधिकारी विवरण)") {
+                        OutlinedTextField(
+                            value = q13_bciName,
+                            onValueChange = { q13_bciName = it },
+                            label = { Text("BCI Officer Name (BCI का नाम)") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = q13_bciMobile,
+                            onValueChange = { q13_bciMobile = it },
+                            label = { Text("BCI Contact Number (BCI मोबाइल)") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    // 4. Setup & Status Section
+                    EditFormSectionCard(title = "4. Setup & Installations (स्थापना स्थिति)") {
+                        ChoiceSelectorRow(
+                            label = "WhatsApp Group Added (WhatsApp ग्रुप जोड़ा)",
+                            options = listOf("हाँ", "नहीं", "लंबित"),
+                            selected = q14_whatsappGroupAdded,
+                            onSelect = { q14_whatsappGroupAdded = it }
+                        )
+                        ChoiceSelectorRow(
+                            label = "Poster Installed (पोस्टर लगाया गया)",
+                            options = listOf("हाँ", "नहीं"),
+                            selected = q15_posterInstalled,
+                            onSelect = { q15_posterInstalled = it }
+                        )
+                        ChoiceSelectorRow(
+                            label = "Smart Class Status (स्मार्ट क्लास स्थिति)",
+                            options = listOf("बहुत अच्छी", "अच्छी", "सामान्य", "खराब", "उपयोग में नहीं है", "स्मार्ट क्लास उपलब्ध नहीं है"),
+                            selected = q21_smartClassStatus,
+                            onSelect = { q21_smartClassStatus = it }
+                        )
+                    }
+
+                    // 5. Observations, Followup & Hard Disk
+                    EditFormSectionCard(title = "5. Observations & Remarks (अवलोकन एवं टिप्पणी)") {
+                        OutlinedTextField(
+                            value = q16_keyObservations,
+                            onValueChange = { q16_keyObservations = it },
+                            label = { Text("Key Observations (मुख्य अवलोकन)") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 2
+                        )
+                        OutlinedTextField(
+                            value = q17_problemsOrAssistance,
+                            onValueChange = { q17_problemsOrAssistance = it },
+                            label = { Text("Problems / Assistance Needed (समस्याएं/आवश्यकता)") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 2
+                        )
+                        ChoiceSelectorRow(
+                            label = "Follow-up Required (फॉलो-अप आवश्यकता)",
+                            options = listOf("हाँ", "नहीं"),
+                            selected = q18_followupRequired,
+                            onSelect = { q18_followupRequired = it }
+                        )
+                        ChoiceSelectorRow(
+                            label = "Data Required on Hard Disk (हार्ड डिस्क डेटा आवश्यक)",
+                            options = listOf("हाँ", "नहीं"),
+                            selected = q19_dataRequiredOnHardDisk,
+                            onSelect = { q19_dataRequiredOnHardDisk = it }
+                        )
+                        OutlinedTextField(
+                            value = q20_finalRemarks,
+                            onValueChange = { q20_finalRemarks = it },
+                            label = { Text("Final Remarks (अंतिम टिप्पणी)") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 2
+                        )
+                    }
+                }
+
+                // Footer Actions
+                Surface(
+                    color = Color.White,
+                    shadowElevation = 8.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Cancel (रद्द करें)", fontWeight = FontWeight.SemiBold)
+                        }
+                        Button(
+                            onClick = {
+                                val updated = initialAnswers.copy(
+                                    q7_principalName = q7_principalName,
+                                    q8_principalMobile = q8_principalMobile,
+                                    q9_metPrincipal = q9_metPrincipal,
+                                    q10_missionGyanAwareness = q10_missionGyanAwareness,
+                                    q22_participatingClasses = q22_participatingClasses,
+                                    q11_studentCount = q11_studentCount,
+                                    q12_schoolResponse = q12_schoolResponse,
+                                    q13_bciName = q13_bciName,
+                                    q13_bciMobile = q13_bciMobile,
+                                    q14_whatsappGroupAdded = q14_whatsappGroupAdded,
+                                    q15_posterInstalled = q15_posterInstalled,
+                                    q21_smartClassStatus = q21_smartClassStatus,
+                                    q16_keyObservations = q16_keyObservations,
+                                    q17_problemsOrAssistance = q17_problemsOrAssistance,
+                                    q18_followupRequired = q18_followupRequired,
+                                    q19_dataRequiredOnHardDisk = q19_dataRequiredOnHardDisk,
+                                    q20_finalRemarks = q20_finalRemarks
+                                )
+                                onSave(updated)
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
+                            modifier = Modifier.weight(1.3f)
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Save Changes (सहेजें)", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditFormSectionCard(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = title,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = Navy900
+            )
+            Divider(color = Slate100, thickness = 1.dp)
+            content()
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChoiceSelectorRow(
+    label: String,
+    options: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = Slate700
+        )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(options) { opt ->
+                val isSel = selected.trim().equals(opt.trim(), ignoreCase = true)
+                FilterChip(
+                    selected = isSel,
+                    onClick = { onSelect(opt) },
+                    label = { Text(opt, fontSize = 12.sp, fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Indigo600,
+                        selectedLabelColor = Color.White,
+                        containerColor = Color(0xFFF1F5F9),
+                        labelColor = Slate700
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                )
+            }
+        }
     }
 }
