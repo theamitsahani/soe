@@ -661,12 +661,12 @@ object ExcelHelper {
         val file = File(context.cacheDir, "SOE_Visit_Report_${System.currentTimeMillis()}.xlsx")
         
         val headers = listOf(
-            "Visit ID", "Date", "Employee", "District", "Block", "School Name", 
-            "Reference Code", "Principal Name", "Principal Mobile", "Met Principal", 
-            "Mission Gyan Knowledge", "Student Attendance", "School Response", 
-            "BCI Name", "BCI Mobile", "BCI Full Details", "WhatsApp Group Status", 
-            "Poster Installed", "Key Observations", "Problems/Help Required", 
-            "Follow-up Needed", "Data on Hard Disk Required", "Smart Class Status", "Final Remarks"
+            "Visit ID", "Date", "Field Officer Name", "Field Officer ID", "State", "District", "Block", "School Name", 
+            "UDISE Code", "Principal Name", "Principal Mobile Number", "Met Principal", 
+            "Mission Gyan Knowledge", "Participating Classes (Class 6th-12th)", "Student Count", "School Response", 
+            "BCI Name", "BCI Mobile Number", "BCI Full Details", "WhatsApp Group Status", 
+            "Poster Installed", "Key Observations", "Problems / Assistance Required", 
+            "Follow-up Needed", "Data on Hard Disk Required", "Smart Class Status", "Final Remarks", "Sync Status"
         )
 
         val stringList = mutableListOf<String>()
@@ -685,6 +685,12 @@ object ExcelHelper {
         val rowsData = mutableListOf<List<Int>>()
         for (v in visits) {
             val a = parseVisitAnswers(v.answersJson)
+            val officerName = if (v.employeeName.isNotBlank()) v.employeeName else a.q1_soeName
+            val stateName = if (v.state.isNotBlank()) v.state else a.q23_state.ifBlank { "Rajasthan" }
+            val districtName = if (v.district.isNotBlank()) v.district else a.q5_district
+            val blockName = if (v.block.isNotBlank()) v.block else a.q6_block
+            val schoolName = if (v.schoolName.isNotBlank()) v.schoolName else a.q3_schoolName
+
             val bciName = a.q13_bciName.ifBlank {
                 if (a.q13_bciContactDetails.contains("-")) a.q13_bciContactDetails.substringBefore("-").trim()
                 else a.q13_bciContactDetails
@@ -695,12 +701,34 @@ object ExcelHelper {
             }
 
             val rowVals = listOf(
-                v.visitId, v.visitDate, v.employeeName, v.district, v.block,
-                neutralizeFormula(v.schoolName), a.q4_udiseCode, neutralizeFormula(a.q7_principalName), neutralizeFormula(a.q8_principalMobile),
-                a.q9_metPrincipal, a.q10_missionGyanAwareness, a.q11_studentCount, a.q12_schoolResponse,
-                neutralizeFormula(bciName), bciMobile, neutralizeFormula(a.q13_bciContactDetails), a.q14_whatsappGroupAdded,
-                a.q15_posterInstalled, neutralizeFormula(a.q16_keyObservations), neutralizeFormula(a.q17_problemsOrAssistance),
-                a.q18_followupRequired, a.q19_dataRequiredOnHardDisk, a.q21_smartClassStatus, neutralizeFormula(a.q20_finalRemarks)
+                v.visitId, 
+                v.visitDate.ifBlank { a.q2_visitDate }, 
+                officerName, 
+                v.employeeId,
+                stateName,
+                districtName, 
+                blockName,
+                neutralizeFormula(schoolName), 
+                a.q4_udiseCode, 
+                neutralizeFormula(a.q7_principalName), 
+                neutralizeFormula(a.q8_principalMobile),
+                a.q9_metPrincipal, 
+                a.q10_missionGyanAwareness, 
+                a.q22_participatingClasses,
+                a.q11_studentCount, 
+                a.q12_schoolResponse,
+                neutralizeFormula(bciName), 
+                neutralizeFormula(bciMobile), 
+                neutralizeFormula(a.q13_bciContactDetails), 
+                a.q14_whatsappGroupAdded,
+                a.q15_posterInstalled, 
+                neutralizeFormula(a.q16_keyObservations), 
+                neutralizeFormula(a.q17_problemsOrAssistance),
+                a.q18_followupRequired, 
+                a.q19_dataRequiredOnHardDisk, 
+                a.q21_smartClassStatus, 
+                neutralizeFormula(a.q20_finalRemarks),
+                v.syncStatus.name
             )
             val rowIndices = rowVals.map { getSharedStringIndex(it) }
             rowsData.add(rowIndices)
@@ -810,9 +838,9 @@ object ExcelHelper {
 
         // Headers
         writer.write(
-            "Visit ID,Date,Employee,District,Block,School Name,Reference Code,Principal Name,Principal Mobile," +
-                    "Met Principal,Mission Gyan Knowledge,Student Attendance,School Response,BCI Name,BCI Mobile,BCI Full Details,WhatsApp Group Status," +
-                    "Poster Installed,Key Observations,Problems/Help Required,Follow-up Needed,Data on Hard Disk Required,Smart Class Status,Final Remarks\n"
+            "Visit ID,Date,Field Officer Name,Field Officer ID,State,District,Block,School Name,UDISE Code,Principal Name,Principal Mobile Number," +
+                    "Met Principal,Mission Gyan Knowledge,Participating Classes,Student Attendance,School Response,BCI Name,BCI Mobile Number,BCI Full Details,WhatsApp Group Status," +
+                    "Poster Installed,Key Observations,Problems/Help Required,Follow-up Needed,Data on Hard Disk Required,Smart Class Status,Final Remarks,Sync Status\n"
         )
 
         for (v in visits) {
@@ -822,6 +850,12 @@ object ExcelHelper {
                 val escaped = safe.replace("\"", "\"\"")
                 return "\"$escaped\""
             }
+
+            val officerName = if (v.employeeName.isNotBlank()) v.employeeName else a.q1_soeName
+            val stateName = if (v.state.isNotBlank()) v.state else a.q23_state.ifBlank { "Rajasthan" }
+            val districtName = if (v.district.isNotBlank()) v.district else a.q5_district
+            val blockName = if (v.block.isNotBlank()) v.block else a.q6_block
+            val schoolName = if (v.schoolName.isNotBlank()) v.schoolName else a.q3_schoolName
 
             val bciName = a.q13_bciName.ifBlank {
                 if (a.q13_bciContactDetails.contains("-")) a.q13_bciContactDetails.substringBefore("-").trim()
@@ -833,12 +867,12 @@ object ExcelHelper {
             }
 
             writer.write(
-                "${sanitize(v.visitId)},${sanitize(v.visitDate)},${sanitize(v.employeeName)},${sanitize(v.district)},${sanitize(v.block)}," +
-                        "${sanitize(v.schoolName, true)},${sanitize(a.q4_udiseCode)},${sanitize(a.q7_principalName, true)},${sanitize(a.q8_principalMobile, true)}," +
-                        "${sanitize(a.q9_metPrincipal)},${sanitize(a.q10_missionGyanAwareness)},${sanitize(a.q11_studentCount)},${sanitize(a.q12_schoolResponse)}," +
-                        "${sanitize(bciName, true)},${sanitize(bciMobile)},${sanitize(a.q13_bciContactDetails, true)},${sanitize(a.q14_whatsappGroupAdded)},${sanitize(a.q15_posterInstalled)}," +
-                        "${sanitize(a.q16_keyObservations, true)},${sanitize(a.q17_problemsOrAssistance, true)},${sanitize(a.q18_followupRequired)},${sanitize(a.q19_dataRequiredOnHardDisk)}," +
-                        "${sanitize(a.q21_smartClassStatus)},${sanitize(a.q20_finalRemarks, true)}\n"
+                "${sanitize(v.visitId)},${sanitize(v.visitDate.ifBlank { a.q2_visitDate })},${sanitize(officerName, true)},${sanitize(v.employeeId)},${sanitize(stateName)}," +
+                        "${sanitize(districtName)},${sanitize(blockName)},${sanitize(schoolName, true)},${sanitize(a.q4_udiseCode)},${sanitize(a.q7_principalName, true)}," +
+                        "${sanitize(a.q8_principalMobile, true)},${sanitize(a.q9_metPrincipal)},${sanitize(a.q10_missionGyanAwareness)},${sanitize(a.q22_participatingClasses, true)}," +
+                        "${sanitize(a.q11_studentCount)},${sanitize(a.q12_schoolResponse)},${sanitize(bciName, true)},${sanitize(bciMobile, true)},${sanitize(a.q13_bciContactDetails, true)}," +
+                        "${sanitize(a.q14_whatsappGroupAdded)},${sanitize(a.q15_posterInstalled)},${sanitize(a.q16_keyObservations, true)},${sanitize(a.q17_problemsOrAssistance, true)}," +
+                        "${sanitize(a.q18_followupRequired)},${sanitize(a.q19_dataRequiredOnHardDisk)},${sanitize(a.q21_smartClassStatus)},${sanitize(a.q20_finalRemarks, true)},${sanitize(v.syncStatus.name)}\n"
             )
         }
 
