@@ -101,13 +101,24 @@ object CloudinaryUploader {
             val resourceType = if (isVideo) "video" else "image"
             val baseUrl = BuildConfig.VERCEL_API_BASE_URL.trimEnd('/')
 
+            val effectiveMediaId = if (publicId.isNotBlank()) publicId else "${visitId}_${categoryId}_${if (mediaIndex >= 0) mediaIndex else 0}"
+
+            // Step 0: Check if asset already exists in Cloudinary (retry-safety / lost response protection)
+            val existingAsset = checkAsset(visitId, schoolId, categoryId, effectiveMediaId, isVideo)
+            if (existingAsset != null) {
+                Log.d("MEDIA_UPLOAD_SKIPPED_ALREADY_UPLOADED", "Found existing Cloudinary asset for $effectiveMediaId: ${existingAsset.downloadUrl}")
+                return existingAsset
+            }
+
             // Step 1: Request upload signature from Vercel backend
             val sigRequestBody = JSONObject().apply {
                 put("visitId", visitId)
                 put("schoolId", schoolId)
                 put("category", categoryId)
-                if (publicId.isNotBlank()) put("publicId", publicId)
+                put("mediaId", effectiveMediaId)
+                put("publicId", effectiveMediaId)
                 if (mediaIndex >= 0) put("mediaIndex", mediaIndex)
+                put("isVideo", isVideo)
             }.toString().toRequestBody(jsonMediaType)
 
             val sigRequest = Request.Builder()
@@ -128,7 +139,7 @@ object CloudinaryUploader {
                 val aKey = json.optString("apiKey").ifBlank { return null }
                 val tStamp = json.optString("timestamp").ifBlank { return null }
                 val fld = json.optString("folder").ifBlank { return null }
-                val pId = json.optString("publicId").ifBlank { return null }
+                val pId = json.optString("publicId").ifBlank { effectiveMediaId }
                 val sig = json.optString("signature").ifBlank { return null }
                 CloudinarySignatureResponse(
                     cloudName = cName,
@@ -177,6 +188,62 @@ object CloudinaryUploader {
             }
         } catch (e: Exception) {
             Log.e("CloudinaryUploader", "Error uploading media via Vercel-signed Cloudinary flow", e)
+            null
+        }
+    }
+
+    /**
+     * Checks if a Cloudinary asset already exists (handles lost response/timeout).
+     */
+    fun checkAsset(
+        visitId: String,
+        schoolId: String,
+        categoryId: String,
+        mediaId: String,
+        isVideo: Boolean
+    ): CloudinaryUploadResult? {
+        return try {
+            val idToken = getFirebaseIdToken() ?: return null
+            val resourceType = if (isVideo) "video" else "image"
+            val baseUrl = BuildConfig.VERCEL_API_BASE_URL.trimEnd('/')
+
+            val checkRequestBody = JSONObject().apply {
+                put("visitId", visitId)
+                put("schoolId", schoolId)
+                put("category", categoryId)
+                put("mediaId", mediaId)
+                put("publicId", mediaId)
+                put("resourceType", resourceType)
+            }.toString().toRequestBody(jsonMediaType)
+
+            val request = Request.Builder()
+                .url("$baseUrl/api/check-asset")
+                .addHeader("Authorization", "Bearer $idToken")
+                .post(checkRequestBody)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val json = JSONObject(body)
+                    if (json.optBoolean("exists", false)) {
+                        val secureUrl = json.optString("secureUrl")
+                        val retPublicId = json.optString("publicId").ifBlank { mediaId }
+                        val folder = json.optString("folder").ifBlank { "visits/$visitId/$schoolId/$categoryId" }
+                        if (secureUrl.isNotBlank()) {
+                            return CloudinaryUploadResult(
+                                downloadUrl = secureUrl,
+                                publicId = retPublicId,
+                                folder = folder,
+                                resourceType = resourceType
+                            )
+                        }
+                    }
+                }
+                null
+            }
+        } catch (e: Exception) {
+            Log.w("CloudinaryUploader", "Check asset existence notice: ${e.message}")
             null
         }
     }

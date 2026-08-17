@@ -154,8 +154,8 @@ object MediaStorageHelper {
                 val dbCategoryUrls = dbPhotoMap?.get(categoryId) ?: emptyList()
 
                 for ((index, uriStr) in cleanUriList.withIndex()) {
-                    val mediaId = "visit_${safeVisitId}_${categoryId}_$index"
-                    val deterministicPhotoId = "${safeVisitId}_${categoryId}_$index"
+                    val mediaId = "${safeVisitId}_${categoryId}_$index"
+                    val deterministicPhotoId = mediaId
 
                     if (uriStr.startsWith("http://") || uriStr.startsWith("https://") || uriStr.startsWith("gs://")) {
                         // Already uploaded to Cloudinary or remote URL
