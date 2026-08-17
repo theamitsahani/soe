@@ -357,30 +357,9 @@ class AuthRepository(private val context: Context) {
                                 }
                             }
 
-                            // Auto-link any tasks matching userEmail or oldDocId or employeeName to current uid
-                            val emailTasksToUpdate = fStore.collection("tasks").whereEqualTo("employeeEmail", userEmail).get()
-                            val emailTaskSnap = Tasks.await(emailTasksToUpdate)
-                            for (tDoc in emailTaskSnap.documents) {
-                                tDoc.reference.update(mapOf("employeeId" to uid, "employeeEmail" to userEmail))
-                            }
-
-                            if (oldDocId.isNotBlank() && oldDocId != uid) {
-                                val tasksToUpdate = fStore.collection("tasks").whereEqualTo("employeeId", oldDocId).get()
-                                val taskSnap = Tasks.await(tasksToUpdate)
-                                for (tDoc in taskSnap.documents) {
-                                    tDoc.reference.update(mapOf("employeeId" to uid, "employeeEmail" to userEmail))
-                                }
-                            }
-
-                            if (name.isNotBlank()) {
-                                val nameTasksToUpdate = fStore.collection("tasks").whereEqualTo("employeeName", name).get()
-                                val nameTaskSnap = Tasks.await(nameTasksToUpdate)
-                                for (tDoc in nameTaskSnap.documents) {
-                                    tDoc.reference.update(mapOf("employeeId" to uid, "employeeEmail" to userEmail))
-                                }
-                            }
+                            // User record self-healing sync only
                         } catch (migEx: Exception) {
-                            Log.w("AuthRepository", "Notice during task linking: ${migEx.message}")
+                            Log.w("AuthRepository", "Notice during user sync: ${migEx.message}")
                         }
 
                         val authenticatedUser = User(

@@ -388,21 +388,11 @@ class MainActivity : ComponentActivity() {
                                         employeeUser = state.employeeUser,
                                         tasks = tasks.filter { task ->
                                             val empId = state.employeeUser.userId.trim()
-                                            val empEmail = state.employeeUser.email.trim()
-                                            val empName = state.employeeUser.name.trim()
-
-                                            (empId.isNotBlank() && (task.employeeId.trim().equals(empId, ignoreCase = true) || task.employeeEmail.trim().equals(empId, ignoreCase = true))) ||
-                                            (empEmail.isNotBlank() && (task.employeeId.trim().equals(empEmail, ignoreCase = true) || task.employeeEmail.trim().equals(empEmail, ignoreCase = true))) ||
-                                            (empName.isNotBlank() && (task.employeeName.trim().equals(empName, ignoreCase = true) || task.employeeId.trim().equals(empName, ignoreCase = true)))
+                                            empId.isNotBlank() && task.employeeId.trim().equals(empId, ignoreCase = true)
                                         },
                                         completedVisits = visits.filter { visit ->
                                             val empId = state.employeeUser.userId.trim()
-                                            val empEmail = state.employeeUser.email.trim()
-                                            val empName = state.employeeUser.name.trim()
-
-                                            (empId.isNotBlank() && (visit.employeeId.trim().equals(empId, ignoreCase = true) || visit.employeeId.trim().equals(empEmail, ignoreCase = true))) ||
-                                            (empEmail.isNotBlank() && visit.employeeId.trim().equals(empEmail, ignoreCase = true)) ||
-                                            (empName.isNotBlank() && (visit.employeeName.trim().equals(empName, ignoreCase = true) || visit.employeeId.trim().equals(empName, ignoreCase = true)))
+                                            empId.isNotBlank() && visit.employeeId.trim().equals(empId, ignoreCase = true)
                                         },
                                         schools = schools,
                                         isOnline = isOnline,
