@@ -90,9 +90,29 @@ class TaskRepository(private val context: Context) {
         val employeeName = (doc.getString("employeeName") ?: doc.getString("name") ?: doc.getString("userName") ?: "").trim()
         
         var schoolName = doc.getString("schoolName") ?: ""
-        if (schoolName.isBlank() && schoolId.isNotBlank()) {
-            schoolName = db.schoolDao().getSchoolById(schoolId)?.schoolName ?: "School ($schoolId)"
+        var principalName = doc.getString("principalName") ?: ""
+        var principalMobile = doc.getString("principalMobile") ?: doc.getString("mobile") ?: ""
+        var villageName = doc.getString("villageName") ?: doc.getString("village") ?: ""
+        var schoolType = doc.getString("schoolType") ?: doc.getString("type") ?: ""
+        var state = doc.getString("state") ?: doc.getString("stateName") ?: "Rajasthan"
+        var district = doc.getString("district") ?: doc.getString("districtName") ?: ""
+        var block = doc.getString("block") ?: doc.getString("blockName") ?: ""
+
+        // Backward compatibility: Look up missing principal/school details from local Room School
+        if (schoolId.isNotBlank()) {
+            val localSchool = db.schoolDao().getSchoolById(schoolId)
+            if (localSchool != null) {
+                if (schoolName.isBlank()) schoolName = localSchool.schoolName
+                if (principalName.isBlank()) principalName = localSchool.principalName
+                if (principalMobile.isBlank()) principalMobile = localSchool.principalMobile
+                if (villageName.isBlank()) villageName = localSchool.villageName
+                if (schoolType.isBlank()) schoolType = localSchool.schoolType
+                if (district.isBlank()) district = localSchool.districtName
+                if (block.isBlank()) block = localSchool.blockName
+                if (state.isBlank()) state = localSchool.stateName
+            }
         }
+
         if (schoolName.isBlank()) {
             schoolName = "School Visit Task"
         }
@@ -126,9 +146,13 @@ class TaskRepository(private val context: Context) {
             employeeEmail = employeeEmail,
             employeeName = employeeName,
             schoolName = schoolName,
-            state = doc.getString("state") ?: "Rajasthan",
-            district = doc.getString("district") ?: "",
-            block = doc.getString("block") ?: "",
+            principalName = principalName,
+            principalMobile = principalMobile,
+            villageName = villageName,
+            schoolType = schoolType,
+            state = state,
+            district = district,
+            block = block,
             assignedBy = doc.getString("assignedBy") ?: "Admin",
             visitDate = doc.getString("visitDate") ?: "",
             status = status,
@@ -260,6 +284,82 @@ class TaskRepository(private val context: Context) {
         }
     }
 
+    private suspend fun resolveFirebaseUidForEmployee(
+        rawEmployeeId: String,
+        email: String,
+        name: String
+    ): String = withContext(Dispatchers.IO) {
+        val cleanRaw = rawEmployeeId.trim()
+        val cleanEmail = email.trim().lowercase()
+        val cleanName = name.trim()
+        val fStore = firestore
+
+        // 1. If rawEmployeeId is already an actual Firebase Auth UID (not starting with "emp_")
+        if (cleanRaw.isNotBlank() && !cleanRaw.startsWith("emp_") && cleanRaw.length >= 15) {
+            return@withContext cleanRaw
+        }
+
+        if (fStore != null) {
+            // 2. Search "users" collection by email
+            if (cleanEmail.isNotBlank()) {
+                try {
+                    val emailQuery = fStore.collection("users").whereEqualTo("email", cleanEmail).limit(1).get()
+                    val emailSnap = com.google.android.gms.tasks.Tasks.await(emailQuery)
+                    val userDoc = emailSnap.documents.firstOrNull()
+                    if (userDoc != null) {
+                        val docId = userDoc.id.trim()
+                        val uidInDoc = userDoc.getString("userId")?.trim() ?: ""
+                        val resolved = if (docId.isNotBlank() && !docId.startsWith("emp_")) docId
+                                       else if (uidInDoc.isNotBlank() && !uidInDoc.startsWith("emp_")) uidInDoc
+                                       else ""
+                        if (resolved.isNotBlank()) return@withContext resolved
+                    }
+                } catch (e: Exception) {
+                    Log.w("TaskRepository", "Email resolution notice: ${e.message}")
+                }
+            }
+
+            // 3. Search "users" collection by name
+            if (cleanName.isNotBlank()) {
+                try {
+                    val nameQuery = fStore.collection("users").whereEqualTo("name", cleanName).limit(1).get()
+                    val nameSnap = com.google.android.gms.tasks.Tasks.await(nameQuery)
+                    val userDoc = nameSnap.documents.firstOrNull()
+                    if (userDoc != null) {
+                        val docId = userDoc.id.trim()
+                        val uidInDoc = userDoc.getString("userId")?.trim() ?: ""
+                        val resolved = if (docId.isNotBlank() && !docId.startsWith("emp_")) docId
+                                       else if (uidInDoc.isNotBlank() && !uidInDoc.startsWith("emp_")) uidInDoc
+                                       else ""
+                        if (resolved.isNotBlank()) return@withContext resolved
+                    }
+                } catch (e: Exception) {
+                    Log.w("TaskRepository", "Name resolution notice: ${e.message}")
+                }
+            }
+        }
+
+        // 4. Local Room user search
+        try {
+            val localUsers = db.userDao().getAllUsersList()
+            val match = localUsers.find { 
+                (cleanEmail.isNotBlank() && it.email.trim().equals(cleanEmail, ignoreCase = true)) ||
+                (cleanName.isNotBlank() && it.name.trim().equals(cleanName, ignoreCase = true)) ||
+                (cleanRaw.isNotBlank() && it.userId.trim() == cleanRaw)
+            }
+            if (match != null) {
+                val uid = match.userId.trim()
+                if (uid.isNotBlank() && !uid.startsWith("emp_")) {
+                    return@withContext uid
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("TaskRepository", "Local user resolution notice: ${e.message}")
+        }
+
+        return@withContext cleanRaw
+    }
+
     suspend fun assignTask(
         schoolId: String,
         schoolName: String,
@@ -273,32 +373,34 @@ class TaskRepository(private val context: Context) {
         state: String = "Rajasthan"
     ): Result<Task> = withContext(Dispatchers.IO) {
         try {
-            var resolvedEmployeeUid = employeeId.trim()
             val cleanEmail = employeeEmail.trim().lowercase()
             val cleanName = employeeName.trim()
 
-            // Resolve Firebase Auth UID from Firestore user doc if employeeId is non-standard
-            val fStore = firestore
-            if (fStore != null && (resolvedEmployeeUid.startsWith("emp_") || resolvedEmployeeUid.isBlank())) {
-                try {
-                    if (cleanEmail.isNotBlank()) {
-                        val userQuery = fStore.collection("users").whereEqualTo("email", cleanEmail).limit(1).get()
-                        val userSnap = com.google.android.gms.tasks.Tasks.await(userQuery)
-                        val userDoc = userSnap.documents.firstOrNull()
-                        if (userDoc != null) {
-                            val realUid = userDoc.getString("userId")?.trim()?.ifBlank { userDoc.id } ?: userDoc.id
-                            if (realUid.isNotBlank() && !realUid.startsWith("emp_")) {
-                                resolvedEmployeeUid = realUid
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.w("TaskRepository", "Could not resolve employee Firebase UID: ${e.message}")
-                }
+            val resolvedEmployeeUid = resolveFirebaseUidForEmployee(
+                rawEmployeeId = employeeId,
+                email = cleanEmail,
+                name = cleanName
+            )
+
+            // Fetch school from Room database as source of truth
+            val localSchool = try {
+                db.schoolDao().getSchoolById(schoolId)
+            } catch (e: Exception) {
+                null
             }
+
+            val finalSchoolName = localSchool?.schoolName?.ifBlank { schoolName } ?: schoolName
+            val finalPrincipalName = localSchool?.principalName ?: ""
+            val finalPrincipalMobile = localSchool?.principalMobile ?: ""
+            val finalVillageName = localSchool?.villageName ?: ""
+            val finalSchoolType = localSchool?.schoolType ?: ""
+            val finalState = localSchool?.stateName?.ifBlank { state } ?: state
+            val finalDistrict = localSchool?.districtName?.ifBlank { district } ?: district
+            val finalBlock = localSchool?.blockName?.ifBlank { block } ?: block
 
             val taskId = "tsk_" + UUID.randomUUID().toString().replace("-", "").take(10)
             val visitId = "vst_" + UUID.randomUUID().toString().replace("-", "").take(10)
+            val createdAt = System.currentTimeMillis()
 
             val task = Task(
                 taskId = taskId,
@@ -307,30 +409,39 @@ class TaskRepository(private val context: Context) {
                 employeeId = resolvedEmployeeUid,
                 employeeEmail = cleanEmail,
                 employeeName = cleanName,
-                schoolName = schoolName,
-                state = state,
-                district = district,
-                block = block,
+                schoolName = finalSchoolName,
+                principalName = finalPrincipalName,
+                principalMobile = finalPrincipalMobile,
+                villageName = finalVillageName,
+                schoolType = finalSchoolType,
+                state = finalState,
+                district = finalDistrict,
+                block = finalBlock,
                 assignedBy = "Admin",
                 visitDate = visitDate,
                 status = VisitStatus.ASSIGNED,
                 notes = notes,
-                createdAt = System.currentTimeMillis()
+                createdAt = createdAt
             )
 
             db.taskDao().insertTask(task)
 
             // Sync to Firestore task document
+            val fStore = firestore
             if (fStore != null) {
                 val setTask = fStore.collection("tasks").document(taskId).set(
                     mapOf(
                         "taskId" to taskId,
                         "visitId" to visitId,
                         "schoolId" to schoolId,
-                        "schoolName" to schoolName,
-                        "state" to state,
-                        "district" to district,
-                        "block" to block,
+                        "schoolName" to finalSchoolName,
+                        "principalName" to finalPrincipalName,
+                        "principalMobile" to finalPrincipalMobile,
+                        "villageName" to finalVillageName,
+                        "schoolType" to finalSchoolType,
+                        "state" to finalState,
+                        "district" to finalDistrict,
+                        "block" to finalBlock,
                         "employeeId" to resolvedEmployeeUid,
                         "employeeEmail" to cleanEmail,
                         "employeeName" to cleanName,
@@ -338,7 +449,7 @@ class TaskRepository(private val context: Context) {
                         "visitDate" to visitDate,
                         "status" to VisitStatus.ASSIGNED.name,
                         "notes" to notes,
-                        "createdAt" to task.createdAt
+                        "createdAt" to createdAt
                     )
                 )
                 com.google.android.gms.tasks.Tasks.await(setTask)
@@ -346,6 +457,7 @@ class TaskRepository(private val context: Context) {
 
             Result.success(task)
         } catch (e: Exception) {
+            Log.e("TaskRepository", "Error assigning task", e)
             Result.failure(e)
         }
     }

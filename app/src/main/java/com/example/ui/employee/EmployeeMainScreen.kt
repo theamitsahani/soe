@@ -305,12 +305,24 @@ fun TaskCardItem(
                       task.status == VisitStatus.REVIEWED || 
                       completedVisits.any { it.schoolId == task.schoolId || (task.visitId.isNotBlank() && it.visitId == task.visitId) }
 
-    // Outer Preview: School Name, Principal Name, Village Name
-    val principalNameDisplay = remember(school) {
-        school?.principalName?.ifBlank { "Not Specified" } ?: "Not Specified"
+    // Outer Preview & Details Display Priority: task.field -> school.field -> Fallback
+    val principalNameDisplay = remember(task, school) {
+        task.principalName.ifBlank { school?.principalName ?: "" }.ifBlank { "Not Specified" }
     }
-    val villageNameDisplay = remember(school) {
-        school?.villageName?.ifBlank { "Not Specified" } ?: "Not Specified"
+    val principalMobileDisplay = remember(task, school) {
+        task.principalMobile.ifBlank { school?.principalMobile ?: "" }
+    }
+    val villageNameDisplay = remember(task, school) {
+        task.villageName.ifBlank { school?.villageName ?: "" }.ifBlank { "Not Specified" }
+    }
+    val blockDisplay = remember(task, school) {
+        task.block.ifBlank { school?.blockName ?: "" }.ifBlank { "Not Specified" }
+    }
+    val districtDisplay = remember(task, school) {
+        task.district.ifBlank { school?.districtName ?: "" }.ifBlank { "Not Specified" }
+    }
+    val schoolTypeDisplay = remember(task, school) {
+        task.schoolType.ifBlank { school?.schoolType ?: "" }.ifBlank { "School Details" }
     }
 
     Card(
@@ -458,7 +470,7 @@ fun TaskCardItem(
     // Detailed School Information Dialog with Call Action
     if (showSchoolDetailsDialog) {
         val s = school
-        val pMobile = s?.principalMobile?.trim() ?: ""
+        val pMobile = principalMobileDisplay.trim()
 
         AlertDialog(
             onDismissRequest = { showSchoolDetailsDialog = false },
@@ -491,7 +503,7 @@ fun TaskCardItem(
                             lineHeight = 20.sp
                         )
                         Text(
-                            text = s?.schoolType?.ifBlank { "School Details" } ?: "School Details",
+                            text = schoolTypeDisplay,
                             fontSize = 11.sp,
                             color = Slate500
                         )
@@ -508,7 +520,7 @@ fun TaskCardItem(
                     // Principal Name
                     SchoolInfoRow(
                         label = "Principal Name (प्रधानाचार्य)",
-                        value = s?.principalName?.ifBlank { "Not available" } ?: "Not available"
+                        value = principalNameDisplay
                     )
 
                     // Principal Mobile with Call Option
@@ -565,7 +577,7 @@ fun TaskCardItem(
                     // Village Name
                     SchoolInfoRow(
                         label = "Village Name (गांव का नाम)",
-                        value = s?.villageName?.ifBlank { "Not specified" } ?: "Not specified"
+                        value = villageNameDisplay
                     )
 
                     // Block & District
@@ -576,13 +588,13 @@ fun TaskCardItem(
                         Column(modifier = Modifier.weight(1f)) {
                             SchoolInfoRow(
                                 label = "Block (ब्लॉक)",
-                                value = s?.blockName?.ifBlank { task.block.ifBlank { "Not specified" } } ?: task.block
+                                value = blockDisplay
                             )
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             SchoolInfoRow(
                                 label = "District (जिला)",
-                                value = s?.districtName?.ifBlank { task.district.ifBlank { "Not specified" } } ?: task.district
+                                value = districtDisplay
                             )
                         }
                     }
@@ -590,7 +602,7 @@ fun TaskCardItem(
                     // State
                     SchoolInfoRow(
                         label = "State (राज्य)",
-                        value = s?.stateName?.ifBlank { "Rajasthan" } ?: "Rajasthan"
+                        value = task.state.ifBlank { s?.stateName ?: "Rajasthan" }
                     )
 
                     // Scheduled Visit Date
