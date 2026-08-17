@@ -35,11 +35,7 @@ class TaskRepository(private val context: Context) {
         val isEmployee = (role == UserRole.EMPLOYEE)
 
         try {
-            val query = if (isEmployee && currentUid.isNotBlank()) {
-                fStore.collection("tasks").whereEqualTo("employeeId", currentUid)
-            } else {
-                fStore.collection("tasks")
-            }
+            val query = fStore.collection("tasks")
 
             tasksListenerRegistration = query.addSnapshotListener { snapshot, error ->
                 if (error != null) {
@@ -109,6 +105,7 @@ class TaskRepository(private val context: Context) {
             visitId = visitId,
             schoolId = schoolId,
             employeeId = employeeId,
+            employeeEmail = doc.getString("employeeEmail") ?: "",
             employeeName = doc.getString("employeeName") ?: "",
             schoolName = schoolName,
             district = doc.getString("district") ?: "",
@@ -142,11 +139,7 @@ class TaskRepository(private val context: Context) {
                 }
             }
 
-            val query = if (isEmployee && currentUid.isNotBlank()) {
-                fStore.collection("tasks").whereEqualTo("employeeId", currentUid)
-            } else {
-                fStore.collection("tasks")
-            }
+            val query = fStore.collection("tasks")
 
             val snapshotTask = query.get()
             val snapshot = com.google.android.gms.tasks.Tasks.await(snapshotTask)
@@ -172,7 +165,8 @@ class TaskRepository(private val context: Context) {
         employeeId: String,
         employeeName: String,
         visitDate: String,
-        notes: String
+        notes: String,
+        employeeEmail: String = ""
     ): Result<Task> = withContext(Dispatchers.IO) {
         try {
             val taskId = "tsk_" + UUID.randomUUID().toString().take(8)
@@ -183,6 +177,7 @@ class TaskRepository(private val context: Context) {
                 visitId = visitId,
                 schoolId = schoolId,
                 employeeId = employeeId,
+                employeeEmail = employeeEmail,
                 employeeName = employeeName,
                 schoolName = schoolName,
                 district = district,
@@ -205,6 +200,7 @@ class TaskRepository(private val context: Context) {
                         "visitId" to visitId,
                         "schoolId" to schoolId,
                         "employeeId" to employeeId,
+                        "employeeEmail" to employeeEmail,
                         "employeeName" to employeeName,
                         "schoolName" to schoolName,
                         "district" to district,

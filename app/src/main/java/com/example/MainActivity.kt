@@ -350,8 +350,16 @@ class MainActivity : ComponentActivity() {
                                  is ScreenState.Employee -> {
                                     EmployeeMainScreen(
                                         employeeUser = state.employeeUser,
-                                        tasks = tasks.filter { it.employeeId == state.employeeUser.userId || (state.employeeUser.email.isNotBlank() && it.employeeId.equals(state.employeeUser.email, ignoreCase = true)) },
-                                        completedVisits = visits.filter { it.employeeId == state.employeeUser.userId || (state.employeeUser.email.isNotBlank() && it.employeeId.equals(state.employeeUser.email, ignoreCase = true)) },
+                                        tasks = tasks.filter { task ->
+                                            task.employeeId == state.employeeUser.userId ||
+                                            (state.employeeUser.email.isNotBlank() && (task.employeeId.equals(state.employeeUser.email, ignoreCase = true) || task.employeeEmail.equals(state.employeeUser.email, ignoreCase = true))) ||
+                                            (state.employeeUser.name.isNotBlank() && task.employeeName.equals(state.employeeUser.name, ignoreCase = true))
+                                        },
+                                        completedVisits = visits.filter { visit ->
+                                            visit.employeeId == state.employeeUser.userId ||
+                                            (state.employeeUser.email.isNotBlank() && visit.employeeId.equals(state.employeeUser.email, ignoreCase = true)) ||
+                                            (state.employeeUser.name.isNotBlank() && visit.employeeName.equals(state.employeeUser.name, ignoreCase = true))
+                                        },
                                         schools = schools,
                                         isOnline = isOnline,
                                         pendingSyncCount = pendingSyncCount,

@@ -319,10 +319,46 @@ class AuthRepository(private val context: Context) {
                     }
 
                     if (userDoc != null && userDoc.exists()) {
+                        val isDeleted = userDoc.getBoolean("isDeleted") ?: false
+                        if (isDeleted) {
+                            fAuth.signOut()
+                            return@withContext Result.failure(Exception("Aapka account delete kar diya gaya hai. Kripya Administrator se sampark karein."))
+                        }
+
                         val statusStr = userDoc.getString("status")?.trim()?.uppercase() ?: UserStatus.ACTIVE.name
                         if (statusStr == "INACTIVE") {
                             fAuth.signOut()
                             return@withContext Result.failure(Exception("Your account has been deactivated. Please contact administrator."))
+                        }
+
+                        val oldDocId = userDoc.id
+                        if (oldDocId != uid) {
+                            // Self-healing migration: update user record at users/$uid and sync tasks to $uid
+                            try {
+                                val migratedMap = userDoc.data?.toMutableMap() ?: mutableMapOf()
+                                migratedMap["userId"] = uid
+                                migratedMap["email"] = userEmail
+                                migratedMap["updatedAt"] = System.currentTimeMillis()
+                                fStore.collection("users").document(uid).set(migratedMap, SetOptions.merge())
+                                if (oldDocId.isNotBlank() && oldDocId != uid) {
+                                    fStore.collection("users").document(oldDocId).delete()
+                                }
+
+                                // Migrate tasks in Firestore matching oldDocId or userEmail
+                                val tasksToUpdate = fStore.collection("tasks").whereEqualTo("employeeId", oldDocId).get()
+                                val taskSnap = Tasks.await(tasksToUpdate)
+                                for (tDoc in taskSnap.documents) {
+                                    tDoc.reference.update(mapOf("employeeId" to uid, "employeeEmail" to userEmail))
+                                }
+
+                                val emailTasksToUpdate = fStore.collection("tasks").whereEqualTo("employeeEmail", userEmail).get()
+                                val emailTaskSnap = Tasks.await(emailTasksToUpdate)
+                                for (tDoc in emailTaskSnap.documents) {
+                                    tDoc.reference.update("employeeId", uid)
+                                }
+                            } catch (migEx: Exception) {
+                                Log.w("AuthRepository", "Notice during self-healing user migration: ${migEx.message}")
+                            }
                         }
 
                         val rawRole = userDoc.getString("role")?.trim()?.uppercase()
@@ -761,6 +797,21 @@ class AuthRepository(private val context: Context) {
                         secAuth.signOut()
                     } catch (e: Exception) {
                         Log.w("AuthRepository", "Secondary auth registration notice: ${e.message}")
+                        val rawMsg = (e.message ?: "").lowercase()
+                        if (rawMsg.contains("email-already-in-use") || rawMsg.contains("already in use") || rawMsg.contains("collision")) {
+                            // Check if existing user doc in Firestore can be linked
+                            val fStoreCheck = firestore
+                            if (fStoreCheck != null) {
+                                try {
+                                    val matchQuery = fStoreCheck.collection("users").whereEqualTo("email", cleanEmail).limit(1).get()
+                                    val matchSnap = Tasks.await(matchQuery)
+                                    val matchDoc = matchSnap.documents.firstOrNull()
+                                    if (matchDoc != null) {
+                                        userId = matchDoc.id
+                                    }
+                                } catch (ignored: Exception) {}
+                            }
+                        }
                     }
                 }
             }

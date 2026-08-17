@@ -13,8 +13,8 @@ interface TaskDao {
     @Query("SELECT * FROM tasks ORDER BY createdAt DESC")
     fun getAllTasks(): Flow<List<Task>>
 
-    @Query("SELECT * FROM tasks WHERE employeeId = :employeeId ORDER BY createdAt DESC")
-    fun getTasksByEmployee(employeeId: String): Flow<List<Task>>
+    @Query("SELECT * FROM tasks WHERE employeeId = :employeeId OR (employeeEmail = :userEmail AND :userEmail != '') OR employeeId = :userEmail ORDER BY createdAt DESC")
+    fun getTasksByEmployee(employeeId: String, userEmail: String = ""): Flow<List<Task>>
 
     @Query("SELECT * FROM tasks WHERE taskId = :taskId LIMIT 1")
     suspend fun getTaskById(taskId: String): Task?
@@ -34,6 +34,6 @@ interface TaskDao {
     @Query("DELETE FROM tasks WHERE schoolId = :schoolId")
     suspend fun deleteTasksBySchool(schoolId: String)
 
-    @Query("UPDATE tasks SET status = 'SUBMITTED' WHERE employeeId = :employeeId AND schoolId = :schoolId")
+    @Query("UPDATE tasks SET status = 'SUBMITTED' WHERE (employeeId = :employeeId OR employeeEmail = :employeeId) AND schoolId = :schoolId")
     suspend fun markTaskSubmittedForEmployeeAndSchool(employeeId: String, schoolId: String)
 }

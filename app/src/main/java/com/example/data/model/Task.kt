@@ -9,6 +9,7 @@ data class Task(
     val visitId: String,
     val schoolId: String,
     val employeeId: String,
+    val employeeEmail: String = "",
     val employeeName: String = "",
     val schoolName: String = "",
     val state: String = "Rajasthan",
