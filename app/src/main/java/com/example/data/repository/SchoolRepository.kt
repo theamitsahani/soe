@@ -391,14 +391,18 @@ class SchoolRepository(private val context: Context) {
 
     suspend fun permanentDeleteSchool(schoolId: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            firestore?.collection("schools")?.document(schoolId)?.delete()
+            val fStore = firestore
+            if (fStore != null) {
+                com.google.android.gms.tasks.Tasks.await(
+                    fStore.collection("schools").document(schoolId).delete()
+                )
+            }
             db.schoolDao().deleteSchoolById(schoolId)
             
             // Delete associated visits and tasks from local Room database
             db.visitDao().deleteVisitsBySchool(schoolId)
             db.taskDao().deleteTasksBySchool(schoolId)
 
-            val fStore = firestore
             if (fStore != null) {
                 try {
                     val visitDocs = com.google.android.gms.tasks.Tasks.await(
