@@ -338,6 +338,29 @@ object MediaStorageHelper {
         }
     }
 
+    /**
+     * Checks if 100% of media entries in photosJson are uploaded remote Cloudinary/HTTP URLs.
+     * Returns false if any item remains a local URI (file://, content://, or private path).
+     */
+    fun isAllMediaUploaded(photosJson: String): Boolean {
+        if (photosJson.isBlank() || photosJson == "{}") return true
+        return try {
+            val map = photosAdapter.fromJson(photosJson) ?: return true
+            for ((_, uriList) in map) {
+                for (uriStr in uriList) {
+                    if (uriStr.isBlank()) continue
+                    val isRemote = uriStr.startsWith("http://") || 
+                                   uriStr.startsWith("https://") || 
+                                   uriStr.startsWith("gs://")
+                    if (!isRemote) return false
+                }
+            }
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     private fun readMediaBytes(context: Context, uriStr: String): ByteArray? {
         return try {
             val uri = Uri.parse(uriStr)
@@ -348,20 +371,21 @@ object MediaStorageHelper {
             }
 
             // 2. Direct File path reading
-            val path = uri.path ?: uriStr.removePrefix("file://")
+            val path = uri.path ?: uriStr.removePrefix("file://").removePrefix("file:")
             val file = File(path)
-            if (file.exists()) {
+            if (file.exists() && file.length() > 0) {
                 file.readBytes()
             } else {
-                val directFile = File(uriStr)
-                if (directFile.exists()) directFile.readBytes() else null
+                val cleanPath = uriStr.removePrefix("file://").removePrefix("file:")
+                val directFile = File(cleanPath)
+                if (directFile.exists() && directFile.length() > 0) directFile.readBytes() else null
             }
         } catch (e: Exception) {
             Log.e("MediaStorageHelper", "Error reading media bytes for $uriStr", e)
             try {
-                val cleanPath = uriStr.removePrefix("file://")
+                val cleanPath = uriStr.removePrefix("file://").removePrefix("file:")
                 val fallbackFile = File(cleanPath)
-                if (fallbackFile.exists()) fallbackFile.readBytes() else null
+                if (fallbackFile.exists() && fallbackFile.length() > 0) fallbackFile.readBytes() else null
             } catch (e2: Exception) {
                 Log.e("MediaStorageHelper", "Fallback readMediaBytes failed for $uriStr", e2)
                 null

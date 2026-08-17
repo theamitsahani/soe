@@ -101,6 +101,13 @@ class SyncManager(private val context: Context) {
 
     suspend fun checkPendingCount() {
         withContext(Dispatchers.IO) {
+            val allVisits = db.visitDao().getAllVisitsList()
+            for (v in allVisits) {
+                if (v.syncStatus == SyncStatus.SYNCED && !MediaStorageHelper.isAllMediaUploaded(v.photosJson)) {
+                    android.util.Log.w("SyncManager", "Visit ${v.visitId} was marked SYNCED but has unuploaded local media! Marking PENDING for Cloudinary upload.")
+                    db.visitDao().updateVisit(v.copy(syncStatus = SyncStatus.PENDING))
+                }
+            }
             val pendingVisits = db.visitDao().getVisitsBySyncStatus(SyncStatus.PENDING)
             _pendingSyncCount.value = pendingVisits.size
         }
@@ -159,7 +166,7 @@ class SyncManager(private val context: Context) {
     suspend fun uploadSingleVisitToServer(visit: Visit): Boolean = withContext(Dispatchers.IO) {
         val fStore = firestore ?: return@withContext false
         try {
-            // 1. Upload photos directly to Firebase Storage and get permanent download URLs
+            // 1. Upload photos/videos directly to Cloudinary and get permanent download URLs
             val updatedPhotosJson = try {
                 MediaStorageHelper.uploadPhotosJsonToFirebaseStorage(
                     context = context,
@@ -174,7 +181,11 @@ class SyncManager(private val context: Context) {
                 visit.photosJson
             }
 
-            // 2. Set timeout for Firestore write
+            // 2. Check if 100% of photos and videos are now Cloudinary remote URLs
+            val isAllMediaUploaded = MediaStorageHelper.isAllMediaUploaded(updatedPhotosJson)
+            val finalSyncStatus = if (isAllMediaUploaded) SyncStatus.SYNCED else SyncStatus.PENDING
+
+            // 3. Set timeout for Firestore write
             val success = withTimeoutOrNull(120000L) {
                 val visitMap = hashMapOf(
                     "visitId" to visit.visitId,
@@ -188,6 +199,7 @@ class SyncManager(private val context: Context) {
                     "status" to visit.status.name,
                     "answersJson" to visit.answersJson,
                     "photosJson" to updatedPhotosJson,
+                    "syncStatus" to finalSyncStatus.name,
                     "editCount" to visit.editCount,
                     "createdAt" to visit.createdAt,
                     "updatedAt" to System.currentTimeMillis()
@@ -198,8 +210,8 @@ class SyncManager(private val context: Context) {
                     .set(visitMap, com.google.firebase.firestore.SetOptions.merge())
                 com.google.android.gms.tasks.Tasks.await(setTask)
 
-                // Update local Room database with the permanent photo URLs
-                db.visitDao().updateVisit(visit.copy(photosJson = updatedPhotosJson, syncStatus = SyncStatus.SYNCED))
+                // Update local Room database with permanent photo URLs and current sync status
+                db.visitDao().updateVisit(visit.copy(photosJson = updatedPhotosJson, syncStatus = finalSyncStatus))
 
                 // Also update the specific assigned task for this employee and school in Firestore
                 try {
@@ -221,7 +233,7 @@ class SyncManager(private val context: Context) {
 
                 true
             }
-            success == true
+            (success == true) && isAllMediaUploaded
         } catch (e: Exception) {
             e.printStackTrace()
             false

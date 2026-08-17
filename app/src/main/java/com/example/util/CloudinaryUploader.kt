@@ -31,9 +31,9 @@ data class CloudinarySignatureResponse(
 object CloudinaryUploader {
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(120, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
+        .connectTimeout(90, TimeUnit.SECONDS)
+        .writeTimeout(300, TimeUnit.SECONDS) // 5 minutes write timeout for videos
+        .readTimeout(180, TimeUnit.SECONDS)
         .build()
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
@@ -52,8 +52,32 @@ object CloudinaryUploader {
 
     /**
      * Obtains signature from Vercel backend and uploads media directly to Cloudinary using signed multipart POST.
+     * Retries up to 3 times on transient network failures.
      */
     fun uploadBytes(
+        bytes: ByteArray,
+        visitId: String,
+        schoolId: String,
+        categoryId: String,
+        isVideo: Boolean
+    ): CloudinaryUploadResult? {
+        var attempts = 0
+        val maxAttempts = 3
+        while (attempts < maxAttempts) {
+            attempts++
+            val result = tryUploadBytes(bytes, visitId, schoolId, categoryId, isVideo)
+            if (result != null) {
+                return result
+            }
+            if (attempts < maxAttempts) {
+                Log.w("CloudinaryUploader", "Upload attempt $attempts failed, retrying in ${attempts * 1500}ms...")
+                try { Thread.sleep(attempts * 1500L) } catch (_: Exception) {}
+            }
+        }
+        return null
+    }
+
+    private fun tryUploadBytes(
         bytes: ByteArray,
         visitId: String,
         schoolId: String,
