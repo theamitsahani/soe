@@ -114,6 +114,7 @@ fun EmployeeMainScreen(
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = EmployeeNavTab.entries
+    var showLogoutDialog by remember { mutableStateOf(false) }
 
     val cleanCompletedVisits = remember(completedVisits) {
         completedVisits.distinctBy { "${it.schoolId}_${it.employeeId}" }
@@ -141,7 +142,7 @@ fun EmployeeMainScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onLogoutClick) {
+                    IconButton(onClick = { showLogoutDialog = true }) {
                         Icon(Icons.Default.ExitToApp, contentDescription = "Logout", tint = Slate700)
                     }
                 },
@@ -226,10 +227,38 @@ fun EmployeeMainScreen(
                     )
                 }
                 EmployeeNavTab.PROFILE -> {
-                    EmployeeProfileSection(user = employeeUser, onLogout = onLogoutClick)
+                    EmployeeProfileSection(user = employeeUser, onLogout = { showLogoutDialog = true })
                 }
             }
         }
+    }
+
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            title = { Text("Confirm Logout / लॉगआउट पुष्टि", fontWeight = FontWeight.Bold, color = Navy900) },
+            text = { Text("Do you want to logout? / क्या आप लॉगआउट करना चाहते हैं?", color = Slate700) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLogoutDialog = false
+                        onLogoutClick()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Yes / हाँ", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showLogoutDialog = false },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("No / नहीं", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 }
 
@@ -702,7 +731,7 @@ fun CompletedVisitsSection(
             ) {
                 Column {
                     Text("Your Completed Visits", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Navy900)
-                    Text("Visits are editable within 12 hours of submission", fontSize = 11.sp, color = Slate500)
+                    Text("All submitted visit reports", fontSize = 11.sp, color = Slate500)
                 }
                 Surface(
                     shape = RoundedCornerShape(12.dp),
@@ -736,27 +765,12 @@ fun CompletedVisitsSection(
                         Spacer(modifier = Modifier.height(10.dp))
                         Text("No completed visit reports yet", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Navy900)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text("Submitted reports will appear here with 12h edit window", fontSize = 12.sp, color = Slate500)
+                        Text("Submitted visit reports will appear here", fontSize = 12.sp, color = Slate500)
                     }
                 }
             }
         } else {
             items(visits) { visit ->
-                val timeSinceSubmission = System.currentTimeMillis() - visit.createdAt
-                val twelveHoursMillis = 12 * 60 * 60 * 1000L
-                val isWithin12Hours = timeSinceSubmission in 0..twelveHoursMillis
-                val isEditable = isWithin12Hours && visit.editCount < 1
-                val remainingMillis = (twelveHoursMillis - timeSinceSubmission).coerceAtLeast(0L)
-                val remainingHours = remainingMillis / (1000 * 60 * 60)
-                val remainingMins = (remainingMillis / (1000 * 60)) % 60
-                val remainingText = if (visit.editCount >= 1) {
-                    "Edit Limit Reached (1/1)"
-                } else if (isWithin12Hours) {
-                    "${remainingHours}h ${remainingMins}m left"
-                } else {
-                    "12h Window Expired"
-                }
-
                 val matchedSchool = remember(visit.schoolId, schools) {
                     schools.find { it.schoolId == visit.schoolId }
                 }
@@ -787,73 +801,17 @@ fun CompletedVisitsSection(
                         Text("${visit.district} • ${visit.block}", fontSize = 12.sp, color = Slate500)
 
                         Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Visit Date: ${visit.visitDate}", fontSize = 12.sp, color = Slate700, fontWeight = FontWeight.Medium)
-
-                            // 12-hour / 1-edit Window Badge
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = if (isEditable) Color(0xFFF0FDF4) else if (visit.editCount >= 1) Color(0xFFFEF3C7) else Slate100
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (isEditable) Icons.Default.Schedule else if (visit.editCount >= 1) Icons.Default.Lock else Icons.Default.CheckCircle,
-                                        contentDescription = null,
-                                        tint = if (isEditable) Emerald600 else if (visit.editCount >= 1) Color(0xFFD97706) else Slate500,
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = if (visit.editCount >= 1) "Edited (1/1)" else if (isEditable) "Editable: $remainingText" else "12h Window Expired",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isEditable) Emerald600 else if (visit.editCount >= 1) Color(0xFFD97706) else Slate500
-                                    )
-                                }
-                            }
-                        }
+                        Text("Visit Date: ${visit.visitDate}", fontSize = 12.sp, color = Slate700, fontWeight = FontWeight.Medium)
 
                         Spacer(modifier = Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        OutlinedButton(
+                            onClick = { selectedVisitForDetail = visit },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            OutlinedButton(
-                                onClick = { selectedVisitForDetail = visit },
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("View Details", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            }
-
-                            Button(
-                                onClick = { onEditVisit(visit) },
-                                enabled = isEditable,
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Indigo600,
-                                    disabledContainerColor = Slate100,
-                                    disabledContentColor = Slate500
-                                ),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = if (visit.editCount >= 1) "Edited (1/1)" else if (isEditable) "Edit Visit" else "Locked",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
+                            Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("View Visit Details", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
@@ -863,15 +821,6 @@ fun CompletedVisitsSection(
 
     // Detail View Dialog
     selectedVisitForDetail?.let { visit ->
-        val timeSinceSubmission = System.currentTimeMillis() - visit.createdAt
-        val twelveHoursMillis = 12 * 60 * 60 * 1000L
-        val isWithin12Hours = timeSinceSubmission in 0..twelveHoursMillis
-        val isEditable = isWithin12Hours && visit.editCount < 1
-        val remainingMillis = (twelveHoursMillis - timeSinceSubmission).coerceAtLeast(0L)
-        val remainingHours = remainingMillis / (1000 * 60 * 60)
-        val remainingMins = (remainingMillis / (1000 * 60)) % 60
-        val remainingText = if (visit.editCount >= 1) "Edit limit reached (1/1)" else if (isEditable) "Editable • ${remainingHours}h ${remainingMins}m left" else "Window Expired"
-
         val matchedSchool = remember(visit.schoolId, schools) {
             schools.find { it.schoolId == visit.schoolId }
         }
@@ -880,12 +829,8 @@ fun CompletedVisitsSection(
             visit = visit,
             school = matchedSchool,
             onDismiss = { selectedVisitForDetail = null },
-            isEditable = isEditable,
-            editTimeRemainingText = remainingText,
-            onEditClick = {
-                selectedVisitForDetail = null
-                onEditVisit(visit)
-            }
+            isEditable = false,
+            onEditClick = null
         )
     }
 }

@@ -289,6 +289,11 @@ class MainActivity : ComponentActivity() {
                                                     employees = employees.filter { !it.isDeleted },
                                                     assignedTasks = tasks,
                                                     visits = visits,
+                                                    onDeleteTask = { taskId ->
+                                                        scope.launch {
+                                                            taskRepository.deleteTask(taskId)
+                                                        }
+                                                    },
                                                     onAssignTask = { sch, emp, date, notes, callback ->
                                                         scope.launch {
                                                             val res = taskRepository.assignTask(

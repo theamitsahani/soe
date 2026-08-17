@@ -26,10 +26,12 @@ import androidx.compose.material.icons.filled.AssignmentTurnedIn
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -41,6 +43,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -97,6 +100,7 @@ fun AssignVisitsTab(
     employees: List<User>,
     assignedTasks: List<Task>,
     visits: List<Visit> = emptyList(),
+    onDeleteTask: (String) -> Unit = {},
     onAssignTask: (
         school: School,
         employee: User,
@@ -147,6 +151,7 @@ fun AssignVisitsTab(
     var message by remember { mutableStateOf<String?>(null) }
     var selectedVisitForDetails by remember { mutableStateOf<Visit?>(null) }
     var showAllTasksDialog by remember { mutableStateOf(false) }
+    var taskToDelete by remember { mutableStateOf<Task?>(null) }
 
     // Exclude schools that currently have an active pending ASSIGNED task so they aren't assigned twice at the same time
     val currentlyAssignedSchoolIds = remember(assignedTasks) {
@@ -694,7 +699,20 @@ fun AssignVisitsTab(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(task.schoolName, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Navy900, modifier = Modifier.weight(1f))
-                            StatusChip(statusName = task.status.name)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                StatusChip(statusName = task.status.name)
+                                IconButton(
+                                    onClick = { taskToDelete = task },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = "Delete Task",
+                                        tint = Color(0xFFEF4444),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text("Assigned To: ${task.employeeName} • Date: ${task.visitDate}", fontSize = 12.sp, color = Slate700)
@@ -714,6 +732,7 @@ fun AssignVisitsTab(
             assignedTasks = assignedTasks,
             visits = visits,
             onDismiss = { showAllTasksDialog = false },
+            onDeleteTask = onDeleteTask,
             onSelectVisit = { visit ->
                 selectedVisitForDetails = visit
             }
@@ -732,6 +751,36 @@ fun AssignVisitsTab(
             onDismiss = { selectedVisitForDetails = null }
         )
     }
+
+    if (taskToDelete != null) {
+        val t = taskToDelete!!
+        AlertDialog(
+            onDismissRequest = { taskToDelete = null },
+            title = { Text("Delete Assigned Task", fontWeight = FontWeight.Bold, color = Navy900) },
+            text = { Text("Are you sure you want to delete the assigned task for ${t.schoolName} (${t.employeeName})? / क्या आप इस असाइन किए गए कार्य को हटाना चाहते हैं?", color = Slate700) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val id = t.taskId
+                        taskToDelete = null
+                        onDeleteTask(id)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Delete Task", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { taskToDelete = null },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Cancel", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -740,10 +789,12 @@ fun AllAssignedTasksDialog(
     assignedTasks: List<Task>,
     visits: List<Visit>,
     onDismiss: () -> Unit,
+    onDeleteTask: (String) -> Unit = {},
     onSelectVisit: (Visit) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedStatus by remember { mutableStateOf("All") }
+    var taskToDeleteInDialog by remember { mutableStateOf<Task?>(null) }
 
     val filteredTasks = remember(assignedTasks, searchQuery, selectedStatus) {
         assignedTasks.filter { task ->
@@ -924,7 +975,20 @@ fun AllAssignedTasksDialog(
                                             color = Navy900,
                                             modifier = Modifier.weight(1f)
                                         )
-                                        StatusChip(statusName = task.status.name)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            StatusChip(statusName = task.status.name)
+                                            IconButton(
+                                                onClick = { taskToDeleteInDialog = task },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Delete,
+                                                    contentDescription = "Delete Task",
+                                                    tint = Color(0xFFEF4444),
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
                                     }
 
                                     Spacer(modifier = Modifier.height(4.dp))
@@ -984,5 +1048,35 @@ fun AllAssignedTasksDialog(
                 }
             }
         }
+    }
+
+    if (taskToDeleteInDialog != null) {
+        val t = taskToDeleteInDialog!!
+        AlertDialog(
+            onDismissRequest = { taskToDeleteInDialog = null },
+            title = { Text("Delete Assigned Task", fontWeight = FontWeight.Bold, color = Navy900) },
+            text = { Text("Are you sure you want to delete the assigned task for ${t.schoolName} (${t.employeeName})? / क्या आप इस असाइन किए गए कार्य को हटाना चाहते हैं?", color = Slate700) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val id = t.taskId
+                        taskToDeleteInDialog = null
+                        onDeleteTask(id)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Delete Task", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { taskToDeleteInDialog = null },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Cancel", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 }

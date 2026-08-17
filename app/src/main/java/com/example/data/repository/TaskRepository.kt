@@ -479,4 +479,19 @@ class TaskRepository(private val context: Context) {
             Result.failure(e)
         }
     }
+
+    suspend fun deleteTask(taskId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            db.taskDao().deleteTask(taskId)
+            val fStore = firestore
+            if (fStore != null) {
+                val deleteTaskTask = fStore.collection("tasks").document(taskId).delete()
+                com.google.android.gms.tasks.Tasks.await(deleteTaskTask)
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("TaskRepository", "Error deleting task $taskId", e)
+            Result.failure(e)
+        }
+    }
 }
