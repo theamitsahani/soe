@@ -136,6 +136,7 @@ class SchoolRepository(private val context: Context) {
 
         val visitDate = (doc.getString("visitDate")
             ?: doc.getString("originalVisitDate")
+            ?: doc.getString("completedAt")
             ?: doc.getString("Visit Date")
             ?: "").trim()
 
@@ -234,14 +235,20 @@ class SchoolRepository(private val context: Context) {
         }
     }
 
-    suspend fun importSchools(schools: List<School>): Result<Int> = withContext(Dispatchers.IO) {
+    suspend fun importSchools(
+        schools: List<School>,
+        completedVisits: List<com.example.data.model.Visit> = emptyList()
+    ): Result<Int> = withContext(Dispatchers.IO) {
         try {
             if (schools.isEmpty()) return@withContext Result.success(0)
 
-            // 1. Save to Room database cache
+            // 1. Save schools and completed visits to Room database cache immediately
             db.schoolDao().insertSchools(schools)
+            if (completedVisits.isNotEmpty()) {
+                db.visitDao().insertVisits(completedVisits)
+            }
 
-            // 2. Sync to Firestore in atomic batches
+            // 2. Sync schools and completed visits to Firestore in atomic batches
             val fStore = firestore
             if (fStore != null) {
                 // Firestore batches can hold up to 500 operations
@@ -250,8 +257,10 @@ class SchoolRepository(private val context: Context) {
                     val batch = fStore.batch()
                     for (sch in chunk) {
                         val docRef = fStore.collection("schools").document(sch.schoolId)
+                        val isCompleted = sch.visitDate.isNotBlank()
                         val data = mapOf(
                             "schoolId" to sch.schoolId,
+                            "sr" to sch.sr,
                             "state" to sch.stateName,
                             "stateName" to sch.stateName,
                             "district" to sch.districtName,
@@ -267,11 +276,45 @@ class SchoolRepository(private val context: Context) {
                             "mobile" to sch.principalMobile,
                             "principalMobile" to sch.principalMobile,
                             "visitDate" to sch.visitDate,
+                            "status" to if (isCompleted) "COMPLETED" else "PENDING",
+                            "isCompleted" to isCompleted,
+                            "completedAt" to if (isCompleted) sch.visitDate else "",
+                            "isDeleted" to sch.isDeleted,
+                            "deletedAt" to sch.deletedAt,
+                            "createdAt" to sch.createdAt,
                             "updatedAt" to System.currentTimeMillis()
                         )
                         batch.set(docRef, data, com.google.firebase.firestore.SetOptions.merge())
                     }
                     com.google.android.gms.tasks.Tasks.await(batch.commit())
+                }
+
+                // Batch upload the generated completed visits to Firestore visits collection
+                if (completedVisits.isNotEmpty()) {
+                    completedVisits.chunked(batchSize).forEach { visitChunk ->
+                        val visitBatch = fStore.batch()
+                        for (v in visitChunk) {
+                            val visitDocRef = fStore.collection("visits").document(v.visitId)
+                            val visitData = mapOf(
+                                "visitId" to v.visitId,
+                                "schoolId" to v.schoolId,
+                                "employeeId" to v.employeeId,
+                                "employeeName" to v.employeeName,
+                                "schoolName" to v.schoolName,
+                                "district" to v.district,
+                                "block" to v.block,
+                                "visitDate" to v.visitDate,
+                                "status" to v.status.name,
+                                "answersJson" to v.answersJson,
+                                "photosJson" to v.photosJson,
+                                "syncStatus" to com.example.data.model.SyncStatus.SYNCED.name,
+                                "createdAt" to v.createdAt,
+                                "updatedAt" to System.currentTimeMillis()
+                            )
+                            visitBatch.set(visitDocRef, visitData, com.google.firebase.firestore.SetOptions.merge())
+                        }
+                        com.google.android.gms.tasks.Tasks.await(visitBatch.commit())
+                    }
                 }
             }
 

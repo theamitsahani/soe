@@ -45,6 +45,7 @@ import com.example.ui.auth.LoginScreen
 import com.example.ui.employee.EmployeeMainScreen
 import com.example.ui.employee.VisitFormScreen
 import com.example.ui.theme.SOETheme
+import com.example.util.AppNotificationHelper
 import com.example.util.FirebaseUtils
 import com.example.util.SyncManager
 import kotlinx.coroutines.launch
@@ -70,6 +71,21 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         FirebaseUtils.initialize(applicationContext)
+        AppNotificationHelper.createNotificationChannel(applicationContext)
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                androidx.core.app.ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                    1001
+                )
+            }
+        }
 
         authRepository = AuthRepository(applicationContext)
         schoolRepository = SchoolRepository(applicationContext)
@@ -122,6 +138,9 @@ class MainActivity : ComponentActivity() {
                             }
 
                             // Background sync data from Firestore into local cache when authenticated
+                            val rId = if (sessionUser.role == UserRole.ADMIN) "ADMIN" else sessionUser.userId
+                            notificationRepository.startNotificationRealtimeListener(applicationContext, rId, sessionUser.role)
+
                             if (sessionUser.role == UserRole.ADMIN) {
                                 authRepository.startListeningToFirestoreUsers()
                                 launch { authRepository.syncEmployeesFromFirestore() }
@@ -154,6 +173,9 @@ class MainActivity : ComponentActivity() {
                                                 val result = authRepository.login(email, pass)
                                                 if (result.isSuccess) {
                                                     val user = result.getOrNull()!!
+                                                    val rId = if (user.role == UserRole.ADMIN) "ADMIN" else user.userId
+                                                    notificationRepository.startNotificationRealtimeListener(applicationContext, rId, user.role)
+
                                                     if (user.role == UserRole.ADMIN) {
                                                         currentScreen = ScreenState.Admin(user)
                                                         authRepository.startListeningToFirestoreUsers()
@@ -200,6 +222,9 @@ class MainActivity : ComponentActivity() {
                                             }
                                         },
                                         onLogoutClick = {
+                                            notificationRepository.stopNotificationRealtimeListener()
+                                            taskRepository.stopTasksRealtimeListener()
+                                            schoolRepository.stopSchoolsRealtimeListener()
                                             authRepository.logout()
                                             currentScreen = ScreenState.Login
                                         }
@@ -268,34 +293,12 @@ class MainActivity : ComponentActivity() {
                                             AdminTab.SCHOOLS -> {
                                                 SchoolManagementTab(
                                                     schools = schools,
-                                                    onImportSchools = { newSchools, completedVisits, callback ->
+                                                     onImportSchools = { newSchools, completedVisits, callback ->
                                                         scope.launch {
-                                                            val res = schoolRepository.importSchools(newSchools)
-                                                            for (v in completedVisits) {
-                                                                val existing = visitRepository.getVisitsListBySchool(v.schoolId)
-
-                                                                // A real employee-submitted visit must never be overwritten by
-                                                                // the synthetic visit created from the Excel import.
-                                                                val hasRealVisit = existing.any {
-                                                                    it.employeeId != "emp_system" &&
-                                                                    (it.status == com.example.data.model.VisitStatus.SUBMITTED ||
-                                                                     it.status == com.example.data.model.VisitStatus.REVIEWED)
-                                                                }
-
-                                                                // Find the exact imported visit by visitId. The visit's business
-                                                                // status (SUBMITTED/REVIEWED) is not enough to decide whether it
-                                                                // reached Firestore: syncStatus is the source of truth for that.
-                                                                val importedVisit = existing.find { it.visitId == v.visitId }
-                                                                val needsSubmit = !hasRealVisit &&
-                                                                        (importedVisit == null ||
-                                                                         importedVisit.syncStatus != com.example.data.model.SyncStatus.SYNCED)
-
-                                                                // Retry imports that are still PENDING/FAILED, but do not create
-                                                                // duplicates when the exact imported visit is already synced.
-                                                                if (needsSubmit) {
-                                                                    visitRepository.submitVisit(v)
-                                                                }
-                                                            }
+                                                            val res = schoolRepository.importSchools(newSchools, completedVisits)
+                                                            // Trigger a sync so that the UI immediately receives latest Firestore state
+                                                            launch { visitRepository.syncVisitsFromFirestore(state.adminUser.role, state.adminUser.userId) }
+                                                            launch { schoolRepository.syncSchoolsFromFirestore() }
                                                             callback(res)
                                                         }
                                                     },
@@ -450,6 +453,7 @@ class MainActivity : ComponentActivity() {
                                             )
                                         },
                                         onLogoutClick = {
+                                            notificationRepository.stopNotificationRealtimeListener()
                                             taskRepository.stopTasksRealtimeListener()
                                             schoolRepository.stopSchoolsRealtimeListener()
                                             authRepository.logout()

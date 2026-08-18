@@ -1,12 +1,18 @@
 package com.example.data.repository
 
 import android.content.Context
+import android.util.Log
 import com.example.data.local.AppNotificationDao
 import com.example.data.model.AppNotification
+import com.example.data.model.UserRole
 import com.example.util.AppNotificationHelper
+import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 
@@ -14,12 +20,119 @@ class NotificationRepository(
     private val notificationDao: AppNotificationDao,
     private val firestore: FirebaseFirestore
 ) {
+    private var listenerRegistration: ListenerRegistration? = null
+    private var listenerStartTime: Long = 0L
+    private val notifiedIds = mutableSetOf<String>()
+
     fun getNotificationsForUserFlow(userId: String): Flow<List<AppNotification>> {
         return notificationDao.getNotificationsForUserFlow(userId)
     }
 
     fun getUnreadCountFlow(userId: String): Flow<Int> {
         return notificationDao.getUnreadCountFlow(userId)
+    }
+
+    fun startNotificationRealtimeListener(
+        context: Context,
+        userId: String,
+        role: UserRole
+    ) {
+        stopNotificationRealtimeListener()
+        listenerStartTime = System.currentTimeMillis()
+
+        try {
+            val recipientIds = if (role == UserRole.ADMIN) {
+                listOf("ADMIN", "ALL", userId).distinct()
+            } else {
+                listOf(userId, "ALL").distinct()
+            }
+
+            listenerRegistration = firestore.collection("notifications")
+                .whereIn("recipientUserId", recipientIds)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.w("NotificationRepository", "Notifications snapshot listener error: ${error.message}")
+                        return@addSnapshotListener
+                    }
+
+                    if (snapshot != null) {
+                        val newDocs = snapshot.documentChanges
+                        CoroutineScope(Dispatchers.IO).launch {
+                            for (change in newDocs) {
+                                val doc = change.document
+                                val notifId = doc.getString("id") ?: doc.id
+                                val recipient = doc.getString("recipientUserId") ?: ""
+                                val title = doc.getString("title") ?: ""
+                                val message = doc.getString("message") ?: ""
+                                val type = doc.getString("type") ?: "INFO"
+                                val relatedId = doc.getString("relatedId") ?: ""
+                                val schoolName = doc.getString("schoolName") ?: ""
+                                val employeeName = doc.getString("employeeName") ?: ""
+                                val timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis()
+                                val isRead = doc.getBoolean("isRead") ?: false
+
+                                val notif = AppNotification(
+                                    id = notifId,
+                                    recipientUserId = recipient,
+                                    title = title,
+                                    message = message,
+                                    type = type,
+                                    relatedId = relatedId,
+                                    schoolName = schoolName,
+                                    employeeName = employeeName,
+                                    timestamp = timestamp,
+                                    isRead = isRead
+                                )
+
+                                notificationDao.insertNotification(notif)
+
+                                // Trigger push notification if it was added recently and not already notified
+                                if (change.type == DocumentChange.Type.ADDED &&
+                                    timestamp >= (listenerStartTime - 10000L) &&
+                                    !notifiedIds.contains(notifId)
+                                ) {
+                                    notifiedIds.add(notifId)
+                                    when (type) {
+                                        "TASK_ASSIGNED" -> {
+                                            AppNotificationHelper.showTaskAssignedNotification(
+                                                context = context,
+                                                schoolName = schoolName,
+                                                visitDate = if (message.contains("on ")) message.substringAfter("on ").trim() else "",
+                                                employeeName = employeeName
+                                            )
+                                        }
+                                        "REPORT_SUBMITTED" -> {
+                                            AppNotificationHelper.showReportSubmittedNotification(
+                                                context = context,
+                                                schoolName = schoolName,
+                                                employeeName = employeeName
+                                            )
+                                        }
+                                        else -> {
+                                            AppNotificationHelper.showGeneralNotification(
+                                                context = context,
+                                                title = title,
+                                                message = message
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+        } catch (e: Exception) {
+            Log.w("NotificationRepository", "Failed to start notifications listener: ${e.message}")
+        }
+    }
+
+    fun stopNotificationRealtimeListener() {
+        try {
+            listenerRegistration?.remove()
+        } catch (e: Exception) {
+            Log.w("NotificationRepository", "Error removing notifications listener: ${e.message}")
+        }
+        listenerRegistration = null
     }
 
     suspend fun createAndSendNotification(
@@ -65,22 +178,6 @@ class NotificationRepository(
                 firestore.collection("notifications").document(notification.id).set(data).await()
             } catch (e: Exception) {
                 e.printStackTrace()
-            }
-
-            // Post Android System Notification
-            if (type == "TASK_ASSIGNED") {
-                AppNotificationHelper.showTaskAssignedNotification(
-                    context = context,
-                    schoolName = schoolName,
-                    visitDate = if (message.contains("on ")) message.substringAfter("on ").trim() else "",
-                    employeeName = employeeName
-                )
-            } else if (type == "REPORT_SUBMITTED") {
-                AppNotificationHelper.showReportSubmittedNotification(
-                    context = context,
-                    schoolName = schoolName,
-                    employeeName = employeeName
-                )
             }
         }
     }

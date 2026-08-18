@@ -1156,12 +1156,30 @@ fun SchoolCardItem(
             }
 
             if (school.visitDate.isNotBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Visit Date: ${school.visitDate}",
-                    fontSize = 11.sp,
-                    color = Slate500
-                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Surface(
+                        color = Color(0xFFD1FAE5),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            text = "✓ Completed (विजिट पूर्ण)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF059669),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                    Text(
+                        text = "Date: ${school.visitDate}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Slate500
+                    )
+                }
             }
         }
     }
