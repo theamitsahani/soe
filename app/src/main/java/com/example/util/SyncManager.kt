@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -258,7 +259,11 @@ class SyncManager private constructor(private val context: Context) {
 
             var anySuccess = false
             for (visit in cleanPendingVisits) {
-                val uploadSuccess = uploadSingleVisitToServer(visit)
+                // Call the internal (non-locking) version here: syncPendingData already holds
+                // syncMutex at this point, and kotlinx.coroutines.sync.Mutex is NOT reentrant —
+                // calling the public uploadSingleVisitToServer() (which itself acquires
+                // syncMutex) from inside this already-locked block would deadlock forever.
+                val uploadSuccess = uploadSingleVisitToServerInternal(visit)
                 if (uploadSuccess) {
                     db.visitDao().updateVisit(visit.copy(syncStatus = SyncStatus.SYNCED))
                     anySuccess = true
@@ -277,6 +282,23 @@ class SyncManager private constructor(private val context: Context) {
     }
 
     suspend fun uploadSingleVisitToServer(visit: Visit): Boolean = withContext(Dispatchers.IO) {
+        // BUG FIX (duplicate photo upload race): this function used to be callable from two
+        // independent, unsynchronized paths — VisitRepository.submitVisit() calls it DIRECTLY
+        // right after saving a visit as PENDING, while syncPendingData() (protected by
+        // syncMutex) can independently query Room for PENDING visits and pick up that SAME
+        // visit if a network-reconnect/auto-sync happens to fire in that same window. Both
+        // paths would then call MediaStorageHelper.uploadPhotosJsonToFirebaseStorage for the
+        // same local photos at the same time — duplicate concurrent uploads to the server for
+        // the same visit, and a race on which call's result gets written back last. Wrapping
+        // the whole upload in the same syncMutex used by syncPendingData() serializes every
+        // call to this function, from either entry point, so a given visit's photos are never
+        // uploaded twice in parallel.
+        syncMutex.withLock {
+            uploadSingleVisitToServerInternal(visit)
+        }
+    }
+
+    private suspend fun uploadSingleVisitToServerInternal(visit: Visit): Boolean = withContext(Dispatchers.IO) {
         val fStore = firestore ?: return@withContext false
         try {
             // 1. Upload photos/videos directly to Cloudinary and get permanent download URLs
