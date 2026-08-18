@@ -1064,10 +1064,11 @@ fun SchoolCardItem(
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
-    com.example.ui.components.LiquidGlassCard(
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        cornerRadius = 16.dp,
-        elevation = 2.dp
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -1083,21 +1084,20 @@ fun SchoolCardItem(
                         color = Navy900
                     )
                     if (school.schoolType.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = school.schoolType,
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
+                            fontWeight = FontWeight.Medium,
                             color = Indigo600
                         )
                     }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onEditClick, modifier = Modifier.size(34.dp)) {
+                    IconButton(onClick = onEditClick, modifier = Modifier.size(32.dp)) {
                         Icon(Icons.Default.Edit, contentDescription = "Edit School", tint = Indigo600, modifier = Modifier.size(18.dp))
                     }
-                    IconButton(onClick = onDeleteClick, modifier = Modifier.size(34.dp)) {
+                    IconButton(onClick = onDeleteClick, modifier = Modifier.size(32.dp)) {
                         Icon(Icons.Default.DeleteOutline, contentDescription = "Delete School", tint = Red600, modifier = Modifier.size(18.dp))
                     }
                 }
@@ -1179,12 +1179,11 @@ fun DeletedSchoolCardItem(
     val isWithin24Hours = elapsedMillis <= twentyFourHoursMillis
     val remainingHours = if (isWithin24Hours) ((twentyFourHoursMillis - elapsedMillis) / (1000 * 60 * 60)).coerceAtLeast(0) else 0
 
-    com.example.ui.components.LiquidGlassCard(
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        cornerRadius = 16.dp,
-        backgroundColor = Color(0xFFFFF1F2).copy(alpha = 0.85f),
-        borderColor = Color(0xFFFECDD3),
-        elevation = 2.dp
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(
@@ -1208,14 +1207,14 @@ fun DeletedSchoolCardItem(
 
                 Surface(
                     color = if (isWithin24Hours) Color(0xFFFEF3C7) else Color(0xFFFEE2E2),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(6.dp)
                 ) {
                     Text(
                         text = if (isWithin24Hours) "Restorable (${remainingHours}h left)" else "Expired (>24h)",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (isWithin24Hours) Color(0xFFB45309) else Red600,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                     )
                 }
             }
@@ -1231,19 +1230,24 @@ fun DeletedSchoolCardItem(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onPermanentDeleteClick, modifier = Modifier.size(34.dp)) {
+                IconButton(onClick = onPermanentDeleteClick, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Default.DeleteForever, contentDescription = "Permanent Delete", tint = Red600, modifier = Modifier.size(18.dp))
                 }
 
                 Spacer(modifier = Modifier.width(6.dp))
 
-                com.example.ui.components.LiquidGlassButton(
-                    text = "Restore (पुनर्स्थापित करें)",
-                    icon = Icons.Default.Restore,
+                Button(
                     onClick = onRestoreClick,
                     enabled = isWithin24Hours,
-                    modifier = Modifier.height(36.dp)
-                )
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Icon(Icons.Default.Restore, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Restore (पुनर्स्थापित करें)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }

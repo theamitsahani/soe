@@ -1481,17 +1481,18 @@ fun CompactEmployeeCardItem(
     onDeleteClick: () -> Unit,
     onToggleStatus: (UserStatus) -> Unit
 ) {
-    com.example.ui.components.LiquidGlassCard(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() },
-        cornerRadius = 16.dp,
-        elevation = 2.dp
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -1499,7 +1500,7 @@ fun CompactEmployeeCardItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = employee.name,
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Navy900
                 )
@@ -1510,12 +1511,11 @@ fun CompactEmployeeCardItem(
                     color = Slate500
                 )
                 if (employee.mobile.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "📱 ${employee.mobile}",
                         fontSize = 11.sp,
                         color = Indigo600,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
@@ -1532,7 +1532,7 @@ fun CompactEmployeeCardItem(
 
                 Box(
                     modifier = Modifier
-                        .size(28.dp)
+                        .size(24.dp)
                         .clip(CircleShape)
                         .background(dotBg)
                         .clickable {
@@ -1551,7 +1551,7 @@ fun CompactEmployeeCardItem(
                 // Edit Button
                 IconButton(
                     onClick = onEditClick,
-                    modifier = Modifier.size(34.dp)
+                    modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Edit,
@@ -1564,7 +1564,7 @@ fun CompactEmployeeCardItem(
                 // Delete Button
                 IconButton(
                     onClick = onDeleteClick,
-                    modifier = Modifier.size(34.dp)
+                    modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.DeleteOutline,
@@ -1588,17 +1588,16 @@ fun DeletedEmployeeCardItem(
     val remainingHours = 24 - (elapsedMillis / (1000 * 60 * 60))
     val isRestoreAvailable = remainingHours > 0
 
-    com.example.ui.components.LiquidGlassCard(
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        cornerRadius = 16.dp,
-        backgroundColor = Color(0xFFFFF1F2).copy(alpha = 0.85f),
-        borderColor = Color(0xFFFECDD3),
-        elevation = 2.dp
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF1F2)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
@@ -1609,7 +1608,7 @@ fun DeletedEmployeeCardItem(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = employee.name,
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         color = Navy900
                     )
@@ -1627,9 +1626,9 @@ fun DeletedEmployeeCardItem(
 
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(6.dp))
                         .background(if (isRestoreAvailable) Color(0xFFFEF3C7) else Color(0xFFFEE2E2))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
                     Text(
                         text = if (isRestoreAvailable) "Restore: ${remainingHours}h left" else "Restore Expired",
@@ -1645,20 +1644,30 @@ fun DeletedEmployeeCardItem(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (isRestoreAvailable) {
-                    com.example.ui.components.LiquidGlassButton(
-                        text = "Restore",
-                        icon = Icons.Default.Restore,
+                    Button(
                         onClick = onRestoreClick,
-                        modifier = Modifier.weight(1f)
-                    )
+                        colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Restore, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Restore (रीस्टोर करें)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
 
-                com.example.ui.components.LiquidGlassOutlinedButton(
-                    text = "Delete Forever",
-                    icon = Icons.Default.DeleteForever,
+                OutlinedButton(
                     onClick = onPermanentDeleteClick,
-                    modifier = Modifier.weight(1f)
-                )
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Red600),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 4.dp)
+                ) {
+                    Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Delete Forever", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }

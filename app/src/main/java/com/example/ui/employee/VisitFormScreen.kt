@@ -1750,10 +1750,12 @@ private fun ModernSingleChoiceCard(
     selectedOption: String,
     onOptionSelected: (String) -> Unit
 ) {
-    com.example.ui.components.LiquidGlassCard(
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        cornerRadius = 20.dp,
-        elevation = 2.dp
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, CardBorderColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
             Text(text = title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Navy900)
@@ -1777,7 +1779,7 @@ private fun ModernSingleChoiceCard(
                                 .clip(RoundedCornerShape(14.dp))
                                 .clickable { onOptionSelected(option) },
                             shape = RoundedCornerShape(14.dp),
-                            color = if (isSelected) BrandPurpleLight else Color.White.copy(alpha = 0.6f),
+                            color = if (isSelected) BrandPurpleLight else FormBackground,
                             border = BorderStroke(
                                 width = if (isSelected) 1.5.dp else 1.dp,
                                 color = if (isSelected) BrandPurple else CardBorderColor
@@ -1828,10 +1830,12 @@ private fun ModernMultilineCard(
     minLines: Int = 2,
     onValueChange: (String) -> Unit
 ) {
-    com.example.ui.components.LiquidGlassCard(
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        cornerRadius = 20.dp,
-        elevation = 2.dp
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, CardBorderColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
             Text(text = title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Navy900)
@@ -1845,8 +1849,8 @@ private fun ModernMultilineCard(
                 minLines = minLines,
                 shape = RoundedCornerShape(14.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White.copy(alpha = 0.8f),
-                    unfocusedContainerColor = Color.White.copy(alpha = 0.5f),
+                    focusedContainerColor = FormBackground,
+                    unfocusedContainerColor = FormBackground,
                     focusedBorderColor = BrandPurple,
                     unfocusedBorderColor = CardBorderColor
                 ),

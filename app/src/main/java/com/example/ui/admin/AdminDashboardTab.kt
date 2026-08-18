@@ -1,8 +1,6 @@
 package com.example.ui.admin
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +28,8 @@ import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -38,8 +38,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -47,23 +45,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.Visit
 import com.example.data.model.VisitStatus
-import com.example.ui.components.LiquidGlassCard
 import com.example.ui.components.StatusChip
 import com.example.ui.theme.Amber100
 import com.example.ui.theme.Amber600
 import com.example.ui.theme.Emerald100
 import com.example.ui.theme.Emerald600
-import com.example.ui.theme.GlassBorderLight
-import com.example.ui.theme.GlassIndigoGradient
-import com.example.ui.theme.GlassSurfaceLight
-import com.example.ui.theme.Indigo50
-import com.example.ui.theme.Indigo500
 import com.example.ui.theme.Indigo600
-import com.example.ui.theme.Navy900
 import com.example.ui.theme.Red100
 import com.example.ui.theme.Red600
-import com.example.ui.theme.Slate200
-import com.example.ui.theme.Slate400
 import com.example.ui.theme.Slate500
 import com.example.ui.theme.Slate700
 import com.example.ui.theme.Teal600
@@ -77,6 +66,10 @@ fun AdminDashboardTab(
     onNavigateTabWithFilter: (AdminTab, String) -> Unit = { tab, _ -> onNavigateTab(tab) },
     onVisitClick: (Visit) -> Unit
 ) {
+    // BUG FIX: was distinctBy { "${it.schoolId}_${it.employeeId}" }, which collapsed legitimate
+    // multiple visits (re-visits) by the same employee to the same school into one, silently
+    // undercounting Completed/Follow-up/Hard-Disk stats on the dashboard. Dedup of true
+    // duplicate documents already happens upstream at sync time; visitId is the real key.
     val uniqueVisits = androidx.compose.runtime.remember(visits) {
         visits.distinctBy { it.visitId }
     }
@@ -95,8 +88,8 @@ fun AdminDashboardTab(
                 Text(
                     text = "Visit Summary & Metrics (टैप करके फ़िल्टर देखें)",
                     fontSize = 16.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Navy900
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground
                 )
 
                 Row(
@@ -151,19 +144,18 @@ fun AdminDashboardTab(
 
         // Quick Actions Row
         item {
-            LiquidGlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                cornerRadius = 20.dp,
-                elevation = 2.dp
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         text = "Quick Actions",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Navy900
+                        color = MaterialTheme.colorScheme.onBackground
                     )
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -204,13 +196,13 @@ fun AdminDashboardTab(
                 Text(
                     text = "Recent Visit Reports",
                     fontSize = 16.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Navy900
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
                     text = "View All",
                     fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.SemiBold,
                     color = Indigo600,
                     modifier = Modifier.clickable { onNavigateTab(AdminTab.VISIT_REPORTS) }
                 )
@@ -219,36 +211,29 @@ fun AdminDashboardTab(
 
         if (visits.isEmpty()) {
             item {
-                LiquidGlassCard(
+                Card(
                     modifier = Modifier.fillMaxWidth(),
-                    cornerRadius = 18.dp
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(28.dp),
+                            .padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(CircleShape)
-                                .background(Indigo50),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AssignmentTurnedIn,
-                                contentDescription = null,
-                                tint = Indigo600.copy(alpha = 0.6f),
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Icon(
+                            imageVector = Icons.Default.AssignmentTurnedIn,
+                            contentDescription = null,
+                            tint = Slate500,
+                            modifier = Modifier.size(40.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "No visit reports submitted yet",
                             fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Slate700
+                            fontWeight = FontWeight.Medium,
+                            color = Slate500
                         )
                     }
                 }
@@ -271,27 +256,27 @@ fun KpiCard(
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    LiquidGlassCard(
+    Card(
         modifier = modifier
             .fillMaxWidth()
-            .height(92.dp)
+            .height(86.dp)
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
-        cornerRadius = 18.dp,
-        elevation = 2.dp
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(46.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(bgColor)
-                    .border(BorderStroke(1.dp, color.copy(alpha = 0.25f)), RoundedCornerShape(14.dp)),
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(bgColor),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(imageVector = icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp))
@@ -302,16 +287,16 @@ fun KpiCard(
             ) {
                 Text(
                     text = value,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Navy900,
-                    lineHeight = 24.sp
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    lineHeight = 22.sp
                 )
                 Text(
                     text = title,
                     fontSize = 11.sp,
                     color = Slate500,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Medium,
                     maxLines = 2,
                     lineHeight = 14.sp
                 )
@@ -332,17 +317,15 @@ fun QuickActionButton(
     ) {
         Box(
             modifier = Modifier
-                .size(52.dp)
-                .shadow(elevation = 4.dp, shape = CircleShape, ambientColor = Indigo600.copy(alpha = 0.2f))
+                .size(48.dp)
                 .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.9f))
-                .border(BorderStroke(1.dp, GlassBorderLight), CircleShape),
+                .background(Color(0xFFEEF2FF)),
             contentAlignment = Alignment.Center
         ) {
             Icon(imageVector = icon, contentDescription = title, tint = Indigo600, modifier = Modifier.size(24.dp))
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(text = title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Slate700)
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(text = title, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = Slate700)
     }
 }
 
@@ -351,12 +334,12 @@ fun VisitCardItem(
     visit: Visit,
     onClick: () -> Unit
 ) {
-    LiquidGlassCard(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() },
-        cornerRadius = 16.dp,
-        elevation = 2.dp
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -368,7 +351,7 @@ fun VisitCardItem(
                     text = visit.schoolName,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Navy900,
+                    color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -383,7 +366,7 @@ fun VisitCardItem(
                 color = Slate500
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -398,11 +381,9 @@ fun VisitCardItem(
                 Text(
                     text = visit.visitDate,
                     fontSize = 12.sp,
-                    color = Slate400,
-                    fontWeight = FontWeight.Medium
+                    color = Slate500
                 )
             }
         }
     }
 }
-

@@ -68,10 +68,10 @@ fun SettingsTab(
         Text("Admin Account & Settings", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Navy900)
 
         // Profile Details Card
-        com.example.ui.components.LiquidGlassCard(
+        Card(
             modifier = Modifier.fillMaxWidth(),
-            cornerRadius = 16.dp,
-            elevation = 2.dp
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
         ) {
             Column(modifier = Modifier.padding(18.dp)) {
                 Text("Account Details", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Navy900)
@@ -89,10 +89,10 @@ fun SettingsTab(
         }
 
         // Change Password Card
-        com.example.ui.components.LiquidGlassCard(
+        Card(
             modifier = Modifier.fillMaxWidth(),
-            cornerRadius = 16.dp,
-            elevation = 2.dp
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
         ) {
             Column(
                 modifier = Modifier.padding(18.dp),
@@ -163,10 +163,10 @@ fun SettingsTab(
         }
 
         // System Sync Status
-        com.example.ui.components.LiquidGlassCard(
+        Card(
             modifier = Modifier.fillMaxWidth(),
-            cornerRadius = 16.dp,
-            elevation = 2.dp
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
         ) {
             Column(modifier = Modifier.padding(18.dp)) {
                 Text("Database & Firebase Sync", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Navy900)

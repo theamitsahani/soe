@@ -229,10 +229,11 @@ fun AssignVisitsTab(
 
         // Form Card
         item {
-            com.example.ui.components.LiquidGlassCard(
+            Card(
                 modifier = Modifier.fillMaxWidth(),
-                cornerRadius = 16.dp,
-                elevation = 2.dp
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(
                     modifier = Modifier.padding(18.dp),
@@ -685,7 +686,7 @@ fun AssignVisitsTab(
                     visits.find { it.schoolId == task.schoolId || it.schoolName == task.schoolName }
                 }
 
-                com.example.ui.components.LiquidGlassCard(
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
@@ -693,8 +694,8 @@ fun AssignVisitsTab(
                                 selectedVisitForDetails = matchedVisit
                             }
                         },
-                    cornerRadius = 14.dp,
-                    elevation = 1.dp
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(

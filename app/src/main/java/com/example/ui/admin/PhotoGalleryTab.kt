@@ -725,9 +725,10 @@ fun PhotoGalleryTab(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(categoryFolders) { folder ->
-                        com.example.ui.components.LiquidGlassCard(
-                            cornerRadius = 16.dp,
-                            elevation = 2.dp,
+                        Card(
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
