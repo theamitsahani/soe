@@ -28,6 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.PendingActions
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restore
@@ -84,7 +86,9 @@ import com.example.util.ExcelHelper
 import com.example.util.ImportValidationResult
 
 enum class SchoolViewFilter {
-    ACTIVE,
+    ALL_ACTIVE,
+    COMPLETED,
+    PENDING,
     DELETED
 }
 
@@ -109,11 +113,13 @@ fun SchoolManagementTab(
     var isPerformingDeleteAction by remember { mutableStateOf(false) }
     var refreshErrorMessage by remember { mutableStateOf<String?>(null) }
     var successNotification by remember { mutableStateOf<String?>(null) }
-    var selectedFilter by remember { mutableStateOf(SchoolViewFilter.ACTIVE) }
+    var selectedFilter by remember { mutableStateOf(SchoolViewFilter.ALL_ACTIVE) }
 
     val context = LocalContext.current
 
     val activeSchools = remember(schools) { schools.filter { !it.isDeleted } }
+    val completedSchools = remember(activeSchools) { activeSchools.filter { it.visitDate.isNotBlank() } }
+    val pendingSchools = remember(activeSchools) { activeSchools.filter { it.visitDate.isBlank() } }
     val deletedSchools = remember(schools) { schools.filter { it.isDeleted } }
 
     fun triggerRefresh() {
@@ -142,7 +148,12 @@ fun SchoolManagementTab(
         }
     }
 
-    val currentList = if (selectedFilter == SchoolViewFilter.ACTIVE) activeSchools else deletedSchools
+    val currentList = when (selectedFilter) {
+        SchoolViewFilter.ALL_ACTIVE -> activeSchools
+        SchoolViewFilter.COMPLETED -> completedSchools
+        SchoolViewFilter.PENDING -> pendingSchools
+        SchoolViewFilter.DELETED -> deletedSchools
+    }
 
     val filteredSchools = remember(currentList, searchQuery) {
         if (searchQuery.isBlank()) currentList
@@ -152,7 +163,8 @@ fun SchoolManagementTab(
                     it.blockName.contains(searchQuery, ignoreCase = true) ||
                     it.villageName.contains(searchQuery, ignoreCase = true) ||
                     it.principalName.contains(searchQuery, ignoreCase = true) ||
-                    it.principalMobile.contains(searchQuery, ignoreCase = true)
+                    it.principalMobile.contains(searchQuery, ignoreCase = true) ||
+                    it.visitDate.contains(searchQuery, ignoreCase = true)
         }
     }
 
@@ -254,39 +266,75 @@ fun SchoolManagementTab(
             }
         }
 
-        // Filter Chips: Active vs. Recently Deleted (24h Restore Window)
+        // Filter Chips: All Active vs Completed vs Pending vs Recently Deleted
         item {
-            Row(
+            androidx.compose.foundation.lazy.LazyRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                FilterChip(
-                    selected = selectedFilter == SchoolViewFilter.ACTIVE,
-                    onClick = { selectedFilter = SchoolViewFilter.ACTIVE },
-                    label = { Text("Active Schools (${activeSchools.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                    leadingIcon = {
-                        Icon(Icons.Default.School, contentDescription = null, modifier = Modifier.size(14.dp))
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Indigo600,
-                        selectedLabelColor = Color.White,
-                        selectedLeadingIconColor = Color.White
+                item {
+                    FilterChip(
+                        selected = selectedFilter == SchoolViewFilter.ALL_ACTIVE,
+                        onClick = { selectedFilter = SchoolViewFilter.ALL_ACTIVE },
+                        label = { Text("All Active (${activeSchools.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                        leadingIcon = {
+                            Icon(Icons.Default.School, contentDescription = null, modifier = Modifier.size(14.dp))
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Indigo600,
+                            selectedLabelColor = Color.White,
+                            selectedLeadingIconColor = Color.White
+                        )
                     )
-                )
+                }
 
-                FilterChip(
-                    selected = selectedFilter == SchoolViewFilter.DELETED,
-                    onClick = { selectedFilter = SchoolViewFilter.DELETED },
-                    label = { Text("Deleted (${deletedSchools.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                    leadingIcon = {
-                        Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(14.dp))
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Red600,
-                        selectedLabelColor = Color.White,
-                        selectedLeadingIconColor = Color.White
+                item {
+                    FilterChip(
+                        selected = selectedFilter == SchoolViewFilter.COMPLETED,
+                        onClick = { selectedFilter = SchoolViewFilter.COMPLETED },
+                        label = { Text("✓ Completed (${completedSchools.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                        leadingIcon = {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp))
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFF059669),
+                            selectedLabelColor = Color.White,
+                            selectedLeadingIconColor = Color.White
+                        )
                     )
-                )
+                }
+
+                item {
+                    FilterChip(
+                        selected = selectedFilter == SchoolViewFilter.PENDING,
+                        onClick = { selectedFilter = SchoolViewFilter.PENDING },
+                        label = { Text("⏳ Pending (${pendingSchools.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                        leadingIcon = {
+                            Icon(Icons.Default.PendingActions, contentDescription = null, modifier = Modifier.size(14.dp))
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFFD97706),
+                            selectedLabelColor = Color.White,
+                            selectedLeadingIconColor = Color.White
+                        )
+                    )
+                }
+
+                item {
+                    FilterChip(
+                        selected = selectedFilter == SchoolViewFilter.DELETED,
+                        onClick = { selectedFilter = SchoolViewFilter.DELETED },
+                        label = { Text("Deleted (${deletedSchools.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                        leadingIcon = {
+                            Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(14.dp))
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Red600,
+                            selectedLabelColor = Color.White,
+                            selectedLeadingIconColor = Color.White
+                        )
+                    )
+                }
             }
         }
 
@@ -295,7 +343,12 @@ fun SchoolManagementTab(
             SearchTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = if (selectedFilter == SchoolViewFilter.ACTIVE) "Search by school name, district, block, village..." else "Search deleted schools..."
+                placeholder = when (selectedFilter) {
+                    SchoolViewFilter.ALL_ACTIVE -> "Search all active schools..."
+                    SchoolViewFilter.COMPLETED -> "Search completed schools..."
+                    SchoolViewFilter.PENDING -> "Search pending schools..."
+                    SchoolViewFilter.DELETED -> "Search deleted schools in trash..."
+                }
             )
         }
 
@@ -321,6 +374,16 @@ fun SchoolManagementTab(
                             Spacer(modifier = Modifier.height(8.dp))
                             Text("No deleted schools in trash", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Navy900)
                             Text("Deleted schools can be restored here within 24 hours.", fontSize = 11.sp, color = Slate500)
+                        } else if (selectedFilter == SchoolViewFilter.COMPLETED) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF059669), modifier = Modifier.size(40.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("No completed schools yet", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Navy900)
+                            Text("Schools completed via Excel import or submitted reports will show here.", fontSize = 11.sp, color = Slate500)
+                        } else if (selectedFilter == SchoolViewFilter.PENDING) {
+                            Icon(Icons.Default.PendingActions, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(40.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("No pending schools", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Navy900)
+                            Text("All active schools are marked completed!", fontSize = 11.sp, color = Slate500)
                         } else if (searchQuery.isNotBlank()) {
                             Icon(Icons.Default.School, contentDescription = null, tint = Slate500, modifier = Modifier.size(44.dp))
                             Spacer(modifier = Modifier.height(10.dp))
@@ -337,7 +400,7 @@ fun SchoolManagementTab(
             }
         } else {
             items(filteredSchools, key = { it.schoolId }) { sch ->
-                if (selectedFilter == SchoolViewFilter.ACTIVE) {
+                if (selectedFilter != SchoolViewFilter.DELETED) {
                     SchoolCardItem(
                         school = sch,
                         onEditClick = { selectedSchoolForEdit = sch },
@@ -726,6 +789,7 @@ fun SchoolManagementTab(
         var ePrincipal by remember { mutableStateOf(sch.principalName) }
         var eBlock by remember { mutableStateOf(sch.blockName) }
         var eMobile by remember { mutableStateOf(sch.principalMobile) }
+        var eVisitDate by remember { mutableStateOf(sch.visitDate) }
         var eError by remember { mutableStateOf<String?>(null) }
 
         AlertDialog(
@@ -817,6 +881,22 @@ fun SchoolManagementTab(
                         },
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    OutlinedTextField(
+                        value = eVisitDate,
+                        onValueChange = { eVisitDate = it },
+                        label = { Text("Visit Date / Completion (विजिट की तारीख)", fontSize = 12.sp) },
+                        placeholder = { Text("e.g. 15-Mar-2025 (Leave empty if pending)") },
+                        singleLine = true,
+                        supportingText = {
+                            if (eVisitDate.isNotBlank()) {
+                                Text("✓ This school is marked as COMPLETED (पूर्ण)", color = Color(0xFF059669), fontSize = 11.sp)
+                            } else {
+                                Text("⏳ This school is PENDING (विजिट बाकी)", color = Color(0xFFB45309), fontSize = 11.sp)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             },
             confirmButton = {
@@ -839,6 +919,7 @@ fun SchoolManagementTab(
                             schoolType = eSchoolType.trim(),
                             principalName = ePrincipal.trim(),
                             principalMobile = cleanMobile,
+                            visitDate = eVisitDate.trim(),
                             stateName = eState.trim().ifBlank { "Rajasthan" },
                             updatedAt = System.currentTimeMillis()
                         )
@@ -1155,8 +1236,8 @@ fun SchoolCardItem(
                 }
             }
 
+            Spacer(modifier = Modifier.height(6.dp))
             if (school.visitDate.isNotBlank()) {
-                Spacer(modifier = Modifier.height(6.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -1178,6 +1259,19 @@ fun SchoolCardItem(
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         color = Slate500
+                    )
+                }
+            } else {
+                Surface(
+                    color = Color(0xFFFEF3C7),
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text(
+                        text = "⏳ Pending (विजिट बाकी)",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFB45309),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                     )
                 }
             }

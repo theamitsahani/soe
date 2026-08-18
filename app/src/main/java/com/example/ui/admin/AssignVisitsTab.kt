@@ -71,6 +71,7 @@ import com.example.data.model.School
 import com.example.data.model.Task
 import com.example.data.model.User
 import com.example.data.model.UserStatus
+import com.example.data.model.VisitStatus
 import com.example.ui.components.StatusChip
 import com.example.ui.components.VisitDetailDialog
 import com.example.ui.theme.Indigo600
@@ -154,13 +155,25 @@ fun AssignVisitsTab(
     var showAllTasksDialog by remember { mutableStateOf(false) }
     var taskToDelete by remember { mutableStateOf<Task?>(null) }
 
-    // Exclude schools that currently have a task in assignedTasks so a school can only be assigned once unless Admin deletes the previous task
-    val currentlyAssignedSchoolIds = remember(assignedTasks) {
-        assignedTasks.map { it.schoolId }.toSet()
+    // Identify completed schools from school visitDate, visits reports, or completed tasks
+    val completedSchoolIds = remember(schools, visits, assignedTasks) {
+        val fromSchools = schools.filter { it.visitDate.isNotBlank() }.map { it.schoolId }
+        val fromVisits = visits.filter { it.status == VisitStatus.SUBMITTED || it.status == VisitStatus.REVIEWED }.map { it.schoolId }
+        val fromTasks = assignedTasks.filter { it.status == VisitStatus.SUBMITTED || it.status == VisitStatus.REVIEWED }.map { it.schoolId }
+        (fromSchools + fromVisits + fromTasks).toSet()
     }
 
-    val availableSchools = remember(schools, currentlyAssignedSchoolIds) {
-        schools.filter { school -> !currentlyAssignedSchoolIds.contains(school.schoolId) }
+    // Exclude schools that currently have an active (non-submitted) task in assignedTasks
+    val currentlyAssignedSchoolIds = remember(assignedTasks) {
+        assignedTasks.filter { it.status == VisitStatus.ASSIGNED || it.status == VisitStatus.STARTED || it.status == VisitStatus.IN_PROGRESS }.map { it.schoolId }.toSet()
+    }
+
+    val availableSchools = remember(schools, currentlyAssignedSchoolIds, completedSchoolIds) {
+        schools.filter { school ->
+            !school.isDeleted &&
+            !completedSchoolIds.contains(school.schoolId) &&
+            !currentlyAssignedSchoolIds.contains(school.schoolId)
+        }
     }
 
     val stateList = remember(availableSchools) {
@@ -563,6 +576,10 @@ fun AssignVisitsTab(
                     Button(
                         onClick = {
                             if (selectedSchool != null && selectedEmployee1 != null) {
+                                if (completedSchoolIds.contains(selectedSchool!!.schoolId)) {
+                                    message = "यह स्कूल पहले ही पूर्ण (Completed) हो चुका है। इसे दोबारा असाइन नहीं किया जा सकता।"
+                                    return@Button
+                                }
                                 if (currentlyAssignedSchoolIds.contains(selectedSchool!!.schoolId)) {
                                     message = "इस स्कूल को पहले से कार्य असाइन है। नया असाइन करने के लिए पहले वाला टास्क डिलीट करें।"
                                     return@Button

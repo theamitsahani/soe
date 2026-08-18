@@ -376,6 +376,12 @@ class TaskRepository(private val context: Context) {
                 null
             }
 
+            if (localSchool != null && localSchool.visitDate.isNotBlank()) {
+                return@withContext Result.failure(
+                    Exception("यह स्कूल (${localSchool.schoolName}) पहले ही पूर्ण (Completed on ${localSchool.visitDate}) हो चुका है। इसे दोबारा असाइन नहीं किया जा सकता।")
+                )
+            }
+
             val finalSchoolName = localSchool?.schoolName?.ifBlank { schoolName } ?: schoolName
             val finalPrincipalName = localSchool?.principalName ?: ""
             val finalPrincipalMobile = localSchool?.principalMobile ?: ""

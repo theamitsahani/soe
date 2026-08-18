@@ -203,6 +203,11 @@ class VisitRepository(private val context: Context) {
             // Step 1: Save to Room DB locally first (ensures 100% offline durability)
             db.visitDao().insertVisit(finalVisit)
             
+            // Mark school as completed locally
+            if (finalVisit.schoolId.isNotBlank()) {
+                db.schoolDao().updateSchoolVisitDate(finalVisit.schoolId, finalVisit.visitDate)
+            }
+            
             // Step 2: Mark ONLY the exact assigned task as SUBMITTED
             if (finalVisit.taskId.isNotBlank()) {
                 db.taskDao().markTaskSubmittedById(finalVisit.taskId, finalVisit.visitId)
@@ -213,6 +218,20 @@ class VisitRepository(private val context: Context) {
             val fStore = firestore
             if (fStore != null && isOnline) {
                 try {
+                    // Update school in Firestore as completed
+                    if (finalVisit.schoolId.isNotBlank()) {
+                        fStore.collection("schools").document(finalVisit.schoolId).set(
+                            mapOf(
+                                "visitDate" to finalVisit.visitDate,
+                                "status" to "COMPLETED",
+                                "isCompleted" to true,
+                                "completedAt" to finalVisit.visitDate,
+                                "updatedAt" to System.currentTimeMillis()
+                            ),
+                            com.google.firebase.firestore.SetOptions.merge()
+                        )
+                    }
+
                     // Update exact task in Firestore
                     if (finalVisit.taskId.isNotBlank()) {
                         fStore.collection("tasks").document(finalVisit.taskId).update(

@@ -325,15 +325,91 @@ class SchoolRepository(private val context: Context) {
         }
     }
 
+    suspend fun addSchool(school: School): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val now = System.currentTimeMillis()
+            val isCompleted = school.visitDate.isNotBlank()
+            val finalSchool = school.copy(createdAt = now, updatedAt = now)
+
+            db.schoolDao().insertSchool(finalSchool)
+
+            val fStore = firestore
+            if (fStore != null) {
+                val data = mapOf(
+                    "schoolId" to finalSchool.schoolId,
+                    "sr" to finalSchool.sr,
+                    "state" to finalSchool.stateName,
+                    "stateName" to finalSchool.stateName,
+                    "district" to finalSchool.districtName,
+                    "districtName" to finalSchool.districtName,
+                    "schoolName" to finalSchool.schoolName,
+                    "type" to finalSchool.schoolType,
+                    "schoolType" to finalSchool.schoolType,
+                    "village" to finalSchool.villageName,
+                    "villageName" to finalSchool.villageName,
+                    "principalName" to finalSchool.principalName,
+                    "block" to finalSchool.blockName,
+                    "blockName" to finalSchool.blockName,
+                    "mobile" to finalSchool.principalMobile,
+                    "principalMobile" to finalSchool.principalMobile,
+                    "visitDate" to finalSchool.visitDate,
+                    "status" to if (isCompleted) "COMPLETED" else "PENDING",
+                    "isCompleted" to isCompleted,
+                    "completedAt" to if (isCompleted) finalSchool.visitDate else "",
+                    "isDeleted" to false,
+                    "deletedAt" to 0L,
+                    "createdAt" to finalSchool.createdAt,
+                    "updatedAt" to finalSchool.updatedAt
+                )
+                val task = fStore.collection("schools").document(finalSchool.schoolId).set(
+                    data,
+                    com.google.firebase.firestore.SetOptions.merge()
+                )
+                com.google.android.gms.tasks.Tasks.await(task)
+
+                if (isCompleted) {
+                    val visitId = "vst_" + finalSchool.schoolId.removePrefix("sch_") + "_manual"
+                    val visitData = mapOf(
+                        "visitId" to visitId,
+                        "schoolId" to finalSchool.schoolId,
+                        "employeeId" to "emp_admin",
+                        "employeeName" to "Admin (Direct Entry)",
+                        "schoolName" to finalSchool.schoolName,
+                        "district" to finalSchool.districtName,
+                        "block" to finalSchool.blockName,
+                        "visitDate" to finalSchool.visitDate,
+                        "status" to com.example.data.model.VisitStatus.SUBMITTED.name,
+                        "answersJson" to "{}",
+                        "photosJson" to "{}",
+                        "syncStatus" to com.example.data.model.SyncStatus.SYNCED.name,
+                        "createdAt" to now,
+                        "updatedAt" to now
+                    )
+                    fStore.collection("visits").document(visitId).set(
+                        visitData,
+                        com.google.firebase.firestore.SetOptions.merge()
+                    )
+                }
+            }
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("SchoolRepository", "Failed to add school: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
     suspend fun updateSchoolRecord(school: School): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val updated = school.copy(updatedAt = System.currentTimeMillis())
+            val isCompleted = updated.visitDate.isNotBlank()
 
             val fStore = firestore
             if (fStore != null) {
                 val task = fStore.collection("schools").document(school.schoolId).set(
                     mapOf(
                         "schoolId" to updated.schoolId,
+                        "sr" to updated.sr,
                         "state" to updated.stateName,
                         "stateName" to updated.stateName,
                         "district" to updated.districtName,
@@ -349,11 +425,38 @@ class SchoolRepository(private val context: Context) {
                         "mobile" to updated.principalMobile,
                         "principalMobile" to updated.principalMobile,
                         "visitDate" to updated.visitDate,
+                        "status" to if (isCompleted) "COMPLETED" else "PENDING",
+                        "isCompleted" to isCompleted,
+                        "completedAt" to if (isCompleted) updated.visitDate else "",
                         "updatedAt" to updated.updatedAt
                     ),
                     com.google.firebase.firestore.SetOptions.merge()
                 )
                 com.google.android.gms.tasks.Tasks.await(task)
+
+                if (isCompleted) {
+                    val visitId = "vst_" + updated.schoolId.removePrefix("sch_") + "_manual"
+                    val visitData = mapOf(
+                        "visitId" to visitId,
+                        "schoolId" to updated.schoolId,
+                        "employeeId" to "emp_admin",
+                        "employeeName" to "Admin (Updated)",
+                        "schoolName" to updated.schoolName,
+                        "district" to updated.districtName,
+                        "block" to updated.blockName,
+                        "visitDate" to updated.visitDate,
+                        "status" to com.example.data.model.VisitStatus.SUBMITTED.name,
+                        "answersJson" to "{}",
+                        "photosJson" to "{}",
+                        "syncStatus" to com.example.data.model.SyncStatus.SYNCED.name,
+                        "createdAt" to System.currentTimeMillis(),
+                        "updatedAt" to System.currentTimeMillis()
+                    )
+                    fStore.collection("visits").document(visitId).set(
+                        visitData,
+                        com.google.firebase.firestore.SetOptions.merge()
+                    )
+                }
             }
 
             db.schoolDao().updateSchool(updated)
