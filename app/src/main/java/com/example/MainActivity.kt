@@ -273,8 +273,26 @@ class MainActivity : ComponentActivity() {
                                                             val res = schoolRepository.importSchools(newSchools)
                                                             for (v in completedVisits) {
                                                                 val existing = visitRepository.getVisitsListBySchool(v.schoolId)
-                                                                val alreadyHasSubmittedVisit = existing.any { it.status == com.example.data.model.VisitStatus.SUBMITTED || it.status == com.example.data.model.VisitStatus.REVIEWED }
-                                                                if (!alreadyHasSubmittedVisit) {
+
+                                                                // A real employee-submitted visit must never be overwritten by
+                                                                // the synthetic visit created from the Excel import.
+                                                                val hasRealVisit = existing.any {
+                                                                    it.employeeId != "emp_system" &&
+                                                                    (it.status == com.example.data.model.VisitStatus.SUBMITTED ||
+                                                                     it.status == com.example.data.model.VisitStatus.REVIEWED)
+                                                                }
+
+                                                                // Find the exact imported visit by visitId. The visit's business
+                                                                // status (SUBMITTED/REVIEWED) is not enough to decide whether it
+                                                                // reached Firestore: syncStatus is the source of truth for that.
+                                                                val importedVisit = existing.find { it.visitId == v.visitId }
+                                                                val needsSubmit = !hasRealVisit &&
+                                                                        (importedVisit == null ||
+                                                                         importedVisit.syncStatus != com.example.data.model.SyncStatus.SYNCED)
+
+                                                                // Retry imports that are still PENDING/FAILED, but do not create
+                                                                // duplicates when the exact imported visit is already synced.
+                                                                if (needsSubmit) {
                                                                     visitRepository.submitVisit(v)
                                                                 }
                                                             }
