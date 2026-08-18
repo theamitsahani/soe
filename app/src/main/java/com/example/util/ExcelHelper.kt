@@ -152,7 +152,14 @@ object ExcelHelper {
                     continue
                 }
 
-                val existingSchool = existingSchools.find { 
+                // BUG FIX: also match against schools already created earlier in THIS same import
+                // batch (not only schools that existed in the DB before the import started).
+                // Without this, two rows with the same school name+district inside one Excel file
+                // each generated a brand-new random schoolId, silently creating duplicate schools.
+                val existingSchool = schools.find {
+                    it.schoolName.trim().equals(schoolName.trim(), ignoreCase = true) &&
+                    (districtName.isBlank() || it.districtName.isBlank() || it.districtName.trim().equals(districtName.trim(), ignoreCase = true))
+                } ?: existingSchools.find { 
                     it.schoolName.trim().equals(schoolName.trim(), ignoreCase = true) && 
                     (districtName.isBlank() || it.districtName.isBlank() || it.districtName.trim().equals(districtName.trim(), ignoreCase = true))
                 }

@@ -19,7 +19,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-class SyncManager(private val context: Context) {
+class SyncManager private constructor(private val context: Context) {
 
     private val db = AppDatabase.getDatabase(context)
     private val firestore get() = FirebaseUtils.firestore
@@ -39,12 +39,115 @@ class SyncManager(private val context: Context) {
     private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
     init {
+        // BUG FIX (data-loss safety net): AppDatabase declares Room migrations 6->7 and 8->9
+        // but no 7->8, while using fallbackToDestructiveMigration(true). A device that updates
+        // straight across that version gap (very common — most people don't install every
+        // single release) has its ENTIRE local Room database silently wiped and recreated the
+        // next time it's opened. Every other table (schools/tasks/visits cache) is harmless to
+        // lose because it's just a Firestore mirror and gets re-synced on next login — but a
+        // visit still sitting as PENDING/FAILED (collected offline, never yet reached the
+        // server) only exists in this local database. A destructive migration would silently
+        // and permanently destroy that employee's unsynced field report with no error shown
+        // anywhere. restorePendingVisitsFromBackup() runs first, before any sync activity, and
+        // recovers any pending visit that a prior session's backupPendingVisits() call
+        // persisted to SharedPreferences (a store Room's migration path never touches) but that
+        // is now missing from Room — i.e. exactly the signature of a destructive wipe.
+        syncScope.launch {
+            try {
+                restorePendingVisitsFromBackup()
+            } catch (e: Exception) {
+                android.util.Log.e("SyncManager", "Error restoring pending visits from backup", e)
+            }
+        }
         registerNetworkCallback()
         syncScope.launch {
             checkPendingCount()
             if (isNetworkAvailable()) {
                 syncPendingData()
             }
+        }
+    }
+
+    private fun backupPrefs() = context.applicationContext.getSharedPreferences("soe_sync_backup", Context.MODE_PRIVATE)
+
+    /**
+     * Persists every currently PENDING/FAILED (not-yet-synced) visit to SharedPreferences,
+     * a storage location completely independent of the Room database file, so it survives
+     * even a destructive Room migration or an accidental local DB corruption/wipe.
+     */
+    private suspend fun backupPendingVisits() {
+        try {
+            val pending = db.visitDao().getVisitsBySyncStatus(SyncStatus.PENDING) +
+                    db.visitDao().getVisitsBySyncStatus(SyncStatus.FAILED)
+            val arr = org.json.JSONArray()
+            for (v in pending) {
+                val obj = org.json.JSONObject()
+                obj.put("visitId", v.visitId)
+                obj.put("taskId", v.taskId)
+                obj.put("schoolId", v.schoolId)
+                obj.put("employeeId", v.employeeId)
+                obj.put("employeeName", v.employeeName)
+                obj.put("schoolName", v.schoolName)
+                obj.put("state", v.state)
+                obj.put("district", v.district)
+                obj.put("block", v.block)
+                obj.put("visitDate", v.visitDate)
+                obj.put("answersJson", v.answersJson)
+                obj.put("photosJson", v.photosJson)
+                obj.put("editCount", v.editCount)
+                obj.put("createdAt", v.createdAt)
+                obj.put("updatedAt", v.updatedAt)
+                arr.put(obj)
+            }
+            backupPrefs().edit().putString("pending_visits_json", arr.toString()).apply()
+        } catch (e: Exception) {
+            android.util.Log.w("SyncManager", "Error backing up pending visits: ${e.message}")
+        }
+    }
+
+    /**
+     * Recovers any visit present in the SharedPreferences backup but missing from Room —
+     * the signature of a destructive migration/local-DB wipe having just happened. Restored
+     * visits are marked PENDING so the normal sync flow uploads them on the next opportunity.
+     */
+    private suspend fun restorePendingVisitsFromBackup() {
+        val raw = backupPrefs().getString("pending_visits_json", null) ?: return
+        try {
+            val arr = org.json.JSONArray(raw)
+            var restoredCount = 0
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val visitId = obj.optString("visitId")
+                if (visitId.isBlank()) continue
+                val existing = db.visitDao().getVisitById(visitId)
+                if (existing != null) continue
+                val restored = Visit(
+                    visitId = visitId,
+                    taskId = obj.optString("taskId", ""),
+                    schoolId = obj.optString("schoolId", ""),
+                    employeeId = obj.optString("employeeId", ""),
+                    employeeName = obj.optString("employeeName", ""),
+                    schoolName = obj.optString("schoolName", ""),
+                    state = obj.optString("state", "Rajasthan"),
+                    district = obj.optString("district", ""),
+                    block = obj.optString("block", ""),
+                    visitDate = obj.optString("visitDate", ""),
+                    status = com.example.data.model.VisitStatus.SUBMITTED,
+                    answersJson = obj.optString("answersJson", ""),
+                    photosJson = obj.optString("photosJson", ""),
+                    editCount = obj.optInt("editCount", 0),
+                    syncStatus = SyncStatus.PENDING,
+                    createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
+                    updatedAt = obj.optLong("updatedAt", System.currentTimeMillis())
+                )
+                db.visitDao().insertVisit(restored)
+                restoredCount++
+            }
+            if (restoredCount > 0) {
+                android.util.Log.w("SyncManager", "Recovered $restoredCount pending visit(s) from backup after local DB was missing them (likely a destructive migration).")
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("SyncManager", "Error restoring pending visits from backup: ${e.message}")
         }
     }
 
@@ -110,6 +213,9 @@ class SyncManager(private val context: Context) {
             }
             val pendingVisits = db.visitDao().getVisitsBySyncStatus(SyncStatus.PENDING)
             _pendingSyncCount.value = pendingVisits.size
+            // Keep the SharedPreferences safety-net backup current every time pending state
+            // is recalculated, so it always reflects the latest not-yet-synced work.
+            backupPendingVisits()
         }
     }
 
@@ -132,8 +238,15 @@ class SyncManager(private val context: Context) {
                 return@withContext true
             }
 
-            // Deduplicate pending visits by (schoolId + employeeId), taking the latest one
-            val uniqueVisitsMap = pendingVisits.groupBy { "${it.schoolId}_${it.employeeId}" }
+            // BUG FIX: was grouping only by "schoolId_employeeId", which deleted genuinely
+            // different pending visits (same employee/school, different task or date) before
+            // they ever reached the server — permanent data loss for offline-collected reports.
+            // Key by taskId (falls back to schoolId+employeeId+visitDate) so only true repeated
+            // submissions of the same task are treated as duplicates.
+            val uniqueVisitsMap = pendingVisits.groupBy {
+                if (it.taskId.isNotBlank()) "task_${it.taskId}"
+                else "${it.schoolId}_${it.employeeId}_${it.visitDate}"
+            }
             val cleanPendingVisits = uniqueVisitsMap.values.map { list -> list.maxByOrNull { it.updatedAt }!! }
 
             // Delete extra local duplicate pending records if any
@@ -255,6 +368,29 @@ class SyncManager(private val context: Context) {
         } catch (e: Exception) {
             e.printStackTrace()
             false
+        }
+    }
+
+    companion object {
+        @Volatile
+        private var INSTANCE: SyncManager? = null
+
+        /**
+         * BUG FIX: SyncManager used to be instantiated separately in MainActivity AND inside
+         * VisitRepository. That created two independent instances, each with its own
+         * isOnline / pendingSyncCount / isSyncing StateFlows and its own network callback +
+         * sync mutex. Result: the UI (observing MainActivity's instance) never reflected the
+         * uploads that VisitRepository's own private instance was doing, panels showed stale/
+         * mismatched pending-sync counts, and two parallel network listeners could trigger
+         * duplicate concurrent uploads of the same visit.
+         *
+         * Fixing this by making SyncManager a true app-wide singleton, exactly like
+         * AppDatabase, so every screen/repository shares one source of truth.
+         */
+        fun getInstance(context: Context): SyncManager {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: SyncManager(context.applicationContext).also { INSTANCE = it }
+            }
         }
     }
 }

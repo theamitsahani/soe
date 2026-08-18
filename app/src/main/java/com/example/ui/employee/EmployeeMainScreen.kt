@@ -123,8 +123,12 @@ fun EmployeeMainScreen(
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showNotificationDialog by remember { mutableStateOf(false) }
 
+    // BUG FIX: was distinctBy { "${it.schoolId}_${it.employeeId}" }, which hid an employee's
+    // own legitimate second report (a re-visit to the same school) from their own "My Reports"
+    // list — they'd submit it successfully but then be unable to find/view it again. Dedup of
+    // true duplicate documents already happens upstream at sync time; visitId is the real key.
     val cleanCompletedVisits = remember(completedVisits) {
-        completedVisits.distinctBy { "${it.schoolId}_${it.employeeId}" }
+        completedVisits.distinctBy { it.visitId }
     }
 
     Scaffold(

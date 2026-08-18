@@ -15,7 +15,11 @@ class VisitRepository(private val context: Context) {
 
     private val db = AppDatabase.getDatabase(context)
     private val firestore get() = FirebaseUtils.firestore
-    private val syncManager = SyncManager(context)
+    // BUG FIX: was `SyncManager(context)` which created a *second*, independent SyncManager
+    // instance separate from the one MainActivity observes for isOnline/pendingSyncCount/
+    // isSyncing. That desynced the UI badges from the real upload state and ran duplicate
+    // network listeners. Now uses the shared app-wide singleton instead.
+    private val syncManager = SyncManager.getInstance(context)
 
     fun getAllVisits(): Flow<List<Visit>> = db.visitDao().getAllVisits()
 
@@ -92,9 +96,20 @@ class VisitRepository(private val context: Context) {
                 )
             }
 
-            // Group visits by (schoolId + employeeId) to remove duplicates created by multiple clicks
+            // Group visits to remove true duplicates created by multiple/double-tap submissions.
+            // BUG FIX: this used to key ONLY by "schoolId_employeeId". That silently deleted
+            // legitimate separate visits — e.g. the same employee visiting the same school on
+            // two different dates/tasks — because they'd collapse into "one duplicate group"
+            // and every visit except the latest was PERMANENTLY DELETED from Firestore + Room.
+            // This was the main cause of visit reports randomly disappearing / one panel
+            // showing fewer visits than another. A real accidental duplicate is the same task
+            // submitted twice, so the key must include taskId (or visitDate as a fallback when
+            // taskId is missing) to avoid merging genuinely different visits.
             val cleanVisits = mutableListOf<Visit>()
-            val groupedBySchoolEmp = rawVisits.groupBy { "${it.schoolId}_${it.employeeId}" }
+            val groupedBySchoolEmp = rawVisits.groupBy {
+                if (it.taskId.isNotBlank()) "task_${it.taskId}"
+                else "${it.schoolId}_${it.employeeId}_${it.visitDate}"
+            }
 
             for ((_, group) in groupedBySchoolEmp) {
                 if (group.size == 1) {
@@ -120,7 +135,21 @@ class VisitRepository(private val context: Context) {
 
             if (cleanVisits.isNotEmpty()) {
                 db.visitDao().insertVisits(cleanVisits)
-                db.visitDao().deleteVisitsNotIn(cleanVisits.map { it.visitId })
+
+                // CRITICAL BUG FIX: this used to run
+                //   db.visitDao().deleteVisitsNotIn(cleanVisits.map { it.visitId })
+                // which deletes EVERY local visit whose id isn't in the just-fetched remote
+                // set. That includes visits saved locally while offline (syncStatus = PENDING)
+                // that haven't reached Firestore yet — the moment this pull ran (tab switch,
+                // login, network-back callback, etc.) before the pending upload finished, the
+                // employee's not-yet-synced report was permanently wiped from the device with
+                // no way to recover it. A remote pull must never delete data the server hasn't
+                // seen yet. Now local PENDING/FAILED (not-yet-synced) visits are always kept,
+                // no matter what the server returned.
+                val stillUnsyncedLocalIds = db.visitDao().getVisitsBySyncStatus(SyncStatus.PENDING).map { it.visitId } +
+                        db.visitDao().getVisitsBySyncStatus(SyncStatus.FAILED).map { it.visitId }
+                val idsToKeep = (cleanVisits.map { it.visitId } + stillUnsyncedLocalIds).distinct()
+                db.visitDao().deleteVisitsNotIn(idsToKeep)
                 for (v in cleanVisits) {
                     if (v.status == VisitStatus.SUBMITTED || v.status == VisitStatus.REVIEWED) {
                         if (v.taskId.isNotBlank()) {
@@ -131,10 +160,14 @@ class VisitRepository(private val context: Context) {
                     }
                 }
             } else {
+                // BUG FIX: same data-loss issue as above — deleteAllVisits()/deleteVisitsForEmployee()
+                // would also wipe local PENDING/FAILED (not-yet-synced) visits whenever the
+                // remote query legitimately returned zero results. Only clear out already-SYNCED
+                // local rows so unsynced offline work is never lost.
                 if (!isEmployee) {
-                    db.visitDao().deleteAllVisits()
+                    db.visitDao().deleteAllSyncedVisits()
                 } else if (currentUid.isNotBlank()) {
-                    db.visitDao().deleteVisitsForEmployee(currentUid)
+                    db.visitDao().deleteSyncedVisitsForEmployee(currentUid)
                 }
             }
             Result.success(cleanVisits.size)

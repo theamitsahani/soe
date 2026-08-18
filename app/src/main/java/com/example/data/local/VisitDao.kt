@@ -56,4 +56,12 @@ interface VisitDao {
     @Query("DELETE FROM visits WHERE employeeId = :employeeId")
     suspend fun deleteVisitsForEmployee(employeeId: String)
 
+    // BUG FIX support: used when a remote pull comes back empty, so we only clear out
+    // already-synced local visits and never touch anything still waiting to upload.
+    @Query("DELETE FROM visits WHERE syncStatus = 'SYNCED'")
+    suspend fun deleteAllSyncedVisits()
+
+    @Query("DELETE FROM visits WHERE employeeId = :employeeId AND syncStatus = 'SYNCED'")
+    suspend fun deleteSyncedVisitsForEmployee(employeeId: String)
+
 }

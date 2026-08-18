@@ -77,12 +77,19 @@ service cloud.firestore {
       // Employee can submit their own visit (employeeId must match auth.uid)
       allow create: if isAdmin() || (isEmployee() && request.resource.data.employeeId == request.auth.uid);
       // Employee cannot change visit ownership/school and cannot modify a visit once it is marked REVIEWED
+      // BUG FIX: 'editCount' was missing from the allowed employee update keys below. The app's
+      // "edit within 12 hours, max 1 edit" resubmission flow (VisitFormScreen) always sends the
+      // incremented editCount along with the resubmitted answers. Since editCount wasn't in
+      // hasOnly([...]), Firestore rejected the ENTIRE update with permission-denied the moment
+      // an employee tried to resubmit an edited report — the visit stayed stuck in PENDING sync
+      // forever and the admin never received the edited report, even though the employee's app
+      // showed no error (the client-side offline-first save always "succeeds" locally first).
       allow update: if isAdmin() || (
         isEmployee() &&
         resource.data.employeeId == request.auth.uid &&
         resource.data.status != 'REVIEWED' &&
         request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'answersJson', 'photosJson', 'syncStatus', 'updatedAt']) &&
+          .hasOnly(['status', 'answersJson', 'photosJson', 'syncStatus', 'updatedAt', 'editCount']) &&
         request.resource.data.employeeId == resource.data.employeeId &&
         request.resource.data.schoolId == resource.data.schoolId &&
         (request.resource.data.status == resource.data.status ||
@@ -102,6 +109,39 @@ service cloud.firestore {
           get(/databases/$(database)/documents/visits/$(visitId)).data.status != 'REVIEWED'
         );
       }
+    }
+
+    // Notifications Collection
+    // BUG FIX: this collection had NO explicit rule at all, so it fell through to the
+    // default-deny `match /{document=**}` at the bottom of this file. Every single read and
+    // write to "notifications" (task-assigned alerts to employees, report-submitted alerts to
+    // admin) was being silently rejected by Firestore — the app only survived because every
+    // call site wraps it in try/catch and swallows the PERMISSION_DENIED error. Net effect:
+    // in-app notifications never actually synced between the admin and employee panels.
+    match /notifications/{notificationId} {
+      allow read: if isAdmin() || (
+        isAuthenticated() &&
+        (resource.data.recipientUserId == request.auth.uid ||
+         resource.data.recipientUserId == 'ADMIN' ||
+         resource.data.recipientUserId == 'ALL')
+      );
+      // Both admins (assigning tasks) and employees (submitting reports) need to create
+      // notifications for each other.
+      allow create: if isAdmin() || isEmployee();
+      // Only the recipient (or admin) may mark their own notification read.
+      allow update: if isAdmin() || (
+        isAuthenticated() &&
+        (resource.data.recipientUserId == request.auth.uid ||
+         resource.data.recipientUserId == 'ADMIN' ||
+         resource.data.recipientUserId == 'ALL') &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead'])
+      );
+      allow delete: if isAdmin() || (
+        isAuthenticated() &&
+        (resource.data.recipientUserId == request.auth.uid ||
+         resource.data.recipientUserId == 'ADMIN' ||
+         resource.data.recipientUserId == 'ALL')
+      );
     }
 
     // Default deny all other collections

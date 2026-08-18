@@ -47,8 +47,26 @@ object ZipHelper {
         }
 
         try {
+            // BUG FIX: entry paths were built purely from schoolName + category + index. Two
+            // visits to the same school (a re-visit) — or two different schools that happen to
+            // share a name — produced IDENTICAL zip entry paths. The second visit's photo would
+            // then fail ZipOutputStream.putNextEntry() with a duplicate-entry exception, which
+            // was silently caught and logged, so that visit's photos just vanished from the
+            // export with no indication to the admin. Disambiguate the school folder with the
+            // visit date (falling back to visitId) whenever more than one visit maps to the
+            // same sanitized school name.
+            val schoolNameCounts = visits.groupingBy {
+                it.schoolName.replace(Regex("""[\\/:*?"<>|]"""), "_").ifBlank { "School_${it.schoolId}" }
+            }.eachCount()
+
             for (v in visits) {
-                val sanitizeSchoolName = v.schoolName.replace(Regex("""[\\/:*?"<>|]"""), "_").ifBlank { "School_${v.schoolId}" }
+                val baseSchoolName = v.schoolName.replace(Regex("""[\\/:*?"<>|]"""), "_").ifBlank { "School_${v.schoolId}" }
+                val sanitizeSchoolName = if ((schoolNameCounts[baseSchoolName] ?: 0) > 1) {
+                    val disambiguator = v.visitDate.replace(Regex("""[\\/:*?"<>|]"""), "_").ifBlank { v.visitId }
+                    "${baseSchoolName}_$disambiguator"
+                } else {
+                    baseSchoolName
+                }
                 val photoMap: Map<String, List<String>> = try {
                     if (v.photosJson.isNotBlank()) adapter.fromJson(v.photosJson) ?: emptyMap() else emptyMap()
                 } catch (e: Exception) {

@@ -393,7 +393,23 @@ class AuthRepository(private val context: Context) {
                         return@withContext Result.success(authenticatedUser)
                     } else {
                         // Unknown or unregistered user record in Firestore -> Block Login!
-                        if (userEmail.equals("admin@gmail.com", ignoreCase = true)) {
+                        // BUG FIX (security): this used to auto-grant ADMIN to ANY Firebase Auth
+                        // account signed in with the exact email "admin@gmail.com", forever —
+                        // not just on first-ever app setup. Since account creation is a Firebase
+                        // Auth project setting outside this app's control, anyone able to
+                        // register (or already holding) that email address could sign in and
+                        // instantly become a full Admin, any time, even after real admins exist.
+                        // This is now a genuine one-time bootstrap: it only fires when the
+                        // "users" collection is completely empty (i.e. brand-new deployment
+                        // with no admin provisioned yet), so it can't be exploited later.
+                        val isFirstEverUser = try {
+                            val existingUsersTask = fStore.collection("users").limit(1).get()
+                            val existingUsersSnap = Tasks.await(existingUsersTask)
+                            existingUsersSnap.isEmpty
+                        } catch (e: Exception) {
+                            false
+                        }
+                        if (userEmail.equals("admin@gmail.com", ignoreCase = true) && isFirstEverUser) {
                             val newAdminData = mapOf(
                                 "userId" to uid,
                                 "name" to "Admin",
@@ -407,6 +423,13 @@ class AuthRepository(private val context: Context) {
                                 "createdAt" to System.currentTimeMillis()
                             )
                             fStore.collection("users").document(uid).set(newAdminData, SetOptions.merge())
+                            // BUG FIX: `role` was never updated to ADMIN here, so the very first
+                            // bootstrap login returned an authenticatedUser with role=EMPLOYEE
+                            // (the function default) even though the Firestore doc just written
+                            // says ADMIN — the person would land on the wrong dashboard until
+                            // they logged out and back in.
+                            role = UserRole.ADMIN
+                            name = "Admin"
                         } else {
                             fAuth.signOut()
                             return@withContext Result.failure(Exception("Unknown user! Aapka ID verify nahi hai ya database me nahi mila. Admin se sampark karein."))

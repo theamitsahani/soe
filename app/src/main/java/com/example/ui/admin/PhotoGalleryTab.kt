@@ -130,7 +130,13 @@ fun PhotoGalleryTab(
 
     val allPhotos = remember(visits) {
         val list = mutableListOf<PhotoGridItem>()
-        val cleanVisits = visits.distinctBy { "${it.schoolId}_${it.employeeId}" }
+        // BUG FIX: was distinctBy { "${it.schoolId}_${it.employeeId}" }, which threw away every
+        // photo belonging to a legitimate second visit (re-visit) by the same employee to the
+        // same school — those photos simply never appeared in the gallery or any ZIP/CSV export
+        // built from it. Dedup of true duplicate documents already happens upstream at sync
+        // time; visitId is the real key, and the line below already dedupes individual photo
+        // URLs within/across those visits.
+        val cleanVisits = visits.distinctBy { it.visitId }
         for (v in cleanVisits) {
             try {
                 val photoMap = photosAdapter.fromJson(v.photosJson) ?: emptyMap()

@@ -79,7 +79,7 @@ class MainActivity : ComponentActivity() {
             AppDatabase.getDatabase(applicationContext).appNotificationDao(),
             FirebaseUtils.firestore ?: com.google.firebase.firestore.FirebaseFirestore.getInstance()
         )
-        syncManager = SyncManager(applicationContext)
+        syncManager = SyncManager.getInstance(applicationContext)
 
         setContent {
             SOETheme {

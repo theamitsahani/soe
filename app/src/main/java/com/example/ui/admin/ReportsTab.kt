@@ -106,8 +106,14 @@ fun ReportsTab(
 
     val statusList = listOf("All Statuses", "Completed", "Data Required on Hard Disk", "Follow-up Required", "Pending")
 
+    // BUG FIX: this used to be visits.distinctBy { "${it.schoolId}_${it.employeeId}" }, which
+    // silently collapsed multiple GENUINE visits by the same employee to the same school (e.g.
+    // a legitimate re-visit on a different date/task) down to just one — hiding real submitted
+    // reports from the admin's Reports list entirely. True duplicate documents are already
+    // deduplicated upstream at sync time (VisitRepository/SyncManager, keyed by taskId), so each
+    // Visit reaching this screen is already a distinct report; visitId is the actual primary key.
     val uniqueVisits = remember(visits) {
-        visits.distinctBy { "${it.schoolId}_${it.employeeId}" }
+        visits.distinctBy { it.visitId }
     }
 
     val stateList = remember(uniqueVisits) {

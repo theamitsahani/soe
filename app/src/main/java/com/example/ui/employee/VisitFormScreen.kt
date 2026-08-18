@@ -174,8 +174,29 @@ fun VisitFormScreen(
     var stateName by remember { mutableStateOf(existingVisit?.state?.ifBlank { null } ?: initialSchool?.state ?: "Rajasthan") }
     var district by remember { mutableStateOf(existingVisit?.district?.ifBlank { null } ?: task?.district ?: initialSchool?.district ?: "") }
     var block by remember { mutableStateOf(existingVisit?.block?.ifBlank { null } ?: task?.block ?: initialSchool?.block ?: "") }
-    var principalName by remember { mutableStateOf(parsedExistingAnswers.q7_principalName.ifBlank { initialSchool?.principalName ?: "" }) }
-    var principalMobile by remember { mutableStateOf(parsedExistingAnswers.q8_principalMobile.ifBlank { initialSchool?.principalMobile?.ifBlank { initialSchool.mobile } ?: "" }) }
+    // BUG FIX: principalName/principalMobile were reading ONLY from `initialSchool`, unlike the
+    // other fields on this screen (schoolName, district, block, visitDate) which correctly fall
+    // back to `task` first. The "View Details" dialog on the tasks list (EmployeeMainScreen)
+    // prioritizes task.principalMobile over the school record, so whenever a task carried a
+    // principal mobile that the school record didn't have (or had different), View Details
+    // showed the number but the Start Visit form showed it blank. Now both screens use the same
+    // priority order: task -> school.
+    var principalName by remember {
+        mutableStateOf(
+            parsedExistingAnswers.q7_principalName.ifBlank {
+                task?.principalName?.ifBlank { initialSchool?.principalName } ?: initialSchool?.principalName ?: ""
+            }
+        )
+    }
+    var principalMobile by remember {
+        mutableStateOf(
+            parsedExistingAnswers.q8_principalMobile.ifBlank {
+                task?.principalMobile?.ifBlank { null }
+                    ?: initialSchool?.principalMobile?.ifBlank { initialSchool.mobile }
+                    ?: ""
+            }
+        )
+    }
     val defaultTodayDate = remember { java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.ENGLISH).format(java.util.Date()) }
     var visitDate by remember { mutableStateOf(existingVisit?.visitDate?.ifBlank { null } ?: task?.visitDate ?: defaultTodayDate) }
 
@@ -1032,7 +1053,14 @@ fun VisitFormScreen(
 
                                 OutlinedTextField(
                                     value = studentCount,
-                                    onValueChange = { studentCount = it },
+                                    // BUG FIX: this field had a Number keyboard hint but no actual
+                                    // input filtering, unlike principalMobile/udiseCode/bciMobile
+                                    // elsewhere in this same form. A pasted value could contain
+                                    // letters, symbols, a decimal point, or a negative sign and be
+                                    // submitted as-is. Restrict to digits only (matches how the
+                                    // other numeric fields in this form are handled) and cap the
+                                    // length to a sane school-attendance size.
+                                    onValueChange = { studentCount = it.filter { c -> c.isDigit() }.take(5) },
                                     placeholder = { Text("e.g. 120", color = Slate500) },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     singleLine = true,

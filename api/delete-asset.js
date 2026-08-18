@@ -10,6 +10,52 @@ if (!admin.apps.length) {
   }
 }
 
+/**
+ * Server-side authorization: caller must be an active Admin, or the employee the
+ * given visit is actually assigned to. Mirrors the ownership checks in firestore.rules,
+ * because these Vercel endpoints use the Admin SDK and bypass Firestore rules entirely.
+ * This matters most here: without it, any authenticated employee could permanently
+ * destroy any other employee's Cloudinary photos/videos by guessing/observing a publicId.
+ * Also blocks deletion once a visit is REVIEWED, matching the Firestore photos-subcollection
+ * lock rule.
+ */
+async function authorizeVisitAccess(uid, visitId, requireNotReviewed) {
+  try {
+    const db = admin.firestore();
+    const userSnap = await db.collection("users").doc(uid).get();
+    const userData = userSnap.exists ? userSnap.data() : null;
+    const isActiveAdmin =
+      !!userData &&
+      userData.role === "ADMIN" &&
+      userData.status !== "INACTIVE" &&
+      userData.isDeleted !== true;
+
+    if (isActiveAdmin) {
+      return { allowed: true };
+    }
+
+    if (!userData || userData.status === "INACTIVE" || userData.isDeleted === true) {
+      return { allowed: false, reason: "Account is not active." };
+    }
+
+    const visitSnap = await db.collection("visits").doc(visitId).get();
+    if (!visitSnap.exists) {
+      return { allowed: false, reason: "Visit not found." };
+    }
+    const visitData = visitSnap.data();
+    if (visitData.employeeId !== uid) {
+      return { allowed: false, reason: "Not authorized for this visit." };
+    }
+    if (requireNotReviewed && visitData.status === "REVIEWED") {
+      return { allowed: false, reason: "Visit is locked and can no longer be modified." };
+    }
+    return { allowed: true };
+  } catch (e) {
+    console.error("authorizeVisitAccess error:", e);
+    return { allowed: false, reason: "Authorization check failed." };
+  }
+}
+
 module.exports = async (req, res) => {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -21,11 +67,16 @@ module.exports = async (req, res) => {
       return res.status(401).json({ error: "Unauthenticated" });
     }
     const idToken = authHeader.split("Bearer ")[1];
-    await admin.auth().verifyIdToken(idToken);
+    const decoded = await admin.auth().verifyIdToken(idToken);
 
     const { visitId, publicId, resourceType } = req.body || {};
     if (!visitId || !publicId) {
       return res.status(400).json({ error: "visitId and publicId are required." });
+    }
+
+    const authResult = await authorizeVisitAccess(decoded.uid, visitId, true);
+    if (!authResult.allowed) {
+      return res.status(403).json({ error: authResult.reason });
     }
 
     const cloudName = process.env.CLOUDINARY_CLOUD_NAME || "";

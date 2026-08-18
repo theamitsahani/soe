@@ -66,8 +66,12 @@ fun AdminDashboardTab(
     onNavigateTabWithFilter: (AdminTab, String) -> Unit = { tab, _ -> onNavigateTab(tab) },
     onVisitClick: (Visit) -> Unit
 ) {
+    // BUG FIX: was distinctBy { "${it.schoolId}_${it.employeeId}" }, which collapsed legitimate
+    // multiple visits (re-visits) by the same employee to the same school into one, silently
+    // undercounting Completed/Follow-up/Hard-Disk stats on the dashboard. Dedup of true
+    // duplicate documents already happens upstream at sync time; visitId is the real key.
     val uniqueVisits = androidx.compose.runtime.remember(visits) {
-        visits.distinctBy { "${it.schoolId}_${it.employeeId}" }
+        visits.distinctBy { it.visitId }
     }
     val completedCount = uniqueVisits.count { it.status == VisitStatus.SUBMITTED || it.status == VisitStatus.REVIEWED }
     val hardDiskDataCount = uniqueVisits.count { it.answersJson.contains("\"q19_dataRequiredOnHardDisk\":\"हाँ\"") }
