@@ -77,6 +77,11 @@ import com.example.data.model.PhotoCategory
 import com.example.data.model.School
 import com.example.data.model.Visit
 import com.example.data.model.VisitAnswers
+import com.example.data.model.VisitEvent
+import com.example.data.model.VisitStatus
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.example.ui.theme.Emerald100
 import com.example.ui.theme.Emerald600
 import com.example.ui.theme.Indigo600
@@ -96,10 +101,12 @@ import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 fun VisitDetailDialog(
     visit: Visit,
     school: School? = null,
+    events: List<VisitEvent> = emptyList(),
     onDismiss: () -> Unit,
     onEditClick: (() -> Unit)? = null,
     onUpdateAnswers: ((VisitAnswers) -> Unit)? = null,
     onDeletePhoto: ((categoryId: String, photoUrl: String) -> Unit)? = null,
+    onReviewVisit: ((isApproved: Boolean, notes: String) -> Unit)? = null,
     isAdmin: Boolean = false,
     isEditable: Boolean = false,
     editTimeRemainingText: String = ""
@@ -108,6 +115,9 @@ fun VisitDetailDialog(
     var previewPhotoUrl by remember { mutableStateOf<String?>(null) }
     var photoToDelete by remember { mutableStateOf<Pair<String, String>?>(null) }
     var showEditDialog by remember { mutableStateOf(false) }
+    var showReviewDialog by remember { mutableStateOf(false) }
+    var reviewApprovalMode by remember { mutableStateOf(true) }
+    var reviewNotesText by remember { mutableStateOf("") }
 
     val initialAnswers = remember(visit.answersJson) {
         try {
@@ -132,9 +142,9 @@ fun VisitDetailDialog(
         }
     }
 
-    // Consolidated Principal details
-    val principalName = answers.q7_principalName.ifBlank { school?.principalName?.ifBlank { "Not Specified" } ?: "Not Specified" }
-    val principalMobile = answers.q8_principalMobile.ifBlank { school?.principalMobile?.ifBlank { school?.mobile ?: "" } ?: "" }
+    // Consolidated Principal details (prefer visit snapshot if available)
+    val principalName = visit.principalName.ifBlank { answers.q7_principalName.ifBlank { school?.principalName?.ifBlank { "Not Specified" } ?: "Not Specified" } }
+    val principalMobile = visit.principalMobile.ifBlank { answers.q8_principalMobile.ifBlank { school?.principalMobile?.ifBlank { school?.mobile ?: "" } ?: "" } }
 
     // Consolidated BCI details
     val bciName = answers.q13_bciName.ifBlank {
@@ -146,10 +156,10 @@ fun VisitDetailDialog(
         else ""
     }
 
-    // Consolidated Village & UDISE
-    val villageName = school?.villageName?.ifBlank { "Not Specified" } ?: "Not Specified"
-    val udiseCode = answers.q4_udiseCode.ifBlank { school?.referenceCode ?: "Not Available" }
-    val schoolType = school?.schoolType?.ifBlank { "Government School" } ?: "Government School"
+    // Consolidated Village, UDISE & School Type (prefer visit snapshot)
+    val villageName = visit.villageName.ifBlank { school?.villageName?.ifBlank { "Not Specified" } ?: "Not Specified" }
+    val udiseCode = visit.udiseCode.ifBlank { answers.q4_udiseCode.ifBlank { school?.referenceCode ?: "Not Available" } }
+    val schoolType = visit.schoolType.ifBlank { school?.schoolType?.ifBlank { "Government School" } ?: "Government School" }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -566,6 +576,102 @@ fun VisitDetailDialog(
                             }
                         }
                     }
+
+                    // 6. Review & Verification Information (समीक्षा एवं सत्यापन)
+                    if (visit.status == VisitStatus.REVIEWED || visit.status == VisitStatus.REJECTED || visit.reviewNotes.isNotBlank() || visit.rejectionReason.isNotBlank()) {
+                        DetailSectionCard(
+                            title = "6. Admin Review & Verification (एडमिन समीक्षा स्थिति)",
+                            icon = if (visit.status == VisitStatus.REVIEWED) Icons.Default.CheckCircle else Icons.Default.Warning
+                        ) {
+                            DetailGridRow("Review Status (समीक्षा स्थिति)", visit.status.name)
+                            if (visit.reviewedBy.isNotBlank()) {
+                                DetailGridRow("Reviewed By (समीक्षक)", visit.reviewedBy)
+                            }
+                            if (visit.reviewedAt != null && visit.reviewedAt > 0) {
+                                val sdf = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+                                DetailGridRow("Reviewed On (समीक्षा समय)", sdf.format(Date(visit.reviewedAt)))
+                            }
+                            if (visit.reviewNotes.isNotBlank()) {
+                                DetailGridRow("Review Notes / Instructions", visit.reviewNotes)
+                            }
+                            if (visit.rejectionReason.isNotBlank()) {
+                                DetailGridRow("Correction Required / Remarks", visit.rejectionReason)
+                            }
+                        }
+                    }
+
+                    // 7. Lifecycle Timestamps & Metadata (टाइमस्टैम्प एवं मेटाडेटा)
+                    DetailSectionCard(
+                        title = "7. Lifecycle & Metadata (विज़िट टाइमस्टैम्प एवं ट्रैकिंग)",
+                        icon = Icons.Default.Info
+                    ) {
+                        val sdf = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+                        DetailGridRow("Visit Session ID", visit.visitId)
+                        if (visit.taskId.isNotBlank()) {
+                            DetailGridRow("Assigned Task ID", visit.taskId)
+                        }
+                        if (visit.startedAt != null && visit.startedAt > 0) {
+                            DetailGridRow("Visit Started At (शुरू समय)", sdf.format(Date(visit.startedAt)))
+                        }
+                        if (visit.completedAt != null && visit.completedAt > 0) {
+                            DetailGridRow("Form Completed At (समापन समय)", sdf.format(Date(visit.completedAt)))
+                        }
+                        if (visit.submittedAt != null && visit.submittedAt > 0) {
+                            DetailGridRow("Submitted At (सबमिट समय)", sdf.format(Date(visit.submittedAt)))
+                        }
+                        DetailGridRow("Sync Status", visit.syncStatus.name)
+                        DetailGridRow("Edit Count (संशोधन संख्या)", visit.editCount.toString())
+                        DetailGridRow("App Version", visit.appVersion)
+                    }
+
+                    // 8. Audit Trail / Events (ऑडिट ट्रेल - घटनाक्रम)
+                    if (events.isNotEmpty()) {
+                        DetailSectionCard(
+                            title = "8. Audit Trail (${events.size} Events Recorded)",
+                            icon = Icons.Default.Assignment
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                val sdf = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
+                                events.sortedByDescending { it.timestamp }.forEach { ev ->
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color(0xFFF1F5F9),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = "${ev.eventType}: ${ev.actorRole.ifBlank { "System" }} (${ev.actorId.take(8)})",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Navy900
+                                                )
+                                                if (ev.details.isNotBlank()) {
+                                                    Text(
+                                                        text = ev.details,
+                                                        fontSize = 11.sp,
+                                                        color = Slate700
+                                                    )
+                                                }
+                                            }
+                                            Text(
+                                                text = sdf.format(Date(ev.timestamp)),
+                                                fontSize = 10.sp,
+                                                color = Slate500,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Bottom Action Bar
@@ -574,38 +680,81 @@ fun VisitDetailDialog(
                     shadowElevation = 8.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedButton(
-                            onClick = onDismiss,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Close (बंद करें)", fontWeight = FontWeight.SemiBold)
+                        // Admin Review Action Buttons
+                        if (isAdmin && onReviewVisit != null && visit.status != VisitStatus.REVIEWED) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        reviewApprovalMode = false
+                                        reviewNotesText = ""
+                                        showReviewDialog = true
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Red600),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Reject / Changes", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                Button(
+                                    onClick = {
+                                        reviewApprovalMode = true
+                                        reviewNotesText = "Approved after review."
+                                        showReviewDialog = true
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Approve (स्वीकृत)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
 
-                        if (isAdmin || isEditable || onEditClick != null || onUpdateAnswers != null) {
-                            Button(
-                                onClick = {
-                                    if (onEditClick != null) {
-                                        onDismiss()
-                                        onEditClick()
-                                    } else if (onUpdateAnswers != null) {
-                                        showEditDialog = true
-                                    }
-                                },
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = onDismiss,
                                 shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
-                                modifier = Modifier.weight(1.3f)
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Edit Visit (संशोधन करें)", fontWeight = FontWeight.Bold)
+                                Text("Close (बंद करें)", fontWeight = FontWeight.SemiBold)
+                            }
+
+                            if (isAdmin || isEditable || onEditClick != null || onUpdateAnswers != null) {
+                                Button(
+                                    onClick = {
+                                        if (onEditClick != null) {
+                                            onDismiss()
+                                            onEditClick()
+                                        } else if (onUpdateAnswers != null) {
+                                            showEditDialog = true
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
+                                    modifier = Modifier.weight(1.3f)
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Edit Visit (संशोधन करें)", fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
@@ -624,6 +773,82 @@ fun VisitDetailDialog(
                 currentAnswers = updated
                 onUpdateAnswers(updated)
                 showEditDialog = false
+            }
+        )
+    }
+
+    // Admin Review / Approval Confirmation Dialog
+    if (showReviewDialog && onReviewVisit != null) {
+        AlertDialog(
+            onDismissRequest = { showReviewDialog = false },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = Color.White,
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        if (reviewApprovalMode) Icons.Default.CheckCircle else Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = if (reviewApprovalMode) Emerald600 else Red600
+                    )
+                    Text(
+                        text = if (reviewApprovalMode) "Approve Visit Report" else "Request Changes / Reject",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Navy900
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = if (reviewApprovalMode)
+                            "Are you sure you want to approve this visit report? It will be marked as REVIEWED in the audit trail."
+                        else
+                            "Please specify what changes or corrections are needed by the field officer:",
+                        fontSize = 13.sp,
+                        color = Slate700
+                    )
+                    OutlinedTextField(
+                        value = reviewNotesText,
+                        onValueChange = { reviewNotesText = it },
+                        label = { Text(if (reviewApprovalMode) "Review Notes (Optional)" else "Correction Instructions / Reason (Required)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3,
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val notes = reviewNotesText.trim()
+                        if (!reviewApprovalMode && notes.isBlank()) {
+                            return@Button
+                        }
+                        showReviewDialog = false
+                        onReviewVisit(reviewApprovalMode, notes)
+                    },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (reviewApprovalMode) Emerald600 else Red600
+                    )
+                ) {
+                    Text(if (reviewApprovalMode) "Confirm Approval" else "Submit Rejection", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showReviewDialog = false },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Cancel")
+                }
             }
         )
     }

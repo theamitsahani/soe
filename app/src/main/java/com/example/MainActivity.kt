@@ -73,20 +73,6 @@ class MainActivity : ComponentActivity() {
         FirebaseUtils.initialize(applicationContext)
         AppNotificationHelper.createNotificationChannel(applicationContext)
 
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            if (androidx.core.content.ContextCompat.checkSelfPermission(
-                    this,
-                    android.Manifest.permission.POST_NOTIFICATIONS
-                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-            ) {
-                androidx.core.app.ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
-                    1001
-                )
-            }
-        }
-
         authRepository = AuthRepository(applicationContext)
         schoolRepository = SchoolRepository(applicationContext)
         visitRepository = VisitRepository(applicationContext)
@@ -123,6 +109,7 @@ class MainActivity : ComponentActivity() {
 
                     LaunchedEffect(currentUser) {
                         if (currentUser != null) {
+                            requestNotificationPermissionIfNecessary()
                             val rId = if (currentUser?.role == UserRole.ADMIN) "ADMIN" else (currentUser?.userId ?: "")
                             notificationRepository.syncNotificationsFromFirestore(rId)
                         }
@@ -376,6 +363,16 @@ class MainActivity : ComponentActivity() {
                                                         scope.launch {
                                                             visitRepository.deletePhotoFromVisit(visitId, categoryId, photoUrl)
                                                         }
+                                                    },
+                                                    onReviewVisit = { visitId, isApproved, notes ->
+                                                        scope.launch {
+                                                            visitRepository.reviewVisit(
+                                                                visitId = visitId,
+                                                                adminUser = state.adminUser,
+                                                                isApproved = isApproved,
+                                                                reviewNotes = notes
+                                                            )
+                                                        }
                                                     }
                                                 )
                                             }
@@ -498,6 +495,22 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private fun requestNotificationPermissionIfNecessary() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                androidx.core.app.ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                    1001
+                )
             }
         }
     }

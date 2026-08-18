@@ -92,10 +92,24 @@ class SyncManager private constructor(private val context: Context) {
                 obj.put("state", v.state)
                 obj.put("district", v.district)
                 obj.put("block", v.block)
+                obj.put("villageName", v.villageName)
+                obj.put("schoolType", v.schoolType)
+                obj.put("udiseCode", v.udiseCode)
+                obj.put("principalName", v.principalName)
+                obj.put("principalMobile", v.principalMobile)
                 obj.put("visitDate", v.visitDate)
+                obj.put("status", v.status.name)
                 obj.put("answersJson", v.answersJson)
                 obj.put("photosJson", v.photosJson)
+                obj.put("startedAt", v.startedAt ?: 0L)
+                obj.put("completedAt", v.completedAt ?: 0L)
+                obj.put("submittedAt", v.submittedAt ?: 0L)
+                obj.put("reviewedAt", v.reviewedAt ?: 0L)
+                obj.put("reviewedBy", v.reviewedBy)
+                obj.put("reviewNotes", v.reviewNotes)
+                obj.put("rejectionReason", v.rejectionReason)
                 obj.put("editCount", v.editCount)
+                obj.put("appVersion", v.appVersion)
                 obj.put("createdAt", v.createdAt)
                 obj.put("updatedAt", v.updatedAt)
                 arr.put(obj)
@@ -122,6 +136,8 @@ class SyncManager private constructor(private val context: Context) {
                 if (visitId.isBlank()) continue
                 val existing = db.visitDao().getVisitById(visitId)
                 if (existing != null) continue
+                val statusStr = obj.optString("status", com.example.data.model.VisitStatus.SUBMITTED.name)
+                val status = try { com.example.data.model.VisitStatus.valueOf(statusStr) } catch (_: Exception) { com.example.data.model.VisitStatus.SUBMITTED }
                 val restored = Visit(
                     visitId = visitId,
                     taskId = obj.optString("taskId", ""),
@@ -132,10 +148,23 @@ class SyncManager private constructor(private val context: Context) {
                     state = obj.optString("state", "Rajasthan"),
                     district = obj.optString("district", ""),
                     block = obj.optString("block", ""),
+                    villageName = obj.optString("villageName", ""),
+                    schoolType = obj.optString("schoolType", ""),
+                    udiseCode = obj.optString("udiseCode", ""),
+                    principalName = obj.optString("principalName", ""),
+                    principalMobile = obj.optString("principalMobile", ""),
                     visitDate = obj.optString("visitDate", ""),
-                    status = com.example.data.model.VisitStatus.SUBMITTED,
-                    answersJson = obj.optString("answersJson", ""),
-                    photosJson = obj.optString("photosJson", ""),
+                    status = status,
+                    answersJson = obj.optString("answersJson", "{}"),
+                    photosJson = obj.optString("photosJson", "{}"),
+                    startedAt = obj.optLong("startedAt").takeIf { it > 0 },
+                    completedAt = obj.optLong("completedAt").takeIf { it > 0 },
+                    submittedAt = obj.optLong("submittedAt").takeIf { it > 0 },
+                    reviewedAt = obj.optLong("reviewedAt").takeIf { it > 0 },
+                    reviewedBy = obj.optString("reviewedBy", ""),
+                    reviewNotes = obj.optString("reviewNotes", ""),
+                    rejectionReason = obj.optString("rejectionReason", ""),
+                    appVersion = obj.optString("appVersion", "1.0.0"),
                     editCount = obj.optInt("editCount", 0),
                     syncStatus = SyncStatus.PENDING,
                     createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
@@ -331,12 +360,26 @@ class SyncManager private constructor(private val context: Context) {
                     "employeeId" to visit.employeeId,
                     "employeeName" to visit.employeeName,
                     "schoolName" to visit.schoolName,
+                    "state" to visit.state,
                     "district" to visit.district,
                     "block" to visit.block,
+                    "villageName" to visit.villageName,
+                    "schoolType" to visit.schoolType,
+                    "udiseCode" to visit.udiseCode,
+                    "principalName" to visit.principalName,
+                    "principalMobile" to visit.principalMobile,
                     "visitDate" to visit.visitDate,
                     "status" to visit.status.name,
                     "answersJson" to visit.answersJson,
                     "photosJson" to updatedPhotosJson,
+                    "startedAt" to (visit.startedAt ?: 0L),
+                    "completedAt" to (visit.completedAt ?: 0L),
+                    "submittedAt" to (visit.submittedAt ?: 0L),
+                    "reviewedAt" to (visit.reviewedAt ?: 0L),
+                    "reviewedBy" to visit.reviewedBy,
+                    "reviewNotes" to visit.reviewNotes,
+                    "rejectionReason" to visit.rejectionReason,
+                    "appVersion" to visit.appVersion,
                     "syncStatus" to finalSyncStatus.name,
                     "editCount" to visit.editCount,
                     "createdAt" to visit.createdAt,

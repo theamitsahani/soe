@@ -972,7 +972,11 @@ fun AllAssignedTasksDialog(
                     } else {
                         items(filteredTasks) { task ->
                             val matchedVisit = remember(task, visits) {
-                                visits.find { it.schoolId == task.schoolId || it.schoolName == task.schoolName }
+                                visits.find { 
+                                    (task.visitId.isNotBlank() && it.visitId == task.visitId) ||
+                                    (task.taskId.isNotBlank() && it.taskId == task.taskId) ||
+                                    (it.schoolId == task.schoolId && it.employeeId == task.employeeId)
+                                } ?: visits.find { it.schoolId == task.schoolId }
                             }
 
                             Card(

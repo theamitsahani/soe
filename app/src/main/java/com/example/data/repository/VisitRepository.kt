@@ -2,23 +2,27 @@ package com.example.data.repository
 
 import android.content.Context
 import com.example.data.local.AppDatabase
+import com.example.data.model.School
 import com.example.data.model.SyncStatus
+import com.example.data.model.Task
+import com.example.data.model.User
+import com.example.data.model.UserRole
 import com.example.data.model.Visit
+import com.example.data.model.VisitEvent
 import com.example.data.model.VisitStatus
 import com.example.util.FirebaseUtils
 import com.example.util.SyncManager
+import com.example.util.ValidationResult
+import com.example.util.VisitValidator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 class VisitRepository(private val context: Context) {
 
     private val db = AppDatabase.getDatabase(context)
     private val firestore get() = FirebaseUtils.firestore
-    // BUG FIX: was `SyncManager(context)` which created a *second*, independent SyncManager
-    // instance separate from the one MainActivity observes for isOnline/pendingSyncCount/
-    // isSyncing. That desynced the UI badges from the real upload state and ran duplicate
-    // network listeners. Now uses the shared app-wide singleton instead.
     private val syncManager = SyncManager.getInstance(context)
 
     fun getAllVisits(): Flow<List<Visit>> = db.visitDao().getAllVisits()
@@ -35,7 +39,196 @@ class VisitRepository(private val context: Context) {
         db.visitDao().getVisitById(visitId)
     }
 
-    suspend fun syncVisitsFromFirestore(role: com.example.data.model.UserRole? = null, userId: String? = null): Result<Int> = withContext(Dispatchers.IO) {
+    fun getVisitEvents(visitId: String): Flow<List<VisitEvent>> = db.visitEventDao().getEventsForVisit(visitId)
+
+    suspend fun getVisitEventsList(visitId: String): List<VisitEvent> = withContext(Dispatchers.IO) {
+        db.visitEventDao().getEventsListForVisit(visitId)
+    }
+
+    /**
+     * Records a permanent audit event locally and syncs to Firestore.
+     */
+    suspend fun recordEvent(
+        visitId: String,
+        taskId: String = "",
+        eventType: String,
+        actorId: String = "",
+        actorName: String = "",
+        actorRole: String = "",
+        statusFrom: String = "",
+        statusTo: String = "",
+        details: String = ""
+    ) = withContext(Dispatchers.IO) {
+        try {
+            val now = System.currentTimeMillis()
+            val eventId = "evt_${now}_${UUID.randomUUID().toString().take(6)}"
+            val event = VisitEvent(
+                eventId = eventId,
+                visitId = visitId,
+                taskId = taskId,
+                eventType = eventType,
+                actorId = actorId,
+                actorName = actorName,
+                actorRole = actorRole,
+                statusFrom = statusFrom,
+                statusTo = statusTo,
+                details = details,
+                timestamp = now,
+                syncStatus = if (syncManager.isNetworkAvailable()) SyncStatus.SYNCED else SyncStatus.PENDING
+            )
+            db.visitEventDao().insertEvent(event)
+
+            val fStore = firestore
+            if (fStore != null && syncManager.isNetworkAvailable() && visitId.isNotBlank()) {
+                try {
+                    val eventMap = hashMapOf(
+                        "eventId" to event.eventId,
+                        "visitId" to event.visitId,
+                        "taskId" to event.taskId,
+                        "eventType" to event.eventType,
+                        "actorId" to event.actorId,
+                        "actorName" to event.actorName,
+                        "actorRole" to event.actorRole,
+                        "statusFrom" to event.statusFrom,
+                        "statusTo" to event.statusTo,
+                        "details" to event.details,
+                        "timestamp" to event.timestamp
+                    )
+                    fStore.collection("visits")
+                        .document(visitId)
+                        .collection("events")
+                        .document(eventId)
+                        .set(eventMap)
+                } catch (e: Exception) {
+                    android.util.Log.w("VisitRepository", "Notice saving audit event to Firestore: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("VisitRepository", "Error recording audit event: ${e.message}")
+        }
+    }
+
+    /**
+     * Starts a visit session idempotently for a task/school and captures the initial historical snapshot.
+     */
+    suspend fun startVisit(
+        task: Task?,
+        school: School?,
+        employee: User
+    ): Result<Visit> = withContext(Dispatchers.IO) {
+        try {
+            val schoolId = task?.schoolId ?: school?.schoolId ?: return@withContext Result.failure(Exception("School ID is required"))
+            val validation = VisitValidator.validateStartVisit(schoolId, employee.userId)
+            if (validation is ValidationResult.Error) {
+                return@withContext Result.failure(Exception(validation.message))
+            }
+
+            // Check if an existing visit session already exists for this task/employee/school
+            val existing = if (!task?.visitId.isNullOrBlank()) {
+                db.visitDao().getVisitById(task!!.visitId)
+            } else if (task != null) {
+                db.visitDao().getAllVisitsList().find { it.taskId == task.taskId }
+            } else {
+                db.visitDao().getAllVisitsList().find {
+                    it.schoolId == schoolId && it.employeeId == employee.userId &&
+                            (it.status == VisitStatus.STARTED || it.status == VisitStatus.IN_PROGRESS || it.status == VisitStatus.ASSIGNED)
+                }
+            }
+
+            if (existing != null) {
+                return@withContext Result.success(existing)
+            }
+
+            val now = System.currentTimeMillis()
+            val visitId = if (!task?.visitId.isNullOrBlank()) task!!.visitId
+            else if (task != null) "vst_${task.taskId}_${employee.userId}"
+            else "vst_${schoolId}_${now}"
+
+            val initialVisit = Visit(
+                visitId = visitId,
+                taskId = task?.taskId ?: "",
+                schoolId = schoolId,
+                employeeId = employee.userId,
+                employeeName = employee.name,
+                schoolName = school?.schoolName ?: task?.schoolName ?: "",
+                state = school?.stateName ?: task?.state ?: "Rajasthan",
+                district = school?.districtName ?: task?.district ?: "",
+                block = school?.blockName ?: task?.block ?: "",
+                villageName = school?.villageName ?: task?.villageName ?: "",
+                schoolType = school?.schoolType ?: task?.schoolType ?: "Government School",
+                udiseCode = school?.referenceCode ?: "",
+                principalName = school?.principalName ?: task?.principalName ?: "",
+                principalMobile = school?.principalMobile ?: task?.principalMobile ?: school?.mobile ?: "",
+                visitDate = task?.visitDate ?: "",
+                status = VisitStatus.STARTED,
+                startedAt = now,
+                syncStatus = SyncStatus.PENDING,
+                createdAt = now,
+                updatedAt = now
+            )
+
+            db.visitDao().insertVisit(initialVisit)
+
+            if (task != null) {
+                db.taskDao().updateTask(task.copy(status = VisitStatus.STARTED, visitId = visitId))
+            }
+
+            recordEvent(
+                visitId = visitId,
+                taskId = initialVisit.taskId,
+                eventType = "STARTED",
+                actorId = employee.userId,
+                actorName = employee.name,
+                actorRole = "EMPLOYEE",
+                statusFrom = "ASSIGNED",
+                statusTo = "STARTED",
+                details = "Inspection started at ${initialVisit.schoolName}"
+            )
+
+            Result.success(initialVisit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Saves draft form answers and photos in the background without submitting.
+     */
+    suspend fun saveDraftVisit(
+        visit: Visit,
+        answersJson: String,
+        photosJson: String
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val now = System.currentTimeMillis()
+            val updated = visit.copy(
+                status = VisitStatus.IN_PROGRESS,
+                answersJson = answersJson,
+                photosJson = photosJson,
+                syncStatus = SyncStatus.PENDING,
+                updatedAt = now
+            )
+            db.visitDao().updateVisit(updated)
+
+            recordEvent(
+                visitId = visit.visitId,
+                taskId = visit.taskId,
+                eventType = "AUTOSAVE",
+                actorId = visit.employeeId,
+                actorName = visit.employeeName,
+                actorRole = "EMPLOYEE",
+                statusFrom = visit.status.name,
+                statusTo = VisitStatus.IN_PROGRESS.name,
+                details = "Form draft auto-saved locally"
+            )
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun syncVisitsFromFirestore(role: UserRole? = null, userId: String? = null): Result<Int> = withContext(Dispatchers.IO) {
         try {
             val fAuth = FirebaseUtils.auth
             val currentFbUser = fAuth?.currentUser
@@ -43,7 +236,7 @@ class VisitRepository(private val context: Context) {
 
             val fStore = firestore ?: return@withContext Result.failure(Exception("Firestore not initialized"))
 
-            var isEmployee = (role == com.example.data.model.UserRole.EMPLOYEE)
+            var isEmployee = (role == UserRole.EMPLOYEE)
 
             if (role == null && currentUid.isNotBlank()) {
                 try {
@@ -83,12 +276,28 @@ class VisitRepository(private val context: Context) {
                     employeeId = employeeId,
                     employeeName = doc.getString("employeeName") ?: "",
                     schoolName = schoolName,
+                    state = doc.getString("state") ?: "Rajasthan",
                     district = doc.getString("district") ?: "",
                     block = doc.getString("block") ?: "",
+                    villageName = doc.getString("villageName") ?: "",
+                    schoolType = doc.getString("schoolType") ?: "",
+                    udiseCode = doc.getString("udiseCode") ?: "",
+                    principalName = doc.getString("principalName") ?: "",
+                    principalMobile = doc.getString("principalMobile") ?: "",
                     visitDate = doc.getString("visitDate") ?: "",
                     status = status,
                     answersJson = doc.getString("answersJson") ?: "{}",
                     photosJson = doc.getString("photosJson") ?: "{}",
+                    startedAt = doc.getLong("startedAt"),
+                    completedAt = doc.getLong("completedAt"),
+                    submittedAt = doc.getLong("submittedAt"),
+                    reviewedAt = doc.getLong("reviewedAt"),
+                    reviewedBy = doc.getString("reviewedBy") ?: "",
+                    reviewNotes = doc.getString("reviewNotes") ?: "",
+                    rejectionReason = doc.getString("rejectionReason") ?: "",
+                    latitude = doc.getDouble("latitude"),
+                    longitude = doc.getDouble("longitude"),
+                    appVersion = doc.getString("appVersion") ?: "1.0.0",
                     editCount = (doc.getLong("editCount") ?: 0L).toInt(),
                     syncStatus = SyncStatus.SYNCED,
                     createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis(),
@@ -96,15 +305,6 @@ class VisitRepository(private val context: Context) {
                 )
             }
 
-            // Group visits to remove true duplicates created by multiple/double-tap submissions.
-            // BUG FIX: this used to key ONLY by "schoolId_employeeId". That silently deleted
-            // legitimate separate visits — e.g. the same employee visiting the same school on
-            // two different dates/tasks — because they'd collapse into "one duplicate group"
-            // and every visit except the latest was PERMANENTLY DELETED from Firestore + Room.
-            // This was the main cause of visit reports randomly disappearing / one panel
-            // showing fewer visits than another. A real accidental duplicate is the same task
-            // submitted twice, so the key must include taskId (or visitDate as a fallback when
-            // taskId is missing) to avoid merging genuinely different visits.
             val cleanVisits = mutableListOf<Visit>()
             val groupedBySchoolEmp = rawVisits.groupBy {
                 if (it.taskId.isNotBlank()) "task_${it.taskId}"
@@ -115,11 +315,9 @@ class VisitRepository(private val context: Context) {
                 if (group.size == 1) {
                     cleanVisits.add(group.first())
                 } else {
-                    // Pick the most recent visit
                     val winner = group.maxByOrNull { it.updatedAt } ?: group.first()
                     cleanVisits.add(winner)
 
-                    // Clean up extra duplicate documents from Firestore and local DB
                     for (duplicate in group) {
                         if (duplicate.visitId != winner.visitId) {
                             try {
@@ -136,20 +334,11 @@ class VisitRepository(private val context: Context) {
             if (cleanVisits.isNotEmpty()) {
                 db.visitDao().insertVisits(cleanVisits)
 
-                // CRITICAL BUG FIX: this used to run
-                //   db.visitDao().deleteVisitsNotIn(cleanVisits.map { it.visitId })
-                // which deletes EVERY local visit whose id isn't in the just-fetched remote
-                // set. That includes visits saved locally while offline (syncStatus = PENDING)
-                // that haven't reached Firestore yet — the moment this pull ran (tab switch,
-                // login, network-back callback, etc.) before the pending upload finished, the
-                // employee's not-yet-synced report was permanently wiped from the device with
-                // no way to recover it. A remote pull must never delete data the server hasn't
-                // seen yet. Now local PENDING/FAILED (not-yet-synced) visits are always kept,
-                // no matter what the server returned.
                 val stillUnsyncedLocalIds = db.visitDao().getVisitsBySyncStatus(SyncStatus.PENDING).map { it.visitId } +
                         db.visitDao().getVisitsBySyncStatus(SyncStatus.FAILED).map { it.visitId }
                 val idsToKeep = (cleanVisits.map { it.visitId } + stillUnsyncedLocalIds).distinct()
                 db.visitDao().deleteVisitsNotIn(idsToKeep)
+
                 for (v in cleanVisits) {
                     if (v.status == VisitStatus.SUBMITTED || v.status == VisitStatus.REVIEWED) {
                         if (v.taskId.isNotBlank()) {
@@ -160,10 +349,6 @@ class VisitRepository(private val context: Context) {
                     }
                 }
             } else {
-                // BUG FIX: same data-loss issue as above — deleteAllVisits()/deleteVisitsForEmployee()
-                // would also wipe local PENDING/FAILED (not-yet-synced) visits whenever the
-                // remote query legitimately returned zero results. Only clear out already-SYNCED
-                // local rows so unsynced offline work is never lost.
                 if (!isEmployee) {
                     db.visitDao().deleteAllSyncedVisits()
                 } else if (currentUid.isNotBlank()) {
@@ -183,8 +368,8 @@ class VisitRepository(private val context: Context) {
         try {
             val isOnline = syncManager.isNetworkAvailable()
             val initialSyncStatus = SyncStatus.PENDING
+            val now = System.currentTimeMillis()
 
-            // If taskId is blank, attempt to resolve matching active task
             var resolvedTaskId = visit.taskId
             if (resolvedTaskId.isBlank()) {
                 val activeTask = db.taskDao().getActiveTask(visit.employeeId, visit.schoolId, visit.visitDate)
@@ -196,29 +381,41 @@ class VisitRepository(private val context: Context) {
             val finalVisit = visit.copy(
                 taskId = resolvedTaskId,
                 status = VisitStatus.SUBMITTED,
+                completedAt = visit.completedAt ?: now,
+                submittedAt = visit.submittedAt ?: now,
                 syncStatus = initialSyncStatus,
-                updatedAt = System.currentTimeMillis()
+                updatedAt = now
             )
 
             // Step 1: Save to Room DB locally first (ensures 100% offline durability)
             db.visitDao().insertVisit(finalVisit)
-            
-            // Mark school as completed locally
+
             if (finalVisit.schoolId.isNotBlank()) {
                 db.schoolDao().updateSchoolVisitDate(finalVisit.schoolId, finalVisit.visitDate)
             }
-            
-            // Step 2: Mark ONLY the exact assigned task as SUBMITTED
+
             if (finalVisit.taskId.isNotBlank()) {
                 db.taskDao().markTaskSubmittedById(finalVisit.taskId, finalVisit.visitId)
             } else {
                 db.taskDao().markTaskSubmittedByVisitId(finalVisit.visitId)
             }
 
+            // Step 2: Record audit event for SUBMITTED
+            recordEvent(
+                visitId = finalVisit.visitId,
+                taskId = finalVisit.taskId,
+                eventType = "SUBMITTED",
+                actorId = finalVisit.employeeId,
+                actorName = finalVisit.employeeName,
+                actorRole = "EMPLOYEE",
+                statusFrom = visit.status.name,
+                statusTo = VisitStatus.SUBMITTED.name,
+                details = "Inspection report submitted by ${finalVisit.employeeName}"
+            )
+
             val fStore = firestore
             if (fStore != null && isOnline) {
                 try {
-                    // Update school in Firestore as completed
                     if (finalVisit.schoolId.isNotBlank()) {
                         fStore.collection("schools").document(finalVisit.schoolId).set(
                             mapOf(
@@ -232,7 +429,6 @@ class VisitRepository(private val context: Context) {
                         )
                     }
 
-                    // Update exact task in Firestore
                     if (finalVisit.taskId.isNotBlank()) {
                         fStore.collection("tasks").document(finalVisit.taskId).update(
                             mapOf(
@@ -260,15 +456,22 @@ class VisitRepository(private val context: Context) {
                 val uploaded = syncManager.uploadSingleVisitToServer(finalVisit)
                 if (uploaded) {
                     db.visitDao().updateVisit(finalVisit.copy(syncStatus = SyncStatus.SYNCED))
+                    recordEvent(
+                        visitId = finalVisit.visitId,
+                        taskId = finalVisit.taskId,
+                        eventType = "SYNCED",
+                        actorId = finalVisit.employeeId,
+                        actorName = finalVisit.employeeName,
+                        actorRole = "EMPLOYEE",
+                        details = "All inspection data and media uploaded to cloud"
+                    )
                 } else {
-                    // Stays PENDING; SyncManager auto-sync will upload as soon as network stabilizes
                     db.visitDao().updateVisit(finalVisit.copy(syncStatus = SyncStatus.PENDING))
                 }
             }
 
             syncManager.checkPendingCount()
 
-            // Trigger notification for Admin on report submission
             try {
                 NotificationRepository(
                     db.appNotificationDao(),
@@ -290,7 +493,6 @@ class VisitRepository(private val context: Context) {
             Result.success(Unit)
         } catch (e: Exception) {
             e.printStackTrace()
-            // Even on unexpected exception, try local save fallback
             try {
                 db.visitDao().insertVisit(visit.copy(status = VisitStatus.SUBMITTED, syncStatus = SyncStatus.PENDING, updatedAt = System.currentTimeMillis()))
                 syncManager.checkPendingCount()
@@ -298,6 +500,98 @@ class VisitRepository(private val context: Context) {
             } catch (fallbackError: Exception) {
                 Result.failure(fallbackError)
             }
+        }
+    }
+
+    /**
+     * Admin review action: Marks report as REVIEWED or REJECTED with notes.
+     */
+    suspend fun reviewVisit(
+        visitId: String,
+        adminUser: User,
+        isApproved: Boolean,
+        reviewNotes: String
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val existing = db.visitDao().getVisitById(visitId) ?: return@withContext Result.failure(Exception("Visit record not found"))
+            val now = System.currentTimeMillis()
+            val newStatus = if (isApproved) VisitStatus.REVIEWED else VisitStatus.REJECTED
+
+            val updated = existing.copy(
+                status = newStatus,
+                reviewedAt = now,
+                reviewedBy = adminUser.name.ifBlank { adminUser.email },
+                reviewNotes = reviewNotes,
+                rejectionReason = if (!isApproved) reviewNotes else "",
+                updatedAt = now
+            )
+            db.visitDao().updateVisit(updated)
+
+            if (updated.taskId.isNotBlank()) {
+                db.taskDao().updateTaskStatus(updated.taskId, newStatus)
+            }
+
+            recordEvent(
+                visitId = visitId,
+                taskId = updated.taskId,
+                eventType = if (isApproved) "REVIEWED" else "REJECTED",
+                actorId = adminUser.userId,
+                actorName = adminUser.name,
+                actorRole = "ADMIN",
+                statusFrom = existing.status.name,
+                statusTo = newStatus.name,
+                details = reviewNotes.ifBlank { if (isApproved) "Report approved by Admin" else "Report rejected by Admin" }
+            )
+
+            val fStore = firestore
+            if (fStore != null && syncManager.isNetworkAvailable()) {
+                try {
+                    val updateMap = hashMapOf<String, Any>(
+                        "status" to newStatus.name,
+                        "reviewedAt" to now,
+                        "reviewedBy" to updated.reviewedBy,
+                        "reviewNotes" to reviewNotes,
+                        "updatedAt" to now
+                    )
+                    if (!isApproved) {
+                        updateMap["rejectionReason"] = reviewNotes
+                    }
+                    fStore.collection("visits").document(visitId).update(updateMap)
+
+                    if (updated.taskId.isNotBlank()) {
+                        fStore.collection("tasks").document(updated.taskId).update(
+                            mapOf("status" to newStatus.name, "updatedAt" to now)
+                        )
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("VisitRepository", "Notice updating review in Firestore: ${e.message}")
+                }
+            }
+
+            // Notify employee if report was reviewed/rejected
+            if (existing.employeeId.isNotBlank()) {
+                try {
+                    NotificationRepository(
+                        db.appNotificationDao(),
+                        firestore ?: com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    ).createAndSendNotification(
+                        context = context,
+                        recipientUserId = existing.employeeId,
+                        title = if (isApproved) "Report Reviewed (रिपोर्ट जाँची गई)" else "Report Needs Attention (संशोधन आवश्यक)",
+                        message = if (isApproved) "Your visit report for ${existing.schoolName} has been approved." else "Feedback: $reviewNotes",
+                        type = if (isApproved) "REPORT_REVIEWED" else "REPORT_REJECTED",
+                        relatedId = visitId,
+                        schoolName = existing.schoolName,
+                        employeeName = existing.employeeName
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.w("VisitRepository", "Notice sending review alert: ${e.message}")
+                }
+            }
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
@@ -339,7 +633,7 @@ class VisitRepository(private val context: Context) {
             val mapType = com.squareup.moshi.Types.newParameterizedType(Map::class.java, String::class.java, List::class.java)
             val adapter = moshi.adapter<Map<String, List<String>>>(mapType)
             val currentMap = try { adapter.fromJson(existing.photosJson) ?: emptyMap() } catch (e: Exception) { emptyMap() }
-            
+
             val updatedMap = currentMap.toMutableMap()
             val currentList = updatedMap[categoryId]?.toMutableList() ?: mutableListOf()
             currentList.remove(photoUrl)
@@ -348,13 +642,21 @@ class VisitRepository(private val context: Context) {
             } else {
                 updatedMap[categoryId] = currentList
             }
-            
+
             val updatedPhotosJson = adapter.toJson(updatedMap)
             val updatedVisit = existing.copy(
                 photosJson = updatedPhotosJson,
                 updatedAt = System.currentTimeMillis()
             )
             db.visitDao().updateVisit(updatedVisit)
+
+            recordEvent(
+                visitId = visitId,
+                taskId = existing.taskId,
+                eventType = "PHOTO_DELETED",
+                actorId = existing.employeeId,
+                details = "Photo removed from category: $categoryId"
+            )
 
             val fStore = firestore
             if (fStore != null && syncManager.isNetworkAvailable()) {
@@ -402,6 +704,7 @@ class VisitRepository(private val context: Context) {
                         val task = fStore.collection("visits").document(visit.visitId).set(
                             mapOf(
                                 "visitId" to updated.visitId,
+                                "taskId" to updated.taskId,
                                 "schoolId" to updated.schoolId,
                                 "employeeId" to updated.employeeId,
                                 "employeeName" to updated.employeeName,
@@ -409,10 +712,22 @@ class VisitRepository(private val context: Context) {
                                 "state" to updated.state,
                                 "district" to updated.district,
                                 "block" to updated.block,
+                                "villageName" to updated.villageName,
+                                "schoolType" to updated.schoolType,
+                                "udiseCode" to updated.udiseCode,
+                                "principalName" to updated.principalName,
+                                "principalMobile" to updated.principalMobile,
                                 "visitDate" to updated.visitDate,
                                 "status" to updated.status.name,
                                 "answersJson" to updated.answersJson,
                                 "photosJson" to updated.photosJson,
+                                "startedAt" to (updated.startedAt ?: 0L),
+                                "completedAt" to (updated.completedAt ?: 0L),
+                                "submittedAt" to (updated.submittedAt ?: 0L),
+                                "reviewedAt" to (updated.reviewedAt ?: 0L),
+                                "reviewedBy" to updated.reviewedBy,
+                                "reviewNotes" to updated.reviewNotes,
+                                "rejectionReason" to updated.rejectionReason,
                                 "syncStatus" to updated.syncStatus.name,
                                 "updatedAt" to updated.updatedAt
                             ),

@@ -516,10 +516,12 @@ fun VisitFormScreen(
                                     val photosAdapter = moshi.adapter<Map<String, List<String>>>(mapType)
 
                                     val schoolId = existingVisit?.schoolId ?: task?.schoolId ?: initialSchool?.schoolId ?: ("sch_" + UUID.randomUUID().toString().take(8))
-                                    val visitId = existingVisit?.visitId ?: task?.visitId?.takeIf { it.isNotBlank() } ?: "vst_${schoolId}_${employeeUser.userId}"
+                                    val now = System.currentTimeMillis()
+                                    val visitId = existingVisit?.visitId ?: task?.visitId?.takeIf { it.isNotBlank() } ?: if (task != null) "vst_${task.taskId}_${employeeUser.userId}" else "vst_${schoolId}_$now"
 
                                     val finalVisit = Visit(
                                         visitId = visitId,
+                                        taskId = existingVisit?.taskId ?: task?.taskId ?: "",
                                         schoolId = schoolId,
                                         employeeId = employeeUser.userId,
                                         employeeName = employeeUser.name,
@@ -527,13 +529,22 @@ fun VisitFormScreen(
                                         state = stateName,
                                         district = district,
                                         block = block,
+                                        villageName = existingVisit?.villageName ?: task?.villageName ?: initialSchool?.villageName ?: "",
+                                        schoolType = existingVisit?.schoolType ?: task?.schoolType ?: initialSchool?.schoolType ?: "Government School",
+                                        udiseCode = udiseCode,
+                                        principalName = principalName,
+                                        principalMobile = principalMobile,
                                         visitDate = visitDate,
                                         status = VisitStatus.SUBMITTED,
                                         answersJson = answersAdapter.toJson(answers),
                                         photosJson = photosAdapter.toJson(photoMap.mapValues { it.value.toList() }),
+                                        startedAt = existingVisit?.startedAt ?: (now - 15 * 60 * 1000L),
+                                        completedAt = now,
+                                        submittedAt = now,
+                                        appVersion = "1.0.0",
                                         editCount = if (existingVisit != null) existingVisit.editCount + 1 else 0,
-                                        createdAt = existingVisit?.createdAt ?: System.currentTimeMillis(),
-                                        updatedAt = System.currentTimeMillis()
+                                        createdAt = existingVisit?.createdAt ?: now,
+                                        updatedAt = now
                                     )
 
                                     onSubmitVisit(finalVisit) { res ->

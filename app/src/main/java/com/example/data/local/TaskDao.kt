@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.example.data.model.Task
+import com.example.data.model.VisitStatus
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -33,6 +34,9 @@ interface TaskDao {
 
     @Update
     suspend fun updateTask(task: Task)
+
+    @Query("UPDATE tasks SET status = :status WHERE taskId = :taskId")
+    suspend fun updateTaskStatus(taskId: String, status: VisitStatus)
 
     @Query("DELETE FROM tasks WHERE taskId = :taskId")
     suspend fun deleteTask(taskId: String)
