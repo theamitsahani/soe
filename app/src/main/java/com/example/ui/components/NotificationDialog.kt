@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,7 +29,7 @@ import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -38,7 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -47,19 +48,18 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.AppNotification
 import com.example.ui.theme.Emerald600
-import com.example.ui.theme.GlassBorder
-import com.example.ui.theme.GlassBorderSubtle
-import com.example.ui.theme.GlassSurfaceElevated
+import com.example.ui.theme.GlassBorderDark
+import com.example.ui.theme.GlassBorderLight
+import com.example.ui.theme.GlassIndigoGradient
 import com.example.ui.theme.GlassSurfaceLight
+import com.example.ui.theme.Indigo50
 import com.example.ui.theme.Indigo600
 import com.example.ui.theme.Navy900
-import com.example.ui.theme.PrimaryGradient
-import com.example.ui.theme.Red600
+import com.example.ui.theme.Red500
 import com.example.ui.theme.Slate200
 import com.example.ui.theme.Slate400
 import com.example.ui.theme.Slate500
 import com.example.ui.theme.Slate700
-import com.example.ui.theme.Slate900
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -78,7 +78,7 @@ fun NotificationBellIcon(
             badge = {
                 if (unreadCount > 0) {
                     Badge(
-                        containerColor = Red600,
+                        containerColor = Red500,
                         contentColor = Color.White
                     ) {
                         Text(
@@ -93,7 +93,7 @@ fun NotificationBellIcon(
             Icon(
                 imageVector = Icons.Default.Notifications,
                 contentDescription = "Notifications",
-                tint = Slate700,
+                tint = Navy900,
                 modifier = Modifier.size(24.dp)
             )
         }
@@ -115,39 +115,41 @@ fun NotificationDialog(
     ) {
         Surface(
             modifier = Modifier
-                .fillMaxWidth(0.94f)
+                .fillMaxWidth(0.92f)
                 .fillMaxHeight(0.85f)
-                .clip(RoundedCornerShape(22.dp)),
-            color = Color.White,
-            border = BorderStroke(1.dp, GlassBorder),
-            shadowElevation = 12.dp
+                .shadow(elevation = 20.dp, shape = RoundedCornerShape(24.dp))
+                .clip(RoundedCornerShape(24.dp))
+                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.8f)), RoundedCornerShape(24.dp)),
+            color = Color(0xFFF8FAFC),
+            shape = RoundedCornerShape(24.dp)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Frosted Liquid Header
-                Surface(
-                    color = Color(0xFF0F172A),
-                    modifier = Modifier.fillMaxWidth()
+                // Header with glowing gradient
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(GlassIndigoGradient)
+                        .padding(horizontal = 18.dp, vertical = 16.dp)
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
-                                    .size(38.dp)
+                                    .size(40.dp)
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(PrimaryGradient),
+                                    .background(Color.White.copy(alpha = 0.2f))
+                                    .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)), RoundedCornerShape(12.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Notifications,
                                     contentDescription = null,
                                     tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
                             Spacer(modifier = Modifier.width(12.dp))
@@ -155,13 +157,13 @@ fun NotificationDialog(
                                 Text(
                                     text = "Notifications (सूचनाएं)",
                                     color = Color.White,
-                                    fontSize = 15.5.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.ExtraBold
                                 )
                                 Text(
                                     text = if (unreadCount > 0) "$unreadCount unread update(s)" else "All caught up!",
-                                    color = Color(0xFF94A3B8),
-                                    fontSize = 11.5.sp
+                                    color = Color.White.copy(alpha = 0.8f),
+                                    fontSize = 12.sp
                                 )
                             }
                         }
@@ -169,9 +171,9 @@ fun NotificationDialog(
                         IconButton(
                             onClick = onDismiss,
                             modifier = Modifier
-                                .size(32.dp)
+                                .size(34.dp)
                                 .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.15f))
+                                .background(Color.White.copy(alpha = 0.2f))
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
@@ -188,8 +190,9 @@ fun NotificationDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFFF8FAFC))
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                            .background(Color.White.copy(alpha = 0.7f))
+                            .border(BorderStroke(1.dp, GlassBorderLight))
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -200,10 +203,16 @@ fun NotificationDialog(
                             Icon(
                                 imageVector = Icons.Default.DoneAll,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(16.dp),
+                                tint = if (unreadCount > 0) Indigo600 else Slate400
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Mark All Read", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                "Mark All Read",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (unreadCount > 0) Indigo600 else Slate400
+                            )
                         }
 
                         TextButton(
@@ -213,15 +222,13 @@ fun NotificationDialog(
                                 imageVector = Icons.Default.ClearAll,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp),
-                                tint = Red600
+                                tint = Red500
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Clear All", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Red600)
+                            Text("Clear All", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Red500)
                         }
                     }
                 }
-
-                HorizontalDivider(color = Slate200, thickness = 1.dp)
 
                 // List
                 if (notifications.isEmpty()) {
@@ -238,23 +245,23 @@ fun NotificationDialog(
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(54.dp)
+                                    .size(64.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFFEEF2FF)),
+                                    .background(Indigo50),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Notifications,
                                     contentDescription = null,
-                                    tint = Indigo600,
-                                    modifier = Modifier.size(28.dp)
+                                    tint = Indigo600.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(32.dp)
                                 )
                             }
                             Text(
                                 text = "No notifications yet",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Slate900
+                                color = Navy900
                             )
                             Text(
                                 text = "Task assignments and submitted reports will appear here.",
@@ -267,8 +274,8 @@ fun NotificationDialog(
                     LazyColumn(
                         modifier = Modifier
                             .weight(1f)
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         items(notifications, key = { it.id }) { item ->
                             NotificationCardItem(item = item)
@@ -278,20 +285,21 @@ fun NotificationDialog(
 
                 // Footer Close Button
                 Surface(
-                    color = Color.White,
-                    shadowElevation = 8.dp,
+                    color = Color.White.copy(alpha = 0.9f),
+                    border = BorderStroke(1.dp, GlassBorderLight),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),
+                            .padding(14.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        GlassOutlinedButton(
-                            onClick = onDismiss,
+                        LiquidGlassOutlinedButton(
                             text = "Close (बंद करें)",
-                            modifier = Modifier.fillMaxWidth()
+                            onClick = onDismiss,
+                            modifier = Modifier.fillMaxWidth(),
+                            height = 44.dp
                         )
                     }
                 }
@@ -305,34 +313,33 @@ private fun NotificationCardItem(item: AppNotification) {
     val isReport = item.type == "REPORT_SUBMITTED"
     val iconColor = if (isReport) Emerald600 else Indigo600
     val iconBg = if (isReport) Color(0xFFD1FAE5) else Color(0xFFEEF2FF)
-    val cardBg = if (item.isRead) Color.White else Color(0xFFF8FAFC)
-    val borderStroke = if (!item.isRead) Indigo600.copy(alpha = 0.45f) else Slate200
 
-    Surface(
+    LiquidGlassCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = cardBg,
-        border = BorderStroke(1.dp, borderStroke),
-        shadowElevation = if (!item.isRead) 1.5.dp else 0.dp
+        cornerRadius = 16.dp,
+        containerColor = if (!item.isRead) Color.White.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.70f),
+        borderColor = if (!item.isRead) Indigo600.copy(alpha = 0.4f) else GlassBorderLight,
+        elevation = if (!item.isRead) 4.dp else 1.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(14.dp),
             verticalAlignment = Alignment.Top
         ) {
             Box(
                 modifier = Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(iconBg),
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(iconBg)
+                    .border(BorderStroke(1.dp, iconColor.copy(alpha = 0.2f)), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = if (isReport) Icons.Default.CheckCircle else Icons.Default.Assignment,
                     contentDescription = null,
                     tint = iconColor,
-                    modifier = Modifier.size(19.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
 
@@ -346,9 +353,9 @@ private fun NotificationCardItem(item: AppNotification) {
                 ) {
                     Text(
                         text = item.title,
-                        fontSize = 13.5.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Slate900
+                        color = Navy900
                     )
                     if (!item.isRead) {
                         Box(
@@ -360,21 +367,22 @@ private fun NotificationCardItem(item: AppNotification) {
                     }
                 }
 
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(3.dp))
 
                 Text(
                     text = item.message,
                     fontSize = 12.sp,
                     color = Slate700,
-                    fontWeight = FontWeight.Normal
+                    fontWeight = FontWeight.Normal,
+                    lineHeight = 16.sp
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 Text(
                     text = formatRelativeTime(item.timestamp),
-                    fontSize = 10.5.sp,
-                    color = Slate500,
+                    fontSize = 11.sp,
+                    color = Slate400,
                     fontWeight = FontWeight.Medium
                 )
             }
@@ -391,9 +399,10 @@ private fun formatRelativeTime(timestamp: Long): String {
 
     return when {
         seconds < 60 -> "Just now"
-        minutes < 60 -> "$minutes min ago"
-        hours < 24 -> "$hours hr ago"
+        minutes < 60 -> "$minutes minute(s) ago"
+        hours < 24 -> "$hours hour(s) ago"
         days < 7 -> "$days day(s) ago"
         else -> SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(Date(timestamp))
     }
 }
+

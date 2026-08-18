@@ -2,6 +2,9 @@ package com.example.ui.employee
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -40,23 +43,15 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -68,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -80,36 +76,41 @@ import com.example.data.model.Task
 import com.example.data.model.User
 import com.example.data.model.Visit
 import com.example.data.model.VisitStatus
-import com.example.ui.components.GlassButton
-import com.example.ui.components.GlassCard
-import com.example.ui.components.GlassEmptyState
-import com.example.ui.components.GlassOutlinedButton
-import com.example.ui.components.GlassSectionHeader
+import com.example.ui.components.GlassLevel
 import com.example.ui.components.LiquidGlassBackground
+import com.example.ui.components.LiquidGlassButton
+import com.example.ui.components.LiquidGlassCard
+import com.example.ui.components.LiquidGlassDialog
+import com.example.ui.components.LiquidGlassOutlinedButton
+import com.example.ui.components.LiquidGlassStatusBadge
 import com.example.ui.components.NotificationBellIcon
 import com.example.ui.components.NotificationDialog
 import com.example.ui.components.StatusChip
 import com.example.ui.components.SyncStatusBanner
 import com.example.ui.components.VisitDetailDialog
-import com.example.ui.theme.Amber100
+import com.example.ui.theme.Amber500
 import com.example.ui.theme.Amber600
-import com.example.ui.theme.Emerald100
+import com.example.ui.theme.Cyan500
 import com.example.ui.theme.Emerald500
 import com.example.ui.theme.Emerald600
-import com.example.ui.theme.GlassBorder
-import com.example.ui.theme.GlassBorderSubtle
-import com.example.ui.theme.GlassSurfaceElevated
+import com.example.ui.theme.GlassBorderLight
+import com.example.ui.theme.GlassIndigoGradient
 import com.example.ui.theme.GlassSurfaceLight
+import com.example.ui.theme.Indigo50
 import com.example.ui.theme.Indigo500
 import com.example.ui.theme.Indigo600
+import com.example.ui.theme.Navy800
 import com.example.ui.theme.Navy900
-import com.example.ui.theme.PrimaryGradient
+import com.example.ui.theme.Red500
 import com.example.ui.theme.Red600
+import com.example.ui.theme.Slate100
 import com.example.ui.theme.Slate200
 import com.example.ui.theme.Slate400
 import com.example.ui.theme.Slate500
+import com.example.ui.theme.Slate600
 import com.example.ui.theme.Slate700
 import com.example.ui.theme.Slate900
+import com.example.ui.theme.Teal500
 
 enum class EmployeeNavTab(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     TODAY_TASKS("Today's Tasks", Icons.Default.Home),
@@ -146,87 +147,94 @@ fun EmployeeMainScreen(
         completedVisits.distinctBy { it.visitId }
     }
 
-    Scaffold(
-        topBar = {
-            Surface(
-                color = GlassSurfaceElevated,
-                border = BorderStroke(1.dp, GlassBorderSubtle),
-                shadowElevation = 2.dp
-            ) {
-                TopAppBar(
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(
-                                        Brush.linearGradient(
-                                            listOf(Indigo600, Color(0xFF7C3AED))
-                                        )
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("MG", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text("Mission Gyan", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Slate900)
-                                Text("Field Officer Portal", fontSize = 11.sp, color = Indigo600, fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                    },
-                    actions = {
-                        NotificationBellIcon(
-                            unreadCount = notifications.count { !it.isRead },
-                            onClick = { showNotificationDialog = true }
-                        )
-                        IconButton(onClick = { showLogoutDialog = true }) {
-                            Icon(Icons.Default.ExitToApp, contentDescription = "Logout", tint = Slate700)
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
-                )
-            }
-        },
-        bottomBar = {
-            Surface(
-                color = GlassSurfaceElevated,
-                border = BorderStroke(1.dp, GlassBorderSubtle),
-                shadowElevation = 8.dp
-            ) {
-                NavigationBar(
-                    containerColor = Color.Transparent,
-                    tonalElevation = 0.dp
+    LiquidGlassBackground(
+        modifier = Modifier.fillMaxSize(),
+        enableOrbs = true
+    ) {
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                Surface(
+                    color = Color.White.copy(alpha = 0.90f),
+                    border = BorderStroke(1.dp, GlassBorderLight),
+                    shadowElevation = 4.dp
                 ) {
-                    tabs.forEachIndexed { index, tab ->
-                        NavigationBarItem(
-                            selected = selectedTab == index,
-                            onClick = {
-                                selectedTab = index
-                                onTabSelected?.invoke(index)
-                            },
-                            icon = { Icon(tab.icon, contentDescription = tab.title) },
-                            label = { Text(tab.title, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Indigo600,
-                                selectedTextColor = Indigo600,
-                                unselectedIconColor = Slate500,
-                                unselectedTextColor = Slate500,
-                                indicatorColor = Color(0xFFEEF2FF)
+                    TopAppBar(
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .shadow(
+                                            elevation = 6.dp,
+                                            shape = RoundedCornerShape(12.dp),
+                                            ambientColor = Indigo600.copy(alpha = 0.25f),
+                                            spotColor = Indigo600.copy(alpha = 0.35f)
+                                        )
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(GlassIndigoGradient)
+                                        .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)), RoundedCornerShape(12.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("MG", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text("Mission Gyan", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Navy900)
+                                    Text("Field Officer Portal", fontSize = 11.sp, color = Slate500, fontWeight = FontWeight.Medium)
+                                }
+                            }
+                        },
+                        actions = {
+                            NotificationBellIcon(
+                                unreadCount = notifications.count { !it.isRead },
+                                onClick = { showNotificationDialog = true }
                             )
-                        )
+                            IconButton(onClick = { showLogoutDialog = true }) {
+                                Icon(Icons.Default.ExitToApp, contentDescription = "Logout", tint = Slate700)
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                    )
+                }
+            },
+            bottomBar = {
+                Surface(
+                    color = Color.White.copy(alpha = 0.92f),
+                    border = BorderStroke(1.dp, GlassBorderLight),
+                    shadowElevation = 8.dp
+                ) {
+                    NavigationBar(
+                        containerColor = Color.Transparent,
+                        tonalElevation = 0.dp
+                    ) {
+                        tabs.forEachIndexed { index, tab ->
+                            NavigationBarItem(
+                                selected = selectedTab == index,
+                                onClick = {
+                                    selectedTab = index
+                                    onTabSelected?.invoke(index)
+                                },
+                                icon = { Icon(tab.icon, contentDescription = tab.title) },
+                                label = { Text(tab.title, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = Indigo600,
+                                    selectedTextColor = Indigo600,
+                                    unselectedIconColor = Slate400,
+                                    unselectedTextColor = Slate500,
+                                    indicatorColor = Indigo50
+                                )
+                            )
+                        }
                     }
                 }
             }
-        }
-    ) { innerPadding ->
-        LiquidGlassBackground(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
                 SyncStatusBanner(
                     isOnline = isOnline,
                     pendingCount = pendingSyncCount,
@@ -281,30 +289,30 @@ fun EmployeeMainScreen(
     }
 
     if (showLogoutDialog) {
-        AlertDialog(
+        LiquidGlassDialog(
             onDismissRequest = { showLogoutDialog = false },
-            shape = RoundedCornerShape(20.dp),
-            containerColor = Color.White,
-            title = { Text("Confirm Logout / लॉगआउट पुष्टि", fontWeight = FontWeight.Bold, color = Navy900) },
-            text = { Text("Do you want to logout? / क्या आप लॉगआउट करना चाहते हैं?", color = Slate700) },
+            title = "Confirm Logout / लॉगआउट पुष्टि",
             confirmButton = {
-                GlassButton(
+                LiquidGlassButton(
+                    text = "Yes / हाँ",
                     onClick = {
                         showLogoutDialog = false
                         onLogoutClick()
                     },
-                    text = "Yes / हाँ",
-                    gradient = Brush.linearGradient(listOf(Red600, Color(0xFFE11D48)))
+                    gradient = Brush.horizontalGradient(listOf(Red500, Red600)),
+                    height = 42.dp
                 )
             },
             dismissButton = {
-                GlassOutlinedButton(
-                    onClick = { showLogoutDialog = false },
+                LiquidGlassOutlinedButton(
                     text = "No / नहीं",
-                    textColor = Slate700
+                    onClick = { showLogoutDialog = false },
+                    height = 42.dp
                 )
             }
-        )
+        ) {
+            Text("Do you want to logout? / क्या आप लॉगआउट करना चाहते हैं?", color = Slate700, fontSize = 14.sp)
+        }
     }
 
     if (showNotificationDialog) {
@@ -327,26 +335,70 @@ fun TasksListSection(
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            GlassSectionHeader(
-                title = title,
-                badgeText = "${tasks.size} Tasks"
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = title,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Navy900,
+                    letterSpacing = 0.2.sp
+                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Indigo50)
+                        .border(BorderStroke(1.dp, Indigo500.copy(alpha = 0.2f)), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "${tasks.size} Active",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Indigo600
+                    )
+                }
+            }
         }
 
         if (tasks.isEmpty()) {
             item {
-                GlassEmptyState(
-                    icon = Icons.Default.School,
-                    title = "No tasks assigned for this period",
-                    subtitle = "Check back later or contact your administrator."
-                )
+                LiquidGlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    level = GlassLevel.LEVEL_1_CARD,
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(Indigo50),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.School, contentDescription = null, tint = Indigo600, modifier = Modifier.size(30.dp))
+                        }
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text("No tasks assigned for today", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Navy900)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("Check back later or contact your admin", fontSize = 13.sp, color = Slate500)
+                    }
+                }
             }
         } else {
-            items(tasks, key = { it.taskId.ifBlank { it.schoolId } }) { task ->
+            items(tasks) { task ->
                 val matchedSchool = remember(task.schoolId, schools) {
                     schools.find { it.schoolId == task.schoolId }
                 }
@@ -394,120 +446,144 @@ fun TaskCardItem(
         task.schoolType.ifBlank { school?.schoolType ?: "" }.ifBlank { "School Details" }
     }
 
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        onClick = { showSchoolDetailsDialog = true },
-        containerColor = GlassSurfaceElevated,
-        contentPadding = PaddingValues(14.dp),
-        elevation = 2.dp
+    LiquidGlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { showSchoolDetailsDialog = true },
+        level = GlassLevel.LEVEL_2_SURFACE,
+        shape = RoundedCornerShape(20.dp),
+        contentPadding = PaddingValues(18.dp)
     ) {
-        // Top Row: Status Chip & Date
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            StatusChip(statusName = if (isSubmitted) VisitStatus.SUBMITTED.name else task.status.name)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Schedule,
-                    contentDescription = null,
-                    tint = Slate400,
-                    modifier = Modifier.size(13.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = task.visitDate,
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Slate500
-                )
+        Column {
+            // Top Row: Status Chip & Date
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                LiquidGlassStatusBadge(status = if (isSubmitted) VisitStatus.SUBMITTED.name else task.status.name)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Schedule,
+                        contentDescription = null,
+                        tint = Slate400,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = task.visitDate,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Slate600
+                    )
+                }
             }
-        }
 
-        Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-        // School Name
-        Text(
-            text = task.schoolName,
-            fontSize = 15.5.sp,
-            fontWeight = FontWeight.Bold,
-            color = Slate900,
-            lineHeight = 21.sp
-        )
+            // School Name
+            Text(
+                text = task.schoolName,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = Navy900,
+                lineHeight = 22.sp
+            )
 
-        Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-        // Quick Preview Glass Surface
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = Color(0xFFF8FAFC),
-            border = BorderStroke(1.dp, Slate200.copy(alpha = 0.6f)),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
+            // Quick Preview Surface (Principal & Village)
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color.White.copy(alpha = 0.65f))
+                    .border(BorderStroke(1.dp, GlassBorderLight), RoundedCornerShape(14.dp))
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = null,
-                        tint = Indigo600,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Principal: $principalNameDisplay",
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Slate700
-                    )
-                }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .background(Indigo50),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = null,
+                                tint = Indigo600,
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Principal: $principalNameDisplay",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Slate700
+                        )
+                    }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.LocationOn,
-                        contentDescription = null,
-                        tint = Indigo600,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Village: $villageNameDisplay",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = Slate500
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFECFDF5)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.LocationOn,
+                                contentDescription = null,
+                                tint = Emerald600,
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Village: $villageNameDisplay",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Slate500
+                        )
+                    }
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-        // Action Buttons
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            GlassOutlinedButton(
-                onClick = { showSchoolDetailsDialog = true },
-                text = "View Details",
-                icon = Icons.Default.Visibility,
-                modifier = Modifier.weight(1f)
-            )
+            // Action Buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                LiquidGlassOutlinedButton(
+                    text = "View Details",
+                    onClick = { showSchoolDetailsDialog = true },
+                    icon = Icons.Default.Visibility,
+                    modifier = Modifier.weight(1f),
+                    height = 40.dp
+                )
 
-            GlassButton(
-                onClick = onStartVisit,
-                enabled = !isSubmitted,
-                text = if (isSubmitted) "Completed" else "Start Visit",
-                icon = if (isSubmitted) Icons.Default.CheckCircle else Icons.Default.PlayArrow,
-                gradient = if (isSubmitted) Brush.linearGradient(listOf(Emerald600, Emerald500)) else PrimaryGradient,
-                modifier = Modifier.weight(1.2f)
-            )
+                LiquidGlassButton(
+                    text = if (isSubmitted) "Completed" else "Start Visit",
+                    onClick = onStartVisit,
+                    enabled = !isSubmitted,
+                    icon = if (isSubmitted) Icons.Default.CheckCircle else Icons.Default.PlayArrow,
+                    gradient = if (isSubmitted) {
+                        Brush.horizontalGradient(listOf(Emerald500, Emerald600))
+                    } else {
+                        GlassIndigoGradient
+                    },
+                    modifier = Modifier.weight(1.3f),
+                    height = 40.dp
+                )
+            }
         }
     }
 
@@ -515,67 +591,59 @@ fun TaskCardItem(
         val s = school
         val pMobile = principalMobileDisplay.trim()
 
-        AlertDialog(
+        LiquidGlassDialog(
             onDismissRequest = { showSchoolDetailsDialog = false },
-            shape = RoundedCornerShape(20.dp),
-            containerColor = Color.White,
-            title = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFFEEF2FF)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.School,
-                            contentDescription = null,
-                            tint = Indigo600,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = task.schoolName,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = Slate900,
-                            lineHeight = 20.sp
-                        )
-                        Text(
-                            text = schoolTypeDisplay,
-                            fontSize = 11.5.sp,
-                            color = Indigo600,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
+            title = task.schoolName,
+            confirmButton = {
+                if (!isSubmitted) {
+                    LiquidGlassButton(
+                        text = "Start Visit",
+                        onClick = {
+                            showSchoolDetailsDialog = false
+                            onStartVisit()
+                        },
+                        icon = Icons.Default.PlayArrow,
+                        gradient = GlassIndigoGradient,
+                        height = 42.dp
+                    )
                 }
             },
-            text = {
-                Column(
+            dismissButton = {
+                LiquidGlassOutlinedButton(
+                    text = "Close",
+                    onClick = { showSchoolDetailsDialog = false },
+                    height = 42.dp
+                )
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = schoolTypeDisplay,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Indigo600
+                )
+
+                SchoolInfoRow(
+                    label = "Principal Name (प्रधानाचार्य)",
+                    value = principalNameDisplay
+                )
+
+                // Principal Mobile with Instant Call Action
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0xFFF0FDF4).copy(alpha = 0.9f))
+                        .border(BorderStroke(1.dp, Emerald500.copy(alpha = 0.3f)), RoundedCornerShape(14.dp))
+                        .padding(12.dp)
                 ) {
-                    SchoolInfoRow(
-                        label = "Principal Name (प्रधानाचार्य)",
-                        value = principalNameDisplay
-                    )
-
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFFF0FDF4))
-                            .border(1.dp, Color(0xFFBBF7D0), RoundedCornerShape(12.dp))
-                            .padding(10.dp)
-                    ) {
+                    Column {
                         Text(
                             text = "Principal Mobile (मोबाइल नंबर)",
                             fontSize = 11.sp,
@@ -592,78 +660,69 @@ fun TaskCardItem(
                                 text = if (pMobile.isNotBlank()) pMobile else "Not Provided",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Slate900
+                                color = Navy900
                             )
 
                             if (pMobile.isNotBlank()) {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = Emerald600,
-                                    modifier = Modifier.clickable {
+                                LiquidGlassButton(
+                                    text = "Call (कॉल)",
+                                    onClick = {
                                         val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$pMobile"))
                                         context.startActivity(dialIntent)
-                                    }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Phone,
-                                            contentDescription = "Call",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(13.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Call", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                    }
-                                }
+                                    },
+                                    icon = Icons.Default.Phone,
+                                    gradient = Brush.horizontalGradient(listOf(Emerald500, Emerald600)),
+                                    height = 32.dp,
+                                    shape = RoundedCornerShape(10.dp)
+                                )
                             }
                         }
                     }
+                }
 
-                    SchoolInfoRow(
-                        label = "Village Name (गांव का नाम)",
-                        value = villageNameDisplay
-                    )
+                SchoolInfoRow(
+                    label = "Village Name (गांव का नाम)",
+                    value = villageNameDisplay
+                )
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            SchoolInfoRow(
-                                label = "Block (ब्लॉक)",
-                                value = blockDisplay
-                            )
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            SchoolInfoRow(
-                                label = "District (जिला)",
-                                value = districtDisplay
-                            )
-                        }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        SchoolInfoRow(
+                            label = "Block (ब्लॉक)",
+                            value = blockDisplay
+                        )
                     }
+                    Column(modifier = Modifier.weight(1f)) {
+                        SchoolInfoRow(
+                            label = "District (जिला)",
+                            value = districtDisplay
+                        )
+                    }
+                }
 
-                    SchoolInfoRow(
-                        label = "State (राज्य)",
-                        value = task.state.ifBlank { s?.stateName ?: "Rajasthan" }
-                    )
+                SchoolInfoRow(
+                    label = "State (राज्य)",
+                    value = task.state.ifBlank { s?.stateName ?: "Rajasthan" }
+                )
 
-                    SchoolInfoRow(
-                        label = "Scheduled Visit Date (विज़िट तिथि)",
-                        value = task.visitDate.ifBlank { s?.visitDate ?: "Not scheduled" }
-                    )
+                SchoolInfoRow(
+                    label = "Scheduled Visit Date (विज़िट तिथि)",
+                    value = task.visitDate.ifBlank { s?.visitDate ?: "Not scheduled" }
+                )
 
-                    if (task.notes.isNotBlank()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFFF8FAFC))
-                                .border(1.dp, Slate200, RoundedCornerShape(10.dp))
-                                .padding(10.dp)
-                        ) {
+                if (task.notes.isNotBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.White.copy(alpha = 0.7f))
+                            .border(BorderStroke(1.dp, GlassBorderLight), RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                    ) {
+                        Column {
                             Text(
                                 text = "Admin Instructions / Notes",
                                 fontSize = 11.sp,
@@ -680,27 +739,8 @@ fun TaskCardItem(
                         }
                     }
                 }
-            },
-            confirmButton = {
-                if (!isSubmitted) {
-                    GlassButton(
-                        onClick = {
-                            showSchoolDetailsDialog = false
-                            onStartVisit()
-                        },
-                        text = "Start Visit",
-                        icon = Icons.Default.PlayArrow
-                    )
-                }
-            },
-            dismissButton = {
-                GlassOutlinedButton(
-                    onClick = { showSchoolDetailsDialog = false },
-                    text = "Close",
-                    textColor = Slate700
-                )
             }
-        )
+        }
     }
 }
 
@@ -713,12 +753,12 @@ private fun SchoolInfoRow(label: String, value: String) {
             color = Slate500,
             fontWeight = FontWeight.Medium
         )
-        Spacer(modifier = Modifier.height(1.dp))
+        Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = value,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
-            color = Slate900
+            color = Navy900
         )
     }
 }
@@ -733,67 +773,108 @@ fun CompletedVisitsSection(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            GlassSectionHeader(
-                title = "Your Completed Visits",
-                subtitle = "All submitted visit reports",
-                badgeText = "${visits.size} Total"
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("Your Completed Visits", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = Navy900)
+                    Text("All submitted visit reports", fontSize = 12.sp, color = Slate500)
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFFECFDF5))
+                        .border(BorderStroke(1.dp, Emerald500.copy(alpha = 0.2f)), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "${visits.size} Total",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Emerald600
+                    )
+                }
+            }
         }
 
         if (visits.isEmpty()) {
             item {
-                GlassEmptyState(
-                    icon = Icons.Default.CheckCircle,
-                    title = "No completed visit reports yet",
-                    subtitle = "Submitted visit reports will appear here."
-                )
+                LiquidGlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    level = GlassLevel.LEVEL_1_CARD,
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFECFDF5)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Emerald600, modifier = Modifier.size(30.dp))
+                        }
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text("No completed visit reports yet", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Navy900)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("Submitted visit reports will appear here", fontSize = 13.sp, color = Slate500)
+                    }
+                }
             }
         } else {
-            items(visits, key = { it.visitId }) { visit ->
+            items(visits) { visit ->
                 val matchedSchool = remember(visit.schoolId, schools) {
                     schools.find { it.schoolId == visit.schoolId }
                 }
 
-                GlassCard(
+                LiquidGlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { selectedVisitForDetail = visit },
-                    containerColor = GlassSurfaceElevated,
-                    contentPadding = PaddingValues(14.dp),
-                    elevation = 1.5.dp
+                    level = GlassLevel.LEVEL_2_SURFACE,
+                    shape = RoundedCornerShape(18.dp),
+                    contentPadding = PaddingValues(16.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = visit.schoolName,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Slate900,
-                            modifier = Modifier.weight(1f)
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = visit.schoolName,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Navy900,
+                                modifier = Modifier.weight(1f)
+                            )
+                            LiquidGlassStatusBadge(status = visit.status.name)
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("${visit.district} • ${visit.block}", fontSize = 12.sp, color = Slate500)
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("Visit Date: ${visit.visitDate}", fontSize = 12.sp, color = Slate700, fontWeight = FontWeight.Medium)
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LiquidGlassOutlinedButton(
+                            text = "View Visit Details",
+                            onClick = { selectedVisitForDetail = visit },
+                            icon = Icons.Default.Visibility,
+                            modifier = Modifier.fillMaxWidth(),
+                            height = 38.dp
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        StatusChip(statusName = visit.status.name)
                     }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("${visit.district} • ${visit.block}", fontSize = 12.sp, color = Slate500)
-
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text("Visit Date: ${visit.visitDate}", fontSize = 12.sp, color = Slate700, fontWeight = FontWeight.Medium)
-
-                    Spacer(modifier = Modifier.height(12.dp))
-                    GlassOutlinedButton(
-                        onClick = { selectedVisitForDetail = visit },
-                        text = "View Visit Details",
-                        icon = Icons.Default.Visibility,
-                        modifier = Modifier.fillMaxWidth()
-                    )
                 }
             }
         }
@@ -819,14 +900,14 @@ fun EmployeeProfileSection(user: User, onLogout: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        GlassCard(
+        LiquidGlassCard(
             modifier = Modifier.fillMaxWidth(),
-            containerColor = GlassSurfaceElevated,
-            contentPadding = PaddingValues(24.dp),
-            elevation = 3.dp
+            level = GlassLevel.LEVEL_3_FLOATING,
+            shape = RoundedCornerShape(24.dp),
+            contentPadding = PaddingValues(24.dp)
         ) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -835,8 +916,15 @@ fun EmployeeProfileSection(user: User, onLogout: () -> Unit) {
                 Box(
                     modifier = Modifier
                         .size(76.dp)
+                        .shadow(
+                            elevation = 10.dp,
+                            shape = CircleShape,
+                            ambientColor = Indigo600.copy(alpha = 0.3f),
+                            spotColor = Indigo600.copy(alpha = 0.4f)
+                        )
                         .clip(CircleShape)
-                        .background(PrimaryGradient),
+                        .background(GlassIndigoGradient)
+                        .border(BorderStroke(1.5.dp, Color.White.copy(alpha = 0.7f)), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -849,8 +937,7 @@ fun EmployeeProfileSection(user: User, onLogout: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Text(user.name, fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Slate900)
-                Spacer(modifier = Modifier.height(2.dp))
+                Text(user.name, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, color = Navy900)
                 Text(user.email, fontSize = 13.sp, color = Slate500)
                 if (user.mobile.isNotBlank()) {
                     Text("Mobile: ${user.mobile}", fontSize = 13.sp, color = Slate500)
@@ -858,16 +945,17 @@ fun EmployeeProfileSection(user: User, onLogout: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                StatusChip(statusName = user.status.name)
+                LiquidGlassStatusBadge(status = user.status.name)
 
-                Spacer(modifier = Modifier.height(26.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
-                GlassOutlinedButton(
+                LiquidGlassOutlinedButton(
+                    text = "Sign Out",
                     onClick = onLogout,
-                    text = "Sign Out (लॉगआउट)",
                     icon = Icons.Default.ExitToApp,
-                    textColor = Red600,
-                    modifier = Modifier.fillMaxWidth()
+                    contentColor = Red600,
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 46.dp
                 )
             }
         }
@@ -951,3 +1039,4 @@ private fun isTaskUpcoming(visitDate: String): Boolean {
     }
     return false
 }
+

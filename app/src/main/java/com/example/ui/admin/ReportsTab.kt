@@ -366,13 +366,12 @@ fun ReportsTab(
                 val hasFollowup = answers.q18_followupRequired.trim().equals("हाँ", ignoreCase = true)
                 val hasHardDisk = answers.q19_dataRequiredOnHardDisk.trim().equals("हाँ", ignoreCase = true)
 
-                Card(
+                com.example.ui.components.LiquidGlassCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { selectedVisitForDetails = visit },
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    cornerRadius = 16.dp,
+                    elevation = 2.dp
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(
@@ -406,8 +405,8 @@ fun ReportsTab(
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(Red100)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(Red100.copy(alpha = 0.8f))
                                             .padding(horizontal = 10.dp, vertical = 6.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
@@ -422,7 +421,7 @@ fun ReportsTab(
                                                 onClick = {
                                                     onUpdateVisitAnswers(visit.visitId, answers.copy(q18_followupRequired = "नहीं"))
                                                 },
-                                                shape = RoundedCornerShape(6.dp),
+                                                shape = RoundedCornerShape(8.dp),
                                                 colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
                                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                                 modifier = Modifier.height(28.dp)
@@ -439,8 +438,8 @@ fun ReportsTab(
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(Amber100)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(Amber100.copy(alpha = 0.8f))
                                             .padding(horizontal = 10.dp, vertical = 6.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
@@ -455,7 +454,7 @@ fun ReportsTab(
                                                 onClick = {
                                                     onUpdateVisitAnswers(visit.visitId, answers.copy(q19_dataRequiredOnHardDisk = "नहीं"))
                                                 },
-                                                shape = RoundedCornerShape(6.dp),
+                                                shape = RoundedCornerShape(8.dp),
                                                 colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
                                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                                 modifier = Modifier.height(28.dp)
