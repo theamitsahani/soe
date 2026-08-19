@@ -89,8 +89,8 @@ object GoogleMapHelper {
     }
 
     /**
-     * Starts Google Maps turn-by-turn navigation directly to the school.
-     * Uses Android `google.navigation:q=...` intent which directly opens turn-by-turn guidance.
+     * Starts Google Maps navigation directly using the admin-provided map link.
+     * If a map link is given by the admin, that exact link/URL is opened immediately.
      */
     fun startNavigation(
         context: Context,
@@ -101,91 +101,30 @@ object GoogleMapHelper {
         address: String = ""
     ) {
         try {
-            val coords = if (latitude != null && longitude != null) {
-                Pair(latitude, longitude)
+            val cleanLink = mapLink?.trim()
+            val navUri: Uri = if (!cleanLink.isNullOrBlank()) {
+                if (cleanLink.startsWith("http://") || cleanLink.startsWith("https://") || cleanLink.startsWith("geo:")) {
+                    Uri.parse(cleanLink)
+                } else if (cleanLink.contains("maps.app.goo.gl") || cleanLink.contains("goo.gl") || cleanLink.contains("maps.google")) {
+                    Uri.parse("https://$cleanLink")
+                } else {
+                    val coords = extractCoordinates(cleanLink)
+                    if (coords != null) {
+                        Uri.parse("google.navigation:q=${coords.first},${coords.second}")
+                    } else {
+                        val encoded = URLEncoder.encode(cleanLink, StandardCharsets.UTF_8.toString())
+                        Uri.parse("https://www.google.com/maps/search/?api=1&query=$encoded")
+                    }
+                }
+            } else if (latitude != null && longitude != null) {
+                Uri.parse("google.navigation:q=$latitude,$longitude")
             } else {
-                extractCoordinates(mapLink)
-            }
-
-            val navUri: Uri = when {
-                coords != null -> {
-                    // Turn-by-turn navigation with exact GPS coordinates
-                    Uri.parse("google.navigation:q=${coords.first},${coords.second}")
-                }
-                !mapLink.isNullOrBlank() && (mapLink.startsWith("http://") || mapLink.startsWith("https://")) -> {
-                    // If full Google Map Web URL (like maps.app.goo.gl/...)
-                    Uri.parse(mapLink)
-                }
-                else -> {
-                    val query = formatSchoolAddress(schoolName, district = address)
-                    val encoded = URLEncoder.encode(query, StandardCharsets.UTF_8.toString())
-                    Uri.parse("google.navigation:q=$encoded")
-                }
+                val query = formatSchoolAddress(schoolName, district = address)
+                val encoded = URLEncoder.encode(query, StandardCharsets.UTF_8.toString())
+                Uri.parse("https://www.google.com/maps/search/?api=1&query=$encoded")
             }
 
             val mapIntent = Intent(Intent.ACTION_VIEW, navUri).apply {
-                setPackage("com.google.android.apps.maps")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-
-            try {
-                context.startActivity(mapIntent)
-            } catch (e: ActivityNotFoundException) {
-                // Fallback to web browser or generic map handler if Google Maps App is not installed
-                val fallbackUri = when {
-                    coords != null -> Uri.parse("https://www.google.com/maps/dir/?api=1&destination=${coords.first},${coords.second}")
-                    !mapLink.isNullOrBlank() && mapLink.startsWith("http") -> Uri.parse(mapLink)
-                    else -> {
-                        val query = formatSchoolAddress(schoolName, district = address)
-                        val encoded = URLEncoder.encode(query, StandardCharsets.UTF_8.toString())
-                        Uri.parse("https://www.google.com/maps/dir/?api=1&destination=$encoded")
-                    }
-                }
-                val fallbackIntent = Intent(Intent.ACTION_VIEW, fallbackUri).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                context.startActivity(fallbackIntent)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to launch navigation", e)
-            Toast.makeText(context, "Could not launch Google Maps: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    /**
-     * Opens the school location pinned on Google Maps (view location on map).
-     */
-    fun openLocationOnMap(
-        context: Context,
-        mapLink: String? = null,
-        latitude: Double? = null,
-        longitude: Double? = null,
-        schoolName: String = "",
-        address: String = ""
-    ) {
-        try {
-            val coords = if (latitude != null && longitude != null) {
-                Pair(latitude, longitude)
-            } else {
-                extractCoordinates(mapLink)
-            }
-
-            val mapUri: Uri = when {
-                coords != null -> {
-                    val label = URLEncoder.encode(schoolName.ifBlank { "School Location" }, StandardCharsets.UTF_8.toString())
-                    Uri.parse("geo:0,0?q=${coords.first},${coords.second}($label)")
-                }
-                !mapLink.isNullOrBlank() && (mapLink.startsWith("http://") || mapLink.startsWith("https://")) -> {
-                    Uri.parse(mapLink)
-                }
-                else -> {
-                    val query = formatSchoolAddress(schoolName, district = address)
-                    val encoded = URLEncoder.encode(query, StandardCharsets.UTF_8.toString())
-                    Uri.parse("geo:0,0?q=$encoded")
-                }
-            }
-
-            val mapIntent = Intent(Intent.ACTION_VIEW, mapUri).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
 
@@ -197,9 +136,23 @@ object GoogleMapHelper {
                 context.startActivity(mapIntent)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to open location on map", e)
-            Toast.makeText(context, "Could not open map: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+            Log.e(TAG, "Failed to launch navigation", e)
+            Toast.makeText(context, "Could not launch map: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /**
+     * Opens the school location on Google Maps using admin provided link or location.
+     */
+    fun openLocationOnMap(
+        context: Context,
+        mapLink: String? = null,
+        latitude: Double? = null,
+        longitude: Double? = null,
+        schoolName: String = "",
+        address: String = ""
+    ) {
+        startNavigation(context, mapLink, latitude, longitude, schoolName, address)
     }
 
     /**

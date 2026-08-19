@@ -1,11 +1,8 @@
 package com.example.ui.admin
 
-import android.app.DatePickerDialog
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,42 +18,33 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.NearMe
 import androidx.compose.material.icons.filled.PendingActions
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.School
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -74,7 +62,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -84,20 +71,13 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.School
 import com.example.data.model.User
 import com.example.ui.components.SearchTextField
-import com.example.ui.theme.Emerald100
-import com.example.ui.theme.Emerald600
 import com.example.ui.theme.Indigo600
 import com.example.ui.theme.Navy900
 import com.example.ui.theme.Red600
 import com.example.ui.theme.Slate100
 import com.example.ui.theme.Slate500
 import com.example.ui.theme.Slate700
-import com.example.util.ExcelHelper
-import com.example.util.ImportValidationResult
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
+import com.example.util.GoogleMapHelper
 
 enum class SchoolViewFilter {
     ALL_ACTIVE,
@@ -122,13 +102,9 @@ fun SchoolManagementTab(
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedSchoolForEdit by remember { mutableStateOf<School?>(null) }
-    var schoolToQuickComplete by remember { mutableStateOf<School?>(null) }
-    var schoolToQuickPending by remember { mutableStateOf<School?>(null) }
     var showAddSchoolDialog by remember { mutableStateOf(false) }
     var schoolToDelete by remember { mutableStateOf<School?>(null) }
     var schoolToPermanentDelete by remember { mutableStateOf<School?>(null) }
-    var importValidationResult by remember { mutableStateOf<ImportValidationResult?>(null) }
-    var isImporting by remember { mutableStateOf(false) }
     var isRefreshing by remember { mutableStateOf(false) }
     var isPerformingDeleteAction by remember { mutableStateOf(false) }
     var refreshErrorMessage by remember { mutableStateOf<String?>(null) }
@@ -157,15 +133,6 @@ fun SchoolManagementTab(
 
     LaunchedEffect(Unit) {
         triggerRefresh()
-    }
-
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            val result = ExcelHelper.parseSchoolCsv(context, uri, activeSchools)
-            importValidationResult = result
-        }
     }
 
     val currentList = when (selectedFilter) {
@@ -224,7 +191,7 @@ fun SchoolManagementTab(
             }
         }
 
-        // Top Header with Actions (Manual Add + Import Excel + Refresh)
+        // Top Header with Actions (Manual Add + Refresh)
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
@@ -255,32 +222,16 @@ fun SchoolManagementTab(
                         }
                     }
 
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Button(
+                        onClick = { showAddSchoolDialog = true },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                        modifier = Modifier.height(34.dp)
                     ) {
-                        OutlinedButton(
-                            onClick = { showAddSchoolDialog = true },
-                            shape = RoundedCornerShape(20.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.height(34.dp)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp), tint = Indigo600)
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text("+ Add", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Indigo600)
-                        }
-
-                        Button(
-                            onClick = { filePickerLauncher.launch("*/*") },
-                            shape = RoundedCornerShape(20.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.height(34.dp)
-                        ) {
-                            Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text("Import Excel", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Add School", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -288,7 +239,7 @@ fun SchoolManagementTab(
 
         // Filter Chips: All Active vs Completed vs Pending vs Recently Deleted
         item {
-            androidx.compose.foundation.lazy.LazyRow(
+            LazyRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -398,12 +349,11 @@ fun SchoolManagementTab(
                             Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF059669), modifier = Modifier.size(40.dp))
                             Spacer(modifier = Modifier.height(8.dp))
                             Text("No completed schools yet", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Navy900)
-                            Text("Schools completed via Excel import or submitted reports will show here.", fontSize = 11.sp, color = Slate500)
+                            Text("Completed schools will show here.", fontSize = 11.sp, color = Slate500)
                         } else if (selectedFilter == SchoolViewFilter.PENDING) {
                             Icon(Icons.Default.PendingActions, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(40.dp))
                             Spacer(modifier = Modifier.height(8.dp))
                             Text("No pending schools", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Navy900)
-                            Text("All active schools are marked completed!", fontSize = 11.sp, color = Slate500)
                         } else if (searchQuery.isNotBlank()) {
                             Icon(Icons.Default.School, contentDescription = null, tint = Slate500, modifier = Modifier.size(44.dp))
                             Spacer(modifier = Modifier.height(10.dp))
@@ -413,7 +363,7 @@ fun SchoolManagementTab(
                             Spacer(modifier = Modifier.height(10.dp))
                             Text("No schools available", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Navy900)
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text("Tap '+ Add' or 'Import Excel' to enroll schools.", fontSize = 12.sp, color = Slate500)
+                            Text("Tap '+ Add School' to enroll schools.", fontSize = 12.sp, color = Slate500)
                         }
                     }
                 }
@@ -424,9 +374,7 @@ fun SchoolManagementTab(
                     SchoolCardItem(
                         school = sch,
                         onEditClick = { selectedSchoolForEdit = sch },
-                        onDeleteClick = { schoolToDelete = sch },
-                        onQuickCompleteClick = { schoolToQuickComplete = sch },
-                        onQuickPendingClick = { schoolToQuickPending = sch }
+                        onDeleteClick = { schoolToDelete = sch }
                     )
                 } else {
                     DeletedSchoolCardItem(
@@ -452,235 +400,6 @@ fun SchoolManagementTab(
         }
     }
 
-    // Quick Mark Completed Dialog
-    if (schoolToQuickComplete != null) {
-        val targetSchool = schoolToQuickComplete!!
-        val todayStr = remember {
-            SimpleDateFormat("dd-MMM-yyyy", Locale.ENGLISH).format(Date())
-        }
-        var selectedDate by remember { mutableStateOf(if (targetSchool.visitDate.isNotBlank()) targetSchool.visitDate else todayStr) }
-        var selectedEmployee by remember { mutableStateOf<User?>(null) }
-        var employeeDropdownExpanded by remember { mutableStateOf(false) }
-        var remarks by remember { mutableStateOf("") }
-        var isSavingCompletion by remember { mutableStateOf(false) }
-
-        val calendar = remember { Calendar.getInstance() }
-        val datePickerDialog = remember {
-            DatePickerDialog(
-                context,
-                { _, year, month, dayOfMonth ->
-                    val cal = Calendar.getInstance().apply {
-                        set(year, month, dayOfMonth)
-                    }
-                    selectedDate = SimpleDateFormat("dd-MMM-yyyy", Locale.ENGLISH).format(cal.time)
-                },
-                calendar.get(Calendar.YEAR),
-                calendar.get(Calendar.MONTH),
-                calendar.get(Calendar.DAY_OF_MONTH)
-            )
-        }
-
-        AlertDialog(
-            onDismissRequest = { if (!isSavingCompletion) schoolToQuickComplete = null },
-            icon = {
-                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Emerald600, modifier = Modifier.size(36.dp))
-            },
-            title = {
-                Column {
-                    Text("Mark as Completed (पूर्ण करें)", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Navy900)
-                    Text(targetSchool.schoolName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Indigo600)
-                    Text("${targetSchool.districtName} • ${targetSchool.blockName.ifBlank { "Block N/A" }}", fontSize = 11.sp, color = Slate500)
-                }
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text("इस स्कूल को कम्पलीट (पूर्ण) चिह्नित करने के लिए विवरण दर्ज करें:", fontSize = 12.sp, color = Slate700)
-
-                    // 1. Visit Date with DatePicker button
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color(0xFFF1F5F9),
-                        modifier = Modifier.fillMaxWidth().clickable { datePickerDialog.show() }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text("Completion / Visit Date (तारीख)", fontSize = 11.sp, color = Slate500)
-                                Text(selectedDate, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Navy900)
-                            }
-                            Button(
-                                onClick = { datePickerDialog.show() },
-                                colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                modifier = Modifier.height(32.dp)
-                            ) {
-                                Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("तारीख बदलें", fontSize = 11.sp)
-                            }
-                        }
-                    }
-
-                    // 2. Completed By / Field Officer Dropdown
-                    ExposedDropdownMenuBox(
-                        expanded = employeeDropdownExpanded,
-                        onExpandedChange = { employeeDropdownExpanded = !employeeDropdownExpanded }
-                    ) {
-                        OutlinedTextField(
-                            value = selectedEmployee?.let { "${it.name} (${it.role.name})" } ?: "Admin (Manual Entry - स्वयं एडमिन)",
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Completed By / Field Officer", fontSize = 12.sp) },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = employeeDropdownExpanded) },
-                            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = Indigo600) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                        ExposedDropdownMenu(
-                            expanded = employeeDropdownExpanded,
-                            onDismissRequest = { employeeDropdownExpanded = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Admin (Manual Entry - स्वयं एडमिन)", fontWeight = FontWeight.Bold, fontSize = 13.sp) },
-                                onClick = {
-                                    selectedEmployee = null
-                                    employeeDropdownExpanded = false
-                                }
-                            )
-                            employees.forEach { emp ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(emp.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                            Text("${emp.role.name} • ${emp.mobile.ifBlank { emp.email }}", fontSize = 11.sp, color = Slate500)
-                                        }
-                                    },
-                                    onClick = {
-                                        selectedEmployee = emp
-                                        employeeDropdownExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    // 3. Remarks
-                    OutlinedTextField(
-                        value = remarks,
-                        onValueChange = { remarks = it },
-                        label = { Text("Remarks / Note (टिप्पणी - वैकल्पिक)", fontSize = 12.sp) },
-                        placeholder = { Text("e.g. Completed during inspection / verified") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        singleLine = true
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        isSavingCompletion = true
-                        val empId = selectedEmployee?.userId ?: "emp_admin"
-                        val empName = selectedEmployee?.name ?: "Admin (Manual Entry)"
-                        val finalRemarks = remarks.trim().ifBlank { "Marked completed by Admin on $selectedDate" }
-
-                        if (onMarkSchoolCompleted != null) {
-                            onMarkSchoolCompleted(targetSchool.schoolId, selectedDate, empId, empName, finalRemarks)
-                        } else {
-                            val updated = targetSchool.copy(
-                                visitDate = selectedDate,
-                                updatedAt = System.currentTimeMillis()
-                            )
-                            onUpdateSchool(updated)
-                        }
-                        isSavingCompletion = false
-                        schoolToQuickComplete = null
-                        successNotification = "${targetSchool.schoolName} marked as Completed (पूर्ण)!"
-                        triggerRefresh()
-                    },
-                    enabled = !isSavingCompletion,
-                    colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    if (isSavingCompletion) {
-                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Saving...")
-                    } else {
-                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("✓ Mark Completed")
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { schoolToQuickComplete = null }, enabled = !isSavingCompletion) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-
-    // Quick Mark Pending Confirmation Dialog
-    if (schoolToQuickPending != null) {
-        val targetSchool = schoolToQuickPending!!
-        var isResetting by remember { mutableStateOf(false) }
-
-        AlertDialog(
-            onDismissRequest = { if (!isResetting) schoolToQuickPending = null },
-            icon = {
-                Icon(Icons.Default.HourglassEmpty, contentDescription = null, tint = Color(0xFFB45309), modifier = Modifier.size(36.dp))
-            },
-            title = {
-                Text("Change Status to Pending? (बाकी करें)", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Navy900)
-            },
-            text = {
-                Text(
-                    text = "क्या आप '${targetSchool.schoolName}' को वापस PENDING (विजिट बाकी) में बदलना चाहते हैं? इसका कम्प्लीट स्टेटस और विजिट रिकॉर्ड हटा दिया जाएगा।",
-                    fontSize = 13.sp,
-                    color = Slate700
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        isResetting = true
-                        if (onMarkSchoolPending != null) {
-                            onMarkSchoolPending(targetSchool.schoolId)
-                        } else {
-                            val updated = targetSchool.copy(
-                                visitDate = "",
-                                updatedAt = System.currentTimeMillis()
-                            )
-                            onUpdateSchool(updated)
-                        }
-                        isResetting = false
-                        schoolToQuickPending = null
-                        successNotification = "${targetSchool.schoolName} status changed to Pending."
-                        triggerRefresh()
-                    },
-                    enabled = !isResetting,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB45309)),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text("Mark as Pending")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { schoolToQuickPending = null }, enabled = !isResetting) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-
     // Soft Delete School Confirmation Dialog
     if (schoolToDelete != null) {
         val targetSchool = schoolToDelete!!
@@ -698,23 +417,12 @@ fun SchoolManagementTab(
                         text = "Are you sure you want to delete '${targetSchool.schoolName}'?",
                         fontSize = 13.sp,
                         color = Navy900,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Surface(
-                        color = Slate100,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("District: ${targetSchool.districtName.ifBlank { "N/A" }}", fontSize = 11.sp, color = Slate700)
-                            Text("Principal: ${targetSchool.principalName.ifBlank { "N/A" }}", fontSize = 11.sp, color = Slate700)
-                        }
-                    }
-                    Text(
-                        text = "ℹ️ Note: This school will be moved to the Trash / Recently Deleted tab. You can restore it anytime within 24 hours.",
-                        fontSize = 12.sp,
-                        color = Indigo600,
                         fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "This school will be moved to the Trash bin and can be restored within 24 hours.",
+                        fontSize = 12.sp,
+                        color = Slate500
                     )
                 }
             },
@@ -727,14 +435,20 @@ fun SchoolManagementTab(
                                 isPerformingDeleteAction = false
                                 schoolToDelete = null
                                 if (res.isSuccess) {
-                                    successNotification = "${targetSchool.schoolName} deleted (Restorable for 24h)"
+                                    successNotification = "${targetSchool.schoolName} moved to trash."
                                     triggerRefresh()
                                 } else {
                                     Toast.makeText(context, res.exceptionOrNull()?.localizedMessage ?: "Failed to delete school", Toast.LENGTH_SHORT).show()
                                 }
                             }
+                        } else {
+                            val updated = targetSchool.copy(isDeleted = true, deletedAt = System.currentTimeMillis())
+                            onUpdateSchool(updated)
+                            schoolToDelete = null
+                            triggerRefresh()
                         }
                     },
+                    enabled = !isPerformingDeleteAction,
                     colors = ButtonDefaults.buttonColors(containerColor = Red600),
                     shape = RoundedCornerShape(8.dp)
                 ) {
@@ -743,7 +457,7 @@ fun SchoolManagementTab(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Deleting...")
                     } else {
-                        Text("Delete School")
+                        Text("Delete")
                     }
                 }
             },
@@ -768,7 +482,7 @@ fun SchoolManagementTab(
             },
             text = {
                 Text(
-                    text = "This will permanently erase '${targetSchool.schoolName}' from Firestore and the local database. This action cannot be undone.",
+                    text = "Are you sure you want to permanently delete '${targetSchool.schoolName}'? This action CANNOT be undone.",
                     fontSize = 13.sp,
                     color = Slate700
                 )
@@ -785,15 +499,17 @@ fun SchoolManagementTab(
                                     successNotification = "${targetSchool.schoolName} permanently deleted."
                                     triggerRefresh()
                                 } else {
-                                    Toast.makeText(context, res.exceptionOrNull()?.localizedMessage ?: "Failed to permanently delete", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, res.exceptionOrNull()?.localizedMessage ?: "Failed to permanently delete school", Toast.LENGTH_SHORT).show()
                                 }
                             }
+                        } else {
+                            schoolToPermanentDelete = null
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Red600),
-                    shape = RoundedCornerShape(8.dp)
+                    enabled = !isPerformingDeleteAction,
+                    colors = ButtonDefaults.buttonColors(containerColor = Red600)
                 ) {
-                    Text("Delete Permanently")
+                    Text("Permanently Delete")
                 }
             },
             dismissButton = {
@@ -804,7 +520,7 @@ fun SchoolManagementTab(
         )
     }
 
-    // Add School Dialog (With Duplicate Prevention & 10-Digit Mobile Validation)
+    // Add School Dialog
     if (showAddSchoolDialog) {
         var mStateName by remember { mutableStateOf("Rajasthan") }
         var mDistrictName by remember { mutableStateOf("") }
@@ -814,12 +530,10 @@ fun SchoolManagementTab(
         var mPrincipalName by remember { mutableStateOf("") }
         var mBlockName by remember { mutableStateOf("") }
         var mPrincipalMobile by remember { mutableStateOf("") }
-        var mVisitDate by remember { mutableStateOf("") }
         var mMapLink by remember { mutableStateOf("") }
         var mError by remember { mutableStateOf<String?>(null) }
         var isSaving by remember { mutableStateOf(false) }
 
-        // Duplicate Check: Same name & district in active schools
         val isDuplicate = remember(mSchoolName, mDistrictName, activeSchools) {
             val cleanName = mSchoolName.trim().lowercase()
             val cleanDistrict = mDistrictName.trim().lowercase()
@@ -860,7 +574,6 @@ fun SchoolManagementTab(
                         }
                     }
 
-                    // 1. School Name
                     OutlinedTextField(
                         value = mSchoolName,
                         onValueChange = {
@@ -873,13 +586,12 @@ fun SchoolManagementTab(
                         isError = isDuplicate,
                         supportingText = {
                             if (isDuplicate) {
-                                Text("⚠️ इस नाम का स्कूल इस जिले में पहले से मौजूद है (Duplicate school detected)", color = Red600, fontSize = 11.sp)
+                                Text("⚠️ इस नाम का स्कूल पहले से मौजूद है", color = Red600, fontSize = 11.sp)
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // 2. District Name
                     OutlinedTextField(
                         value = mDistrictName,
                         onValueChange = {
@@ -892,7 +604,6 @@ fun SchoolManagementTab(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // 3. Block Name
                     OutlinedTextField(
                         value = mBlockName,
                         onValueChange = { mBlockName = it },
@@ -902,7 +613,6 @@ fun SchoolManagementTab(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // 4. Village Name
                     OutlinedTextField(
                         value = mVillageName,
                         onValueChange = { mVillageName = it },
@@ -911,7 +621,6 @@ fun SchoolManagementTab(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // 5. School Type
                     OutlinedTextField(
                         value = mSchoolType,
                         onValueChange = { mSchoolType = it },
@@ -921,7 +630,6 @@ fun SchoolManagementTab(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // 6. Principal Name
                     OutlinedTextField(
                         value = mPrincipalName,
                         onValueChange = { mPrincipalName = it },
@@ -930,7 +638,6 @@ fun SchoolManagementTab(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // 7. Principal Mobile Number (Strict 10 Digits)
                     OutlinedTextField(
                         value = mPrincipalMobile,
                         onValueChange = { input ->
@@ -944,13 +651,12 @@ fun SchoolManagementTab(
                         isError = mPrincipalMobile.isNotBlank() && mPrincipalMobile.length != 10,
                         supportingText = {
                             if (mPrincipalMobile.isNotBlank() && mPrincipalMobile.length != 10) {
-                                Text("Mobile number must be exactly 10 digits (${mPrincipalMobile.length}/10)", color = Red600, fontSize = 11.sp)
+                                Text("Mobile must be 10 digits (${mPrincipalMobile.length}/10)", color = Red600, fontSize = 11.sp)
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // 8. State Name
                     OutlinedTextField(
                         value = mStateName,
                         onValueChange = { mStateName = it },
@@ -959,12 +665,11 @@ fun SchoolManagementTab(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // 9. Google Map Link / Location URL
                     OutlinedTextField(
                         value = mMapLink,
                         onValueChange = { mMapLink = it },
-                        label = { Text("Google Map Link / Location URL (मैप लिंक)", fontSize = 12.sp) },
-                        placeholder = { Text("e.g. https://maps.app.goo.gl/... or 26.9124, 75.7873") },
+                        label = { Text("Google Map Link (मैप लिंक)", fontSize = 12.sp) },
+                        placeholder = { Text("e.g. https://maps.app.goo.gl/... or location URL") },
                         leadingIcon = {
                             Icon(Icons.Default.LocationOn, contentDescription = null, tint = Indigo600)
                         },
@@ -989,7 +694,7 @@ fun SchoolManagementTab(
                             return@Button
                         }
                         if (isDuplicate) {
-                            mError = "A school with this name and district already exists. Duplicate schools cannot be added."
+                            mError = "A school with this name and district already exists."
                             return@Button
                         }
                         if (cleanMobile.isNotBlank() && cleanMobile.length != 10) {
@@ -1008,7 +713,7 @@ fun SchoolManagementTab(
                             principalName = mPrincipalName.trim(),
                             blockName = mBlockName.trim(),
                             principalMobile = cleanMobile,
-                            visitDate = mVisitDate.trim(),
+                            visitDate = "",
                             mapLink = mMapLink.trim(),
                             createdAt = System.currentTimeMillis(),
                             updatedAt = System.currentTimeMillis()
@@ -1044,12 +749,9 @@ fun SchoolManagementTab(
         )
     }
 
-    // Edit School Dialog (With 10-Digit Mobile Validation and Status/Completion Controls)
+    // Edit School Dialog
     if (selectedSchoolForEdit != null) {
         val sch = selectedSchoolForEdit!!
-        val todayStr = remember {
-            SimpleDateFormat("dd-MMM-yyyy", Locale.ENGLISH).format(Date())
-        }
         var eState by remember { mutableStateOf(sch.stateName) }
         var eDistrict by remember { mutableStateOf(sch.districtName) }
         var eSchoolName by remember { mutableStateOf(sch.schoolName) }
@@ -1058,37 +760,16 @@ fun SchoolManagementTab(
         var ePrincipal by remember { mutableStateOf(sch.principalName) }
         var eBlock by remember { mutableStateOf(sch.blockName) }
         var eMobile by remember { mutableStateOf(sch.principalMobile) }
-        var isMarkedComplete by remember { mutableStateOf(sch.visitDate.isNotBlank()) }
-        var eVisitDate by remember { mutableStateOf(if (sch.visitDate.isNotBlank()) sch.visitDate else todayStr) }
-        var selectedEmployee by remember { mutableStateOf<User?>(null) }
-        var employeeDropdownExpanded by remember { mutableStateOf(false) }
-        var eRemarks by remember { mutableStateOf("") }
         var eMapLink by remember { mutableStateOf(sch.mapLink) }
         var eError by remember { mutableStateOf<String?>(null) }
         var isSavingEdit by remember { mutableStateOf(false) }
-
-        val calendar = remember { Calendar.getInstance() }
-        val datePickerDialog = remember {
-            DatePickerDialog(
-                context,
-                { _, year, month, dayOfMonth ->
-                    val cal = Calendar.getInstance().apply {
-                        set(year, month, dayOfMonth)
-                    }
-                    eVisitDate = SimpleDateFormat("dd-MMM-yyyy", Locale.ENGLISH).format(cal.time)
-                },
-                calendar.get(Calendar.YEAR),
-                calendar.get(Calendar.MONTH),
-                calendar.get(Calendar.DAY_OF_MONTH)
-            )
-        }
 
         AlertDialog(
             onDismissRequest = { if (!isSavingEdit) selectedSchoolForEdit = null },
             title = {
                 Column {
                     Text("Edit School Details (स्कूल संपादित करें)", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Navy900)
-                    Text("Admin can edit information or manually update completion status", fontSize = 11.sp, color = Slate500)
+                    Text("Update school information", fontSize = 11.sp, color = Slate500)
                 }
             },
             text = {
@@ -1096,7 +777,7 @@ fun SchoolManagementTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (eError != null) {
                         Surface(
@@ -1113,293 +794,119 @@ fun SchoolManagementTab(
                         }
                     }
 
-                    // Status Toggle Selector (Pending vs Completed)
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFFF8FAFC),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("School Visit Status (विजिट स्थिति):", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Navy900)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                // Pending Button
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = if (!isMarkedComplete) Color(0xFFFEF3C7) else Color.White,
-                                    border = androidx.compose.foundation.BorderStroke(
-                                        1.dp,
-                                        if (!isMarkedComplete) Color(0xFFB45309) else Color(0xFFE2E8F0)
-                                    ),
-                                    modifier = Modifier.weight(1f).clickable {
-                                        isMarkedComplete = false
-                                    }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.Center
-                                    ) {
-                                        Icon(
-                                            Icons.Default.HourglassEmpty,
-                                            contentDescription = null,
-                                            tint = if (!isMarkedComplete) Color(0xFFB45309) else Slate500,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = "⏳ Pending (बाकी)",
-                                            fontSize = 12.sp,
-                                            fontWeight = if (!isMarkedComplete) FontWeight.Bold else FontWeight.Medium,
-                                            color = if (!isMarkedComplete) Color(0xFFB45309) else Slate700
-                                        )
-                                    }
-                                }
-
-                                // Completed Button
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = if (isMarkedComplete) Color(0xFFD1FAE5) else Color.White,
-                                    border = androidx.compose.foundation.BorderStroke(
-                                        1.dp,
-                                        if (isMarkedComplete) Color(0xFF059669) else Color(0xFFE2E8F0)
-                                    ),
-                                    modifier = Modifier.weight(1f).clickable {
-                                        isMarkedComplete = true
-                                        if (eVisitDate.isBlank()) eVisitDate = todayStr
-                                    }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.Center
-                                    ) {
-                                        Icon(
-                                            Icons.Default.CheckCircle,
-                                            contentDescription = null,
-                                            tint = if (isMarkedComplete) Color(0xFF059669) else Slate500,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = "✓ Complete (पूर्ण)",
-                                            fontSize = 12.sp,
-                                            fontWeight = if (isMarkedComplete) FontWeight.Bold else FontWeight.Medium,
-                                            color = if (isMarkedComplete) Color(0xFF059669) else Slate700
-                                        )
-                                    }
-                                }
-                            }
-
-                            if (isMarkedComplete) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                // Date picker row
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = Color.White,
-                                    modifier = Modifier.fillMaxWidth().clickable { datePickerDialog.show() }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Column {
-                                            Text("Completion Date:", fontSize = 10.sp, color = Slate500)
-                                            Text(eVisitDate, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Emerald600)
-                                        }
-                                        OutlinedButton(
-                                            onClick = { datePickerDialog.show() },
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                            modifier = Modifier.height(28.dp)
-                                        ) {
-                                            Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(12.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("Pick Date", fontSize = 11.sp)
-                                        }
-                                    }
-                                }
-
-                                // Officer dropdown
-                                ExposedDropdownMenuBox(
-                                    expanded = employeeDropdownExpanded,
-                                    onExpandedChange = { employeeDropdownExpanded = !employeeDropdownExpanded }
-                                ) {
-                                    OutlinedTextField(
-                                        value = selectedEmployee?.let { "${it.name} (${it.role.name})" } ?: "Admin (Manual Entry - स्वयं एडमिन)",
-                                        onValueChange = {},
-                                        readOnly = true,
-                                        label = { Text("Completed By (फील्ड ऑफिसर)", fontSize = 11.sp) },
-                                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = employeeDropdownExpanded) },
-                                        modifier = Modifier.menuAnchor().fillMaxWidth(),
-                                        shape = RoundedCornerShape(8.dp)
-                                    )
-                                    ExposedDropdownMenu(
-                                        expanded = employeeDropdownExpanded,
-                                        onDismissRequest = { employeeDropdownExpanded = false }
-                                    ) {
-                                        DropdownMenuItem(
-                                            text = { Text("Admin (Manual Entry - स्वयं एडमिन)", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
-                                            onClick = {
-                                                selectedEmployee = null
-                                                employeeDropdownExpanded = false
-                                            }
-                                        )
-                                        employees.forEach { emp ->
-                                            DropdownMenuItem(
-                                                text = {
-                                                    Column {
-                                                        Text(emp.name, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                                                        Text("${emp.role.name} • ${emp.mobile.ifBlank { emp.email }}", fontSize = 10.sp, color = Slate500)
-                                                    }
-                                                },
-                                                onClick = {
-                                                    selectedEmployee = emp
-                                                    employeeDropdownExpanded = false
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
-
-                                OutlinedTextField(
-                                    value = eRemarks,
-                                    onValueChange = { eRemarks = it },
-                                    label = { Text("Completion Remarks (टिप्पणी)", fontSize = 11.sp) },
-                                    placeholder = { Text("e.g. Verified by Admin") },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(8.dp)
-                                )
-                            }
-                        }
-                    }
-
                     OutlinedTextField(
                         value = eSchoolName,
-                        onValueChange = {
-                            eSchoolName = it
-                            eError = null
-                        },
-                        label = { Text("School Name *", fontSize = 12.sp) },
+                        onValueChange = { eSchoolName = it },
+                        label = { Text("School Name (स्कूल का नाम) *", fontSize = 12.sp) },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
+                        modifier = Modifier.fillMaxWidth()
                     )
+
                     OutlinedTextField(
                         value = eDistrict,
                         onValueChange = { eDistrict = it },
-                        label = { Text("District", fontSize = 12.sp) },
+                        label = { Text("District Name (जिला) *", fontSize = 12.sp) },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
+                        modifier = Modifier.fillMaxWidth()
                     )
+
                     OutlinedTextField(
                         value = eBlock,
                         onValueChange = { eBlock = it },
-                        label = { Text("Block", fontSize = 12.sp) },
+                        label = { Text("Block Name (ब्लॉक)", fontSize = 12.sp) },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
+                        modifier = Modifier.fillMaxWidth()
                     )
+
                     OutlinedTextField(
                         value = eVillage,
                         onValueChange = { eVillage = it },
-                        label = { Text("Village", fontSize = 12.sp) },
+                        label = { Text("Village / City (गांव / शहर)", fontSize = 12.sp) },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
+                        modifier = Modifier.fillMaxWidth()
                     )
+
                     OutlinedTextField(
                         value = eSchoolType,
                         onValueChange = { eSchoolType = it },
-                        label = { Text("School Type", fontSize = 12.sp) },
+                        label = { Text("School Type (प्रकार)", fontSize = 12.sp) },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
+                        modifier = Modifier.fillMaxWidth()
                     )
+
                     OutlinedTextField(
                         value = ePrincipal,
                         onValueChange = { ePrincipal = it },
-                        label = { Text("Principal Name", fontSize = 12.sp) },
+                        label = { Text("Principal Name (प्रधानाचार्य का नाम)", fontSize = 12.sp) },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
+                        modifier = Modifier.fillMaxWidth()
                     )
+
                     OutlinedTextField(
                         value = eMobile,
                         onValueChange = { input ->
                             eMobile = input.filter { it.isDigit() }.take(10)
-                            eError = null
                         },
-                        label = { Text("Principal Mobile (10 Digits)", fontSize = 12.sp) },
+                        label = { Text("Principal Mobile (10-digit mobile)", fontSize = 12.sp) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
-                        isError = eMobile.isNotBlank() && eMobile.length != 10,
-                        supportingText = {
-                            if (eMobile.isNotBlank() && eMobile.length != 10) {
-                                Text("Mobile must be 10 digits", color = Red600, fontSize = 11.sp)
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = eState,
+                        onValueChange = { eState = it },
+                        label = { Text("State Name (राज्य)", fontSize = 12.sp) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
                     )
 
                     OutlinedTextField(
                         value = eMapLink,
                         onValueChange = { eMapLink = it },
-                        label = { Text("Google Map Link / Coordinates (मैप लिंक)", fontSize = 12.sp) },
-                        placeholder = { Text("e.g. https://maps.app.goo.gl/... or 26.9124, 75.7873") },
+                        label = { Text("Google Map Link (मैप लिंक)", fontSize = 12.sp) },
                         leadingIcon = {
                             Icon(Icons.Default.LocationOn, contentDescription = null, tint = Indigo600)
                         },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        val cleanMobile = eMobile.trim().filter { it.isDigit() }
-                        if (eSchoolName.isBlank()) {
-                            eError = "School Name cannot be empty"
+                        val cleanName = eSchoolName.trim()
+                        val cleanDist = eDistrict.trim()
+                        val cleanMob = eMobile.trim().filter { it.isDigit() }
+
+                        if (cleanName.isBlank()) {
+                            eError = "School Name is required"
                             return@Button
                         }
-                        if (cleanMobile.isNotBlank() && cleanMobile.length != 10) {
-                            eError = "Principal mobile number must be exactly 10 digits."
+                        if (cleanDist.isBlank()) {
+                            eError = "District Name is required"
                             return@Button
                         }
+                        if (cleanMob.isNotBlank() && cleanMob.length != 10) {
+                            eError = "Mobile number must be exactly 10 digits"
+                            return@Button
+                        }
+
                         isSavingEdit = true
-                        val finalVisitDate = if (isMarkedComplete) eVisitDate.trim().ifBlank { todayStr } else ""
                         val updated = sch.copy(
-                            schoolName = eSchoolName.trim(),
-                            districtName = eDistrict.trim(),
+                            schoolName = cleanName,
+                            districtName = cleanDist,
                             blockName = eBlock.trim(),
                             villageName = eVillage.trim(),
                             schoolType = eSchoolType.trim(),
                             principalName = ePrincipal.trim(),
-                            principalMobile = cleanMobile,
-                            visitDate = finalVisitDate,
-                            mapLink = eMapLink.trim(),
+                            principalMobile = cleanMob,
                             stateName = eState.trim().ifBlank { "Rajasthan" },
+                            mapLink = eMapLink.trim(),
                             updatedAt = System.currentTimeMillis()
                         )
-                        if (isMarkedComplete && onMarkSchoolCompleted != null) {
-                            val empId = selectedEmployee?.userId ?: "emp_admin"
-                            val empName = selectedEmployee?.name ?: "Admin (Manual Entry)"
-                            val remarks = eRemarks.trim().ifBlank { "Updated and marked completed by Admin on $finalVisitDate" }
-                            onUpdateSchool(updated)
-                            onMarkSchoolCompleted(updated.schoolId, finalVisitDate, empId, empName, remarks)
-                        } else if (!isMarkedComplete && onMarkSchoolPending != null) {
-                            onUpdateSchool(updated)
-                            onMarkSchoolPending(updated.schoolId)
-                        } else {
-                            onUpdateSchool(updated)
-                        }
+                        onUpdateSchool(updated)
                         isSavingEdit = false
                         selectedSchoolForEdit = null
                         successNotification = "${updated.schoolName} updated successfully!"
@@ -1425,212 +932,13 @@ fun SchoolManagementTab(
             }
         )
     }
-
-    // Import Excel Preview & Validation Dialog
-    if (importValidationResult != null) {
-        val res = importValidationResult!!
-        var previewSearchQuery by remember { mutableStateOf("") }
-        val previewFiltered = remember(res.schoolsToImport, previewSearchQuery) {
-            if (previewSearchQuery.isBlank()) res.schoolsToImport
-            else res.schoolsToImport.filter {
-                it.schoolName.contains(previewSearchQuery, ignoreCase = true) ||
-                        it.districtName.contains(previewSearchQuery, ignoreCase = true) ||
-                        it.blockName.contains(previewSearchQuery, ignoreCase = true) ||
-                        it.villageName.contains(previewSearchQuery, ignoreCase = true) ||
-                        it.principalName.contains(previewSearchQuery, ignoreCase = true) ||
-                        it.principalMobile.contains(previewSearchQuery, ignoreCase = true)
-            }
-        }
-
-        AlertDialog(
-            onDismissRequest = { if (!isImporting) importValidationResult = null },
-            title = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text("Excel Import Preview", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Navy900)
-                        Text("वैध स्कूलों का पूर्वावलोकन", fontSize = 11.sp, color = Slate500)
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = Emerald100
-                    ) {
-                        Text(
-                            text = "${res.validRows} Valid",
-                            color = Emerald600,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-                }
-            },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFFF8FAFC),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Total File Rows: ${res.totalRows}", fontSize = 12.sp, color = Slate700)
-                                Text("Valid Schools: ${res.validRows}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Emerald600)
-                            }
-                            if (res.duplicateRows > 0) {
-                                Text("Duplicates Skipped: ${res.duplicateRows}", fontSize = 11.sp, color = Slate500)
-                            }
-                            if (res.invalidRows > 0) {
-                                Text("Skipped (Empty Name): ${res.invalidRows}", fontSize = 11.sp, color = Red600, fontWeight = FontWeight.Medium)
-                            }
-                            if (res.completedVisitsToImport.isNotEmpty()) {
-                                Text("Completed Visits Included: ${res.completedVisitsToImport.size}", fontSize = 11.sp, color = Indigo600, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-
-                    Text(
-                        text = "Parsed Valid Schools (${res.schoolsToImport.size}):",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Navy900
-                    )
-
-                    if (res.schoolsToImport.size > 5) {
-                        OutlinedTextField(
-                            value = previewSearchQuery,
-                            onValueChange = { previewSearchQuery = it },
-                            placeholder = { Text("Filter preview list...", fontSize = 12.sp) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                    }
-
-                    if (previewFiltered.isEmpty()) {
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = Color(0xFFF1F5F9),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                "No valid schools found in preview matching filter.",
-                                fontSize = 12.sp,
-                                color = Slate500,
-                                modifier = Modifier.padding(14.dp)
-                            )
-                        }
-                    } else {
-                        previewFiltered.forEachIndexed { idx, school ->
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color.White,
-                                shadowElevation = 1.dp,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(10.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.Top
-                                    ) {
-                                        Text(
-                                            text = "${idx + 1}. ${school.schoolName}",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Navy900,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        if (school.schoolType.isNotBlank()) {
-                                            Surface(
-                                                shape = RoundedCornerShape(6.dp),
-                                                color = Slate100
-                                            ) {
-                                                Text(
-                                                    text = school.schoolType,
-                                                    fontSize = 10.sp,
-                                                    color = Indigo600,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(4.dp))
-
-                                    val loc = listOfNotNull(
-                                        school.villageName.takeIf { it.isNotBlank() }?.let { "Village: $it" },
-                                        school.blockName.takeIf { it.isNotBlank() }?.let { "Block: $it" },
-                                        school.districtName.takeIf { it.isNotBlank() }?.let { "District: $it" }
-                                    ).joinToString(" • ")
-
-                                    if (loc.isNotBlank()) {
-                                        Text(text = loc, fontSize = 11.sp, color = Slate500)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        isImporting = true
-                        onImportSchools(res.schoolsToImport, res.completedVisitsToImport) { importRes ->
-                            isImporting = false
-                            if (importRes.isSuccess) {
-                                Toast.makeText(context, "${res.schoolsToImport.size} schools imported successfully!", Toast.LENGTH_SHORT).show()
-                                triggerRefresh()
-                            } else {
-                                Toast.makeText(context, "Import failed: ${importRes.exceptionOrNull()?.localizedMessage}", Toast.LENGTH_LONG).show()
-                            }
-                            importValidationResult = null
-                        }
-                    },
-                    enabled = !isImporting && res.schoolsToImport.isNotEmpty(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Indigo600)
-                ) {
-                    if (isImporting) {
-                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Importing...")
-                    } else {
-                        Text("Confirm Import (${res.schoolsToImport.size} Schools)")
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { importValidationResult = null },
-                    enabled = !isImporting
-                ) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
 }
 
 @Composable
 fun SchoolCardItem(
     school: School,
     onEditClick: () -> Unit,
-    onDeleteClick: () -> Unit,
-    onQuickCompleteClick: () -> Unit = {},
-    onQuickPendingClick: () -> Unit = {}
+    onDeleteClick: () -> Unit
 ) {
     val context = LocalContext.current
     Card(
@@ -1728,21 +1036,19 @@ fun SchoolCardItem(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.clickable {
-                        try {
-                            val uri = if (school.mapLink.startsWith("http://") || school.mapLink.startsWith("https://")) {
-                                Uri.parse(school.mapLink)
-                            } else {
-                                Uri.parse("geo:0,0?q=${Uri.encode(school.mapLink)}")
-                            }
-                            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Cannot open map link", Toast.LENGTH_SHORT).show()
-                        }
+                        GoogleMapHelper.startNavigation(
+                            context = context,
+                            mapLink = school.mapLink,
+                            latitude = school.latitude,
+                            longitude = school.longitude,
+                            schoolName = school.schoolName,
+                            address = school.districtName
+                        )
                     }
                 ) {
                     Icon(Icons.Default.LocationOn, contentDescription = "Map Location", tint = Indigo600, modifier = Modifier.size(14.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("View on Google Maps", fontSize = 11.sp, color = Indigo600, fontWeight = FontWeight.SemiBold)
+                    Text("Open Admin Google Maps Link", fontSize = 11.sp, color = Indigo600, fontWeight = FontWeight.SemiBold)
                 }
             }
 
@@ -1750,7 +1056,7 @@ fun SchoolCardItem(
             Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFF1F5F9)))
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Status & Quick Action Row
+            // Status Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1766,7 +1072,7 @@ fun SchoolCardItem(
                             shape = RoundedCornerShape(6.dp)
                         ) {
                             Text(
-                                text = "✓ Completed (पूर्ण)",
+                                text = "✓ Completed",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF059669),
@@ -1780,41 +1086,40 @@ fun SchoolCardItem(
                             color = Slate500
                         )
                     }
-
-                    OutlinedButton(
-                        onClick = onQuickPendingClick,
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(28.dp)
-                    ) {
-                        Icon(Icons.Default.HourglassEmpty, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color(0xFFB45309))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Make Pending", fontSize = 11.sp, color = Color(0xFFB45309))
-                    }
                 } else {
                     Surface(
                         color = Color(0xFFFEF3C7),
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text(
-                            text = "⏳ Pending (विजिट बाकी)",
+                            text = "⏳ Pending",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFFB45309),
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                         )
                     }
+                }
 
-                    Button(
-                        onClick = onQuickCompleteClick,
-                        colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                if (school.mapLink.isNotBlank()) {
+                    OutlinedButton(
+                        onClick = {
+                            GoogleMapHelper.startNavigation(
+                                context = context,
+                                mapLink = school.mapLink,
+                                latitude = school.latitude,
+                                longitude = school.longitude,
+                                schoolName = school.schoolName,
+                                address = school.districtName
+                            )
+                        },
                         shape = RoundedCornerShape(8.dp),
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                         modifier = Modifier.height(28.dp)
                     ) {
-                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(13.dp))
+                        Icon(Icons.Default.NearMe, contentDescription = null, modifier = Modifier.size(12.dp), tint = Indigo600)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Mark Complete (पूर्ण करें)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Start Navigation", fontSize = 11.sp, color = Indigo600, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1901,7 +1206,7 @@ fun DeletedSchoolCardItem(
                 ) {
                     Icon(Icons.Default.Restore, contentDescription = null, modifier = Modifier.size(14.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Restore (पुनर्स्थापित करें)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("Restore", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

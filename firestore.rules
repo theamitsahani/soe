@@ -2,97 +2,10 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // =========================================================================
-    // AUTHENTICATION & ROLE HELPER FUNCTIONS
-    // =========================================================================
-
-    // Check if the caller is currently authenticated with Firebase Auth
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    // Check if the caller has an active Admin or Super Admin role
-    function isAdmin() {
-      return isAuthenticated() && (
-        request.auth.token.role in ['ADMIN', 'SUPER_ADMIN', 'admin', 'super_admin'] ||
-        request.auth.token.admin == true ||
-        request.auth.token.email in ['amitsahani552@gmail.com', 'admin@gmail.com', 'admin@soe.com'] ||
-        request.auth.token.email.matches('.*admin.*') ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['ADMIN', 'SUPER_ADMIN', 'admin', 'super_admin'])
-      );
-    }
-
-    // =========================================================================
-    // USERS COLLECTION
-    // =========================================================================
-    // All authenticated users can read users (needed for employee lists, name resolutions, admin assignment).
-    // Users can create/update their own profile doc or admins can manage all users.
-    match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated();
-      allow delete: if isAdmin() || (isAuthenticated() && request.auth.uid == userId);
-    }
-
-    // =========================================================================
-    // SCHOOLS MASTER DATA COLLECTION
-    // =========================================================================
-    // All authenticated staff and admins can read and update schools.
-    match /schools/{schoolId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    // =========================================================================
-    // TASKS / ASSIGNMENTS COLLECTION
-    // =========================================================================
-    // Authenticated users can read and write tasks so assignments and sync never fail.
-    match /tasks/{taskId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    // =========================================================================
-    // VISITS / INSPECTIONS COLLECTION
-    // =========================================================================
-    // All inspection reports, photos, and answers can be synced reliably by authenticated staff.
-    match /visits/{visitId} {
-      allow read, write: if isAuthenticated();
-
-      // Photos metadata subcollection
-      match /photos/{photoId} {
-        allow read, write: if isAuthenticated();
-      }
-
-      // Audit Events subcollection
-      match /events/{eventId} {
-        allow read, write: if isAuthenticated();
-      }
-
-      match /visitEvents/{eventId} {
-        allow read, write: if isAuthenticated();
-      }
-    }
-
-    // =========================================================================
-    // IMPORT BATCHES COLLECTION
-    // =========================================================================
-    match /importBatches/{batchId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    // =========================================================================
-    // NOTIFICATIONS COLLECTION
-    // =========================================================================
-    match /notifications/{notificationId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    // =========================================================================
-    // DEFAULT CATCH-ALL RULE
-    // =========================================================================
     match /{document=**} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if request.auth != null;
     }
   }
 }
+
 
