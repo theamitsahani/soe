@@ -71,13 +71,23 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.School
 import com.example.data.model.User
 import com.example.ui.components.SearchTextField
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.FileUpload
+import com.example.ui.theme.Emerald600
 import com.example.ui.theme.Indigo600
 import com.example.ui.theme.Navy900
 import com.example.ui.theme.Red600
 import com.example.ui.theme.Slate100
 import com.example.ui.theme.Slate500
 import com.example.ui.theme.Slate700
+import com.example.util.ExcelHelper
 import com.example.util.GoogleMapHelper
+import com.example.util.ImportValidationResult
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class SchoolViewFilter {
     ALL_ACTIVE,
@@ -110,10 +120,29 @@ fun SchoolManagementTab(
     var refreshErrorMessage by remember { mutableStateOf<String?>(null) }
     var successNotification by remember { mutableStateOf<String?>(null) }
     var selectedFilter by remember { mutableStateOf(SchoolViewFilter.ALL_ACTIVE) }
+    var isImporting by remember { mutableStateOf(false) }
+    var isParsingExcel by remember { mutableStateOf(false) }
+    var importValidationResult by remember { mutableStateOf<ImportValidationResult?>(null) }
+    val scope = rememberCoroutineScope()
 
     val context = LocalContext.current
 
     val activeSchools = remember(schools) { schools.filter { !it.isDeleted } }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            isParsingExcel = true
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    ExcelHelper.parseSchoolCsv(context, uri, activeSchools)
+                }
+                isParsingExcel = false
+                importValidationResult = result
+            }
+        }
+    }
     val completedSchools = remember(activeSchools) { activeSchools.filter { it.visitDate.isNotBlank() } }
     val pendingSchools = remember(activeSchools) { activeSchools.filter { it.visitDate.isBlank() } }
     val deletedSchools = remember(schools) { schools.filter { it.isDeleted } }
@@ -222,16 +251,44 @@ fun SchoolManagementTab(
                         }
                     }
 
-                    Button(
-                        onClick = { showAddSchoolDialog = true },
-                        shape = RoundedCornerShape(20.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
-                        modifier = Modifier.height(34.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Add School", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        // Import Excel Button
+                        Button(
+                            onClick = {
+                                filePickerLauncher.launch("*/*")
+                            },
+                            shape = RoundedCornerShape(20.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            modifier = Modifier.height(34.dp),
+                            enabled = !isParsingExcel && !isImporting
+                        ) {
+                            if (isParsingExcel) {
+                                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Reading...", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            } else {
+                                Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Import Excel", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        // Add School Button
+                        Button(
+                            onClick = { showAddSchoolDialog = true },
+                            shape = RoundedCornerShape(20.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            modifier = Modifier.height(34.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Add School", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -743,6 +800,167 @@ fun SchoolManagementTab(
             },
             dismissButton = {
                 TextButton(onClick = { showAddSchoolDialog = false }, enabled = !isSaving) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Excel Import Confirmation & Validation Dialog
+    if (importValidationResult != null) {
+        val result = importValidationResult!!
+        var importError by remember { mutableStateOf<String?>(null) }
+
+        AlertDialog(
+            onDismissRequest = { if (!isImporting) importValidationResult = null },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.FileUpload,
+                    contentDescription = null,
+                    tint = Emerald600,
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Excel Import Summary", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Navy900)
+                    Text("फ़ाइल समीक्षा एवं पुष्टि", fontSize = 11.sp, color = Slate500)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (importError != null) {
+                        Surface(
+                            color = Red600.copy(alpha = 0.1f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = importError!!,
+                                color = Red600,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
+                    }
+
+                    // Stats Summary Card
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Slate100)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Total Rows in File:", fontSize = 12.sp, color = Slate700)
+                                Text("${result.totalRows}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Navy900)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Valid Schools to Import:", fontSize = 12.sp, color = Emerald600, fontWeight = FontWeight.SemiBold)
+                                Text("${result.schoolsToImport.size}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Emerald600)
+                            }
+                            if (result.duplicateRows > 0) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Existing / Updated Schools:", fontSize = 12.sp, color = Color(0xFFD97706))
+                                    Text("${result.duplicateRows}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD97706))
+                                }
+                            }
+                            if (result.completedVisitsToImport.isNotEmpty()) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Completed Visits in File:", fontSize = 12.sp, color = Indigo600)
+                                    Text("${result.completedVisitsToImport.size}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Indigo600)
+                                }
+                            }
+                            if (result.invalidRows > 0) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Skipped / Invalid Rows:", fontSize = 12.sp, color = Red600)
+                                    Text("${result.invalidRows}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Red600)
+                                }
+                            }
+                        }
+                    }
+
+                    // Preview of first few schools
+                    if (result.schoolsToImport.isNotEmpty()) {
+                        Text(
+                            text = "Preview (First ${result.schoolsToImport.take(4).size} of ${result.schoolsToImport.size}):",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Navy900
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            result.schoolsToImport.take(4).forEach { sch ->
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color.White,
+                                    shadowElevation = 1.dp
+                                ) {
+                                    Column(modifier = Modifier.padding(8.dp)) {
+                                        Text(sch.schoolName, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Navy900)
+                                        Text(
+                                            "${sch.districtName} • Block: ${sch.blockName.ifBlank { "N/A" }} • Principal: ${sch.principalName.ifBlank { "N/A" }}",
+                                            fontSize = 11.sp,
+                                            color = Slate500
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Warning / Error list if any
+                    if (result.errors.isNotEmpty()) {
+                        Text("Errors / Warnings (${result.errors.size}):", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Red600)
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            result.errors.take(3).forEach { err ->
+                                Text("• $err", fontSize = 11.sp, color = Red600)
+                            }
+                            if (result.errors.size > 3) {
+                                Text("...and ${result.errors.size - 3} more rows skipped", fontSize = 11.sp, color = Slate500)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        isImporting = true
+                        importError = null
+                        onImportSchools(result.schoolsToImport, result.completedVisitsToImport) { res ->
+                            isImporting = false
+                            if (res.isSuccess) {
+                                val count = res.getOrNull() ?: result.schoolsToImport.size
+                                importValidationResult = null
+                                successNotification = "Successfully imported $count schools from Excel!"
+                                triggerRefresh()
+                            } else {
+                                importError = res.exceptionOrNull()?.localizedMessage ?: "Failed to import schools to Firestore"
+                            }
+                        }
+                    },
+                    enabled = !isImporting && result.schoolsToImport.isNotEmpty(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    if (isImporting) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Importing (${result.schoolsToImport.size})...")
+                    } else {
+                        Text("Confirm & Import (${result.schoolsToImport.size})")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { importValidationResult = null }, enabled = !isImporting) {
                     Text("Cancel")
                 }
             }

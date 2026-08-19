@@ -455,7 +455,10 @@ class VisitRepository(private val context: Context) {
             if (isOnline) {
                 val uploaded = syncManager.uploadSingleVisitToServer(finalVisit)
                 if (uploaded) {
-                    db.visitDao().updateVisit(finalVisit.copy(syncStatus = SyncStatus.SYNCED))
+                    // NOTE: syncManager.uploadSingleVisitToServer already updated the Room DB record
+                    // with the permanent Cloudinary photo URLs and SYNCED status. Do NOT overwrite with
+                    // finalVisit (which still holds local file URIs), or checkPendingCount will see local
+                    // media and re-upload the same photos 2-3 times!
                     recordEvent(
                         visitId = finalVisit.visitId,
                         taskId = finalVisit.taskId,
@@ -465,8 +468,6 @@ class VisitRepository(private val context: Context) {
                         actorRole = "EMPLOYEE",
                         details = "All inspection data and media uploaded to cloud"
                     )
-                } else {
-                    db.visitDao().updateVisit(finalVisit.copy(syncStatus = SyncStatus.PENDING))
                 }
             }
 

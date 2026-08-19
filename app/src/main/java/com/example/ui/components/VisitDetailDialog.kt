@@ -469,12 +469,7 @@ fun VisitDetailDialog(
                         icon = Icons.Default.Assignment
                     ) {
                         DetailGridRow("9. Met Principal? (प्रधानाचार्य से मुलाकात)", answers.q9_metPrincipal.ifBlank { "Not Recorded" })
-                        val displayAppAwareness = if (answers.q9_metPrincipal.trim().equals("नहीं", ignoreCase = true)) {
-                            "लागू नहीं (प्रधानाचार्य से मुलाकात नहीं हुई)"
-                        } else {
-                            answers.q10_missionGyanAwareness.ifBlank { "Not Recorded" }
-                        }
-                        DetailGridRow("10. Principal Aware of Mission Gyan App? (क्या प्रधानाचार्य को ऐप की जानकारी थी?)", displayAppAwareness)
+                        DetailGridRow("10. Principal Aware of Mission Gyan App? (क्या प्रधानाचार्य को ऐप की जानकारी थी?)", answers.q10_missionGyanAwareness.ifBlank { "Not Recorded" })
                         DetailGridRow("11. Participating Classes (शामिल कक्षाएं)", answers.q22_participatingClasses.ifBlank { "None Selected" })
                         DetailGridRow("12. Student Attendance Count (उपस्थित विद्यार्थी संख्या)", answers.q11_studentCount.ifBlank { "Not Recorded" })
                         DetailGridRow("13. School Response / Reception (विद्यालय प्रतिक्रिया)", answers.q12_schoolResponse.ifBlank { "Not Recorded" })
@@ -1220,14 +1215,12 @@ private fun EditVisitAnswersDialog(
 
                     // 2. School Survey Response Section
                     EditFormSectionCard(title = "2. Survey & Student Response (सर्वे विवरण)") {
-                        if (q9_metPrincipal.trim() != "नहीं") {
-                            ChoiceSelectorRow(
-                                label = "10. क्या प्रधानाचार्य को App की जानकारी थी?",
-                                options = listOf("हाँ", "नहीं", "थोड़ी जानकारी थी"),
-                                selected = q10_missionGyanAwareness,
-                                onSelect = { q10_missionGyanAwareness = it }
-                            )
-                        }
+                        ChoiceSelectorRow(
+                            label = "10. क्या प्रधानाचार्य को App की जानकारी थी?",
+                            options = listOf("हाँ", "नहीं", "थोड़ी जानकारी थी"),
+                            selected = q10_missionGyanAwareness,
+                            onSelect = { q10_missionGyanAwareness = it }
+                        )
                         OutlinedTextField(
                             value = q22_participatingClasses,
                             onValueChange = { q22_participatingClasses = it },
@@ -1352,12 +1345,11 @@ private fun EditVisitAnswersDialog(
                         }
                         Button(
                             onClick = {
-                                val effectiveQ10 = if (q9_metPrincipal.trim() == "नहीं") "लागू नहीं (मुलाकात नहीं हुई)" else q10_missionGyanAwareness
                                 val updated = initialAnswers.copy(
                                     q7_principalName = q7_principalName,
                                     q8_principalMobile = q8_principalMobile,
                                     q9_metPrincipal = q9_metPrincipal,
-                                    q10_missionGyanAwareness = effectiveQ10,
+                                    q10_missionGyanAwareness = q10_missionGyanAwareness,
                                     q22_participatingClasses = q22_participatingClasses,
                                     q11_studentCount = q11_studentCount,
                                     q12_schoolResponse = q12_schoolResponse,

@@ -482,8 +482,6 @@ fun VisitFormScreen(
                                         ""
                                     }
 
-                                    val effectiveAwareness = if (metPrincipal.trim() == "नहीं") "लागू नहीं (मुलाकात नहीं हुई)" else missionGyanAwareness
-
                                     val answers = VisitAnswers(
                                         q1_soeName = employeeUser.name,
                                         q2_visitDate = visitDate,
@@ -494,7 +492,7 @@ fun VisitFormScreen(
                                         q7_principalName = principalName,
                                         q8_principalMobile = principalMobile,
                                         q9_metPrincipal = metPrincipal,
-                                        q10_missionGyanAwareness = effectiveAwareness,
+                                        q10_missionGyanAwareness = missionGyanAwareness,
                                         q11_studentCount = studentCount,
                                         q12_schoolResponse = schoolResponse,
                                         q13_bciName = bciName.trim(),
@@ -539,7 +537,7 @@ fun VisitFormScreen(
                                         visitDate = visitDate,
                                         status = VisitStatus.SUBMITTED,
                                         answersJson = answersAdapter.toJson(answers),
-                                        photosJson = photosAdapter.toJson(photoMap.mapValues { it.value.toList() }),
+                                        photosJson = photosAdapter.toJson(photoMap.mapValues { it.value.filter { u -> u.isNotBlank() }.distinct() }),
                                         startedAt = existingVisit?.startedAt ?: (now - 15 * 60 * 1000L),
                                         completedAt = now,
                                         submittedAt = now,
@@ -944,14 +942,7 @@ fun VisitFormScreen(
                             subtitle = "Met Principal Sir?",
                             options = listOf("हाँ", "नहीं"),
                             selectedOption = metPrincipal,
-                            onOptionSelected = {
-                                metPrincipal = it
-                                if (it == "नहीं") {
-                                    missionGyanAwareness = "लागू नहीं (मुलाकात नहीं हुई)"
-                                } else if (missionGyanAwareness == "लागू नहीं (मुलाकात नहीं हुई)") {
-                                    missionGyanAwareness = ""
-                                }
-                            }
+                            onOptionSelected = { metPrincipal = it }
                         )
                     }
 
@@ -959,15 +950,13 @@ fun VisitFormScreen(
                         // ==========================================
                         // STEP 2: App Awareness & Attendance
                         // ==========================================
-                        if (metPrincipal.trim() != "नहीं") {
-                            ModernSingleChoiceCard(
-                                title = "10. क्या प्रधानाचार्य महोदय को Mission Gyan App के बारे में जानकारी थी?",
-                                subtitle = "Was Principal Sir aware of Mission Gyan App?",
-                                options = listOf("हाँ", "नहीं", "थोड़ी जानकारी थी"),
-                                selectedOption = missionGyanAwareness,
-                                onOptionSelected = { missionGyanAwareness = it }
-                            )
-                        }
+                        ModernSingleChoiceCard(
+                            title = "10. क्या प्रधानाचार्य महोदय को Mission Gyan App के बारे में जानकारी थी?",
+                            subtitle = "Was Principal Sir aware of Mission Gyan App?",
+                            options = listOf("हाँ", "नहीं", "थोड़ी जानकारी थी"),
+                            selectedOption = missionGyanAwareness,
+                            onOptionSelected = { missionGyanAwareness = it }
+                        )
 
                         // Participating Classes (Class 6th to 12th)
                         Card(
