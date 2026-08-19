@@ -331,7 +331,7 @@ class MainActivity : ComponentActivity() {
                                                             taskRepository.deleteTask(taskId)
                                                         }
                                                     },
-                                                    onAssignTask = { sch, emp, date, notes, callback ->
+                                                    onAssignTask = { sch, emp, date, notes, mapLink, callback ->
                                                         scope.launch {
                                                             val res = taskRepository.assignTask(
                                                                 schoolId = sch.schoolId,
@@ -342,7 +342,8 @@ class MainActivity : ComponentActivity() {
                                                                 employeeName = emp.name,
                                                                 visitDate = date,
                                                                 notes = notes,
-                                                                employeeEmail = emp.email
+                                                                employeeEmail = emp.email,
+                                                                mapLink = mapLink
                                                             )
                                                             callback(res)
                                                         }

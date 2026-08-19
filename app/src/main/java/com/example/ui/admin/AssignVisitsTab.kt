@@ -108,10 +108,12 @@ fun AssignVisitsTab(
         employee: User,
         visitDate: String,
         notes: String,
+        mapLink: String,
         onComplete: (Result<Task>) -> Unit
     ) -> Unit
 ) {
     var selectedSchool by remember { mutableStateOf<School?>(null) }
+    var schoolMapLink by remember { mutableStateOf("") }
     var selectedEmployee1 by remember { mutableStateOf<User?>(null) }
     var selectedEmployee2 by remember { mutableStateOf<User?>(null) }
     var enableCoOfficer by remember { mutableStateOf(false) }
@@ -402,6 +404,7 @@ fun AssignVisitsTab(
                                         text = { Text("${school.schoolName} (${school.block}, ${school.district})", fontSize = 13.sp) },
                                         onClick = {
                                             selectedSchool = school
+                                            schoolMapLink = school.mapLink
                                             schoolDropdownExpanded = false
                                         }
                                     )
@@ -564,6 +567,42 @@ fun AssignVisitsTab(
                     }
 
                     OutlinedTextField(
+                        value = schoolMapLink,
+                        onValueChange = { schoolMapLink = it },
+                        label = { Text("School Google Map Link (स्कूल मैप लिंक / URL)") },
+                        placeholder = { Text("e.g. https://maps.app.goo.gl/... or 26.9124, 75.7873") },
+                        leadingIcon = {
+                            Icon(Icons.Default.LocationOn, contentDescription = null, tint = Indigo600)
+                        },
+                        trailingIcon = {
+                            if (schoolMapLink.isNotBlank()) {
+                                IconButton(
+                                    onClick = {
+                                        com.example.util.GoogleMapHelper.openLocationOnMap(
+                                            context = context,
+                                            mapLink = schoolMapLink,
+                                            schoolName = selectedSchool?.schoolName ?: "School Location",
+                                            address = selectedSchool?.districtName ?: ""
+                                        )
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                        contentDescription = "Test Map Link in Google Maps",
+                                        tint = Indigo600
+                                    )
+                                }
+                            }
+                        },
+                        supportingText = {
+                            Text("💡 गूगल मैप लिंक दर्ज करें जिससे कर्मचारी सीधे नेविगेशन शुरू कर सके।", fontSize = 11.sp, color = Slate500)
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = textFieldColors,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
                         value = notes,
                         onValueChange = { notes = it },
                         label = { Text("Instructions / Guidelines") },
@@ -599,13 +638,14 @@ fun AssignVisitsTab(
                                         selectedSchool = null
                                         selectedEmployee1 = null
                                         selectedEmployee2 = null
+                                        schoolMapLink = ""
                                         notes = ""
                                     } else {
                                         message = "Error assigning task: $errorMsg"
                                     }
                                 }
 
-                                onAssignTask(selectedSchool!!, selectedEmployee1!!, visitDate, notes) { res1 ->
+                                onAssignTask(selectedSchool!!, selectedEmployee1!!, visitDate, notes, schoolMapLink) { res1 ->
                                     if (res1.isFailure) {
                                         hasError = true
                                         errorMsg = res1.exceptionOrNull()?.localizedMessage ?: "Unknown error"
@@ -614,7 +654,7 @@ fun AssignVisitsTab(
                                     if (!enableCoOfficer || selectedEmployee2 == null) {
                                         checkDone()
                                     } else {
-                                        onAssignTask(selectedSchool!!, selectedEmployee2!!, visitDate, notes) { res2 ->
+                                        onAssignTask(selectedSchool!!, selectedEmployee2!!, visitDate, notes, schoolMapLink) { res2 ->
                                             if (res2.isFailure) {
                                                 hasError = true
                                                 errorMsg = res2.exceptionOrNull()?.localizedMessage ?: "Unknown error"

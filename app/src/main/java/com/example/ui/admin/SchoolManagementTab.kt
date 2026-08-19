@@ -564,6 +564,7 @@ fun SchoolManagementTab(
         var mBlockName by remember { mutableStateOf("") }
         var mPrincipalMobile by remember { mutableStateOf("") }
         var mVisitDate by remember { mutableStateOf("") }
+        var mMapLink by remember { mutableStateOf("") }
         var mError by remember { mutableStateOf<String?>(null) }
         var isSaving by remember { mutableStateOf(false) }
 
@@ -706,6 +707,19 @@ fun SchoolManagementTab(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    // 9. Google Map Link / Location URL
+                    OutlinedTextField(
+                        value = mMapLink,
+                        onValueChange = { mMapLink = it },
+                        label = { Text("Google Map Link / Location URL (मैप लिंक)", fontSize = 12.sp) },
+                        placeholder = { Text("e.g. https://maps.app.goo.gl/... or 26.9124, 75.7873") },
+                        leadingIcon = {
+                            Icon(Icons.Default.LocationOn, contentDescription = null, tint = Indigo600)
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             },
             confirmButton = {
@@ -744,6 +758,7 @@ fun SchoolManagementTab(
                             blockName = mBlockName.trim(),
                             principalMobile = cleanMobile,
                             visitDate = mVisitDate.trim(),
+                            mapLink = mMapLink.trim(),
                             createdAt = System.currentTimeMillis(),
                             updatedAt = System.currentTimeMillis()
                         )
@@ -790,6 +805,7 @@ fun SchoolManagementTab(
         var eBlock by remember { mutableStateOf(sch.blockName) }
         var eMobile by remember { mutableStateOf(sch.principalMobile) }
         var eVisitDate by remember { mutableStateOf(sch.visitDate) }
+        var eMapLink by remember { mutableStateOf(sch.mapLink) }
         var eError by remember { mutableStateOf<String?>(null) }
 
         AlertDialog(
@@ -897,6 +913,18 @@ fun SchoolManagementTab(
                         },
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    OutlinedTextField(
+                        value = eMapLink,
+                        onValueChange = { eMapLink = it },
+                        label = { Text("Google Map Link / Coordinates (मैप लिंक)", fontSize = 12.sp) },
+                        placeholder = { Text("e.g. https://maps.app.goo.gl/... or 26.9124, 75.7873") },
+                        leadingIcon = {
+                            Icon(Icons.Default.LocationOn, contentDescription = null, tint = Indigo600)
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             },
             confirmButton = {
@@ -920,6 +948,7 @@ fun SchoolManagementTab(
                             principalName = ePrincipal.trim(),
                             principalMobile = cleanMobile,
                             visitDate = eVisitDate.trim(),
+                            mapLink = eMapLink.trim(),
                             stateName = eState.trim().ifBlank { "Rajasthan" },
                             updatedAt = System.currentTimeMillis()
                         )

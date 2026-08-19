@@ -140,6 +140,14 @@ class SchoolRepository(private val context: Context) {
             ?: doc.getString("Visit Date")
             ?: "").trim()
 
+        val mapLink = (doc.getString("mapLink")
+            ?: doc.getString("googleMapLink")
+            ?: doc.getString("locationUrl")
+            ?: doc.getString("MAP_LINK")
+            ?: "").trim()
+        val latitude = doc.getDouble("latitude")
+        val longitude = doc.getDouble("longitude")
+
         val isDeleted = doc.getBoolean("isDeleted") ?: false
         val deletedAt = doc.getLong("deletedAt") ?: 0L
 
@@ -155,6 +163,9 @@ class SchoolRepository(private val context: Context) {
             blockName = blockName,
             principalMobile = principalMobile,
             visitDate = visitDate,
+            mapLink = mapLink,
+            latitude = latitude,
+            longitude = longitude,
             isDeleted = isDeleted,
             deletedAt = deletedAt,
             createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis(),
@@ -358,13 +369,25 @@ class SchoolRepository(private val context: Context) {
         try {
             val now = System.currentTimeMillis()
             val isCompleted = school.visitDate.isNotBlank()
-            val finalSchool = school.copy(createdAt = now, updatedAt = now)
+            val cleanMap = school.mapLink.trim()
+            val coords = if (school.latitude != null && school.longitude != null) {
+                Pair(school.latitude, school.longitude)
+            } else {
+                com.example.util.GoogleMapHelper.extractCoordinates(cleanMap)
+            }
+            val finalSchool = school.copy(
+                mapLink = cleanMap,
+                latitude = coords?.first ?: school.latitude,
+                longitude = coords?.second ?: school.longitude,
+                createdAt = now,
+                updatedAt = now
+            )
 
             db.schoolDao().insertSchool(finalSchool)
 
             val fStore = firestore
             if (fStore != null) {
-                val data = mapOf(
+                val data = mutableMapOf<String, Any>(
                     "schoolId" to finalSchool.schoolId,
                     "sr" to finalSchool.sr,
                     "state" to finalSchool.stateName,
@@ -382,6 +405,7 @@ class SchoolRepository(private val context: Context) {
                     "mobile" to finalSchool.principalMobile,
                     "principalMobile" to finalSchool.principalMobile,
                     "visitDate" to finalSchool.visitDate,
+                    "mapLink" to finalSchool.mapLink,
                     "status" to if (isCompleted) "COMPLETED" else "PENDING",
                     "isCompleted" to isCompleted,
                     "completedAt" to if (isCompleted) finalSchool.visitDate else "",
@@ -390,6 +414,8 @@ class SchoolRepository(private val context: Context) {
                     "createdAt" to finalSchool.createdAt,
                     "updatedAt" to finalSchool.updatedAt
                 )
+                if (finalSchool.latitude != null) data["latitude"] = finalSchool.latitude
+                if (finalSchool.longitude != null) data["longitude"] = finalSchool.longitude
                 val task = fStore.collection("schools").document(finalSchool.schoolId).set(
                     data,
                     com.google.firebase.firestore.SetOptions.merge()
@@ -430,35 +456,52 @@ class SchoolRepository(private val context: Context) {
 
     suspend fun updateSchoolRecord(school: School): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val updated = school.copy(updatedAt = System.currentTimeMillis())
+            val cleanMap = school.mapLink.trim()
+            val coords = if (school.latitude != null && school.longitude != null) {
+                Pair(school.latitude, school.longitude)
+            } else {
+                com.example.util.GoogleMapHelper.extractCoordinates(cleanMap)
+            }
+            val updated = school.copy(
+                mapLink = cleanMap,
+                latitude = coords?.first ?: school.latitude,
+                longitude = coords?.second ?: school.longitude,
+                updatedAt = System.currentTimeMillis()
+            )
             val isCompleted = updated.visitDate.isNotBlank()
+
+            db.schoolDao().updateSchool(updated)
 
             val fStore = firestore
             if (fStore != null) {
+                val data = mutableMapOf<String, Any>(
+                    "schoolId" to updated.schoolId,
+                    "sr" to updated.sr,
+                    "state" to updated.stateName,
+                    "stateName" to updated.stateName,
+                    "district" to updated.districtName,
+                    "districtName" to updated.districtName,
+                    "schoolName" to updated.schoolName,
+                    "type" to updated.schoolType,
+                    "schoolType" to updated.schoolType,
+                    "village" to updated.villageName,
+                    "villageName" to updated.villageName,
+                    "principalName" to updated.principalName,
+                    "block" to updated.blockName,
+                    "blockName" to updated.blockName,
+                    "mobile" to updated.principalMobile,
+                    "principalMobile" to updated.principalMobile,
+                    "visitDate" to updated.visitDate,
+                    "mapLink" to updated.mapLink,
+                    "status" to if (isCompleted) "COMPLETED" else "PENDING",
+                    "isCompleted" to isCompleted,
+                    "completedAt" to if (isCompleted) updated.visitDate else "",
+                    "updatedAt" to updated.updatedAt
+                )
+                if (updated.latitude != null) data["latitude"] = updated.latitude
+                if (updated.longitude != null) data["longitude"] = updated.longitude
                 val task = fStore.collection("schools").document(school.schoolId).set(
-                    mapOf(
-                        "schoolId" to updated.schoolId,
-                        "sr" to updated.sr,
-                        "state" to updated.stateName,
-                        "stateName" to updated.stateName,
-                        "district" to updated.districtName,
-                        "districtName" to updated.districtName,
-                        "schoolName" to updated.schoolName,
-                        "type" to updated.schoolType,
-                        "schoolType" to updated.schoolType,
-                        "village" to updated.villageName,
-                        "villageName" to updated.villageName,
-                        "principalName" to updated.principalName,
-                        "block" to updated.blockName,
-                        "blockName" to updated.blockName,
-                        "mobile" to updated.principalMobile,
-                        "principalMobile" to updated.principalMobile,
-                        "visitDate" to updated.visitDate,
-                        "status" to if (isCompleted) "COMPLETED" else "PENDING",
-                        "isCompleted" to isCompleted,
-                        "completedAt" to if (isCompleted) updated.visitDate else "",
-                        "updatedAt" to updated.updatedAt
-                    ),
+                    data,
                     com.google.firebase.firestore.SetOptions.merge()
                 )
                 com.google.android.gms.tasks.Tasks.await(task)

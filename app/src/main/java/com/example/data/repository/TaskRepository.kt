@@ -113,6 +113,9 @@ class TaskRepository(private val context: Context) {
         var state = doc.getString("state") ?: doc.getString("stateName") ?: "Rajasthan"
         var district = doc.getString("district") ?: doc.getString("districtName") ?: ""
         var block = doc.getString("block") ?: doc.getString("blockName") ?: ""
+        var mapLink = (doc.getString("mapLink") ?: doc.getString("googleMapLink") ?: doc.getString("locationUrl") ?: "").trim()
+        val latitude = doc.getDouble("latitude")
+        val longitude = doc.getDouble("longitude")
 
         if (schoolId.isNotBlank()) {
             val localSchool = db.schoolDao().getSchoolById(schoolId)
@@ -125,6 +128,9 @@ class TaskRepository(private val context: Context) {
                 if (district.isBlank()) district = localSchool.districtName
                 if (block.isBlank()) block = localSchool.blockName
                 if (state.isBlank()) state = localSchool.stateName
+                if (mapLink.isBlank() && localSchool.mapLink.isNotBlank()) {
+                    mapLink = localSchool.mapLink
+                }
             }
         }
 
@@ -155,6 +161,9 @@ class TaskRepository(private val context: Context) {
             assignedBy = doc.getString("assignedBy") ?: "Admin",
             visitDate = doc.getString("visitDate") ?: "",
             status = status,
+            mapLink = mapLink,
+            latitude = latitude,
+            longitude = longitude,
             notes = doc.getString("notes") ?: "",
             createdAt = createdAt
         )
@@ -324,11 +333,15 @@ class TaskRepository(private val context: Context) {
         visitDate: String,
         notes: String,
         employeeEmail: String = "",
-        state: String = "Rajasthan"
+        state: String = "Rajasthan",
+        mapLink: String = "",
+        latitude: Double? = null,
+        longitude: Double? = null
     ): Result<Task> = withContext(Dispatchers.IO) {
         try {
             val cleanEmail = employeeEmail.trim().lowercase()
             val cleanName = employeeName.trim()
+            val cleanMapLink = mapLink.trim()
 
             val resolvedEmployeeUid = resolveFirebaseUidForEmployee(
                 rawEmployeeId = employeeId,
@@ -390,6 +403,15 @@ class TaskRepository(private val context: Context) {
             val finalState = localSchool?.stateName?.ifBlank { state } ?: state
             val finalDistrict = localSchool?.districtName?.ifBlank { district } ?: district
             val finalBlock = localSchool?.blockName?.ifBlank { block } ?: block
+            val finalMapLink = cleanMapLink.ifBlank { localSchool?.mapLink ?: "" }
+
+            val parsedCoords = if (latitude != null && longitude != null) {
+                Pair(latitude, longitude)
+            } else {
+                com.example.util.GoogleMapHelper.extractCoordinates(finalMapLink)
+            }
+            val finalLat = parsedCoords?.first ?: localSchool?.latitude
+            val finalLng = parsedCoords?.second ?: localSchool?.longitude
 
             val taskId = "tsk_" + UUID.randomUUID().toString().replace("-", "").take(10)
             val visitId = "vst_" + UUID.randomUUID().toString().replace("-", "").take(10)
@@ -413,37 +435,68 @@ class TaskRepository(private val context: Context) {
                 assignedBy = "Admin",
                 visitDate = visitDate,
                 status = VisitStatus.ASSIGNED,
+                mapLink = finalMapLink,
+                latitude = finalLat,
+                longitude = finalLng,
                 notes = notes,
                 createdAt = createdAt
             )
 
             db.taskDao().insertTask(task)
 
-            if (fStore != null) {
-                val setTask = fStore.collection("tasks").document(taskId).set(
-                    mapOf(
-                        "taskId" to taskId,
-                        "visitId" to visitId,
-                        "schoolId" to schoolId,
-                        "schoolName" to finalSchoolName,
-                        "principalName" to finalPrincipalName,
-                        "principalMobile" to finalPrincipalMobile,
-                        "villageName" to finalVillageName,
-                        "schoolType" to finalSchoolType,
-                        "state" to finalState,
-                        "district" to finalDistrict,
-                        "block" to finalBlock,
-                        "employeeId" to resolvedEmployeeUid,
-                        "employeeEmail" to cleanEmail,
-                        "employeeName" to cleanName,
-                        "assignedBy" to "Admin",
-                        "visitDate" to visitDate,
-                        "status" to VisitStatus.ASSIGNED.name,
-                        "notes" to notes,
-                        "createdAt" to createdAt
-                    )
+            // Also update local school record if map link is provided
+            if (localSchool != null && cleanMapLink.isNotBlank() && localSchool.mapLink != cleanMapLink) {
+                val updatedSch = localSchool.copy(
+                    mapLink = cleanMapLink,
+                    latitude = finalLat,
+                    longitude = finalLng,
+                    updatedAt = System.currentTimeMillis()
                 )
+                db.schoolDao().updateSchool(updatedSch)
+            }
+
+            if (fStore != null) {
+                val taskData = mutableMapOf<String, Any>(
+                    "taskId" to taskId,
+                    "visitId" to visitId,
+                    "schoolId" to schoolId,
+                    "schoolName" to finalSchoolName,
+                    "principalName" to finalPrincipalName,
+                    "principalMobile" to finalPrincipalMobile,
+                    "villageName" to finalVillageName,
+                    "schoolType" to finalSchoolType,
+                    "state" to finalState,
+                    "district" to finalDistrict,
+                    "block" to finalBlock,
+                    "employeeId" to resolvedEmployeeUid,
+                    "employeeEmail" to cleanEmail,
+                    "employeeName" to cleanName,
+                    "assignedBy" to "Admin",
+                    "visitDate" to visitDate,
+                    "status" to VisitStatus.ASSIGNED.name,
+                    "mapLink" to finalMapLink,
+                    "notes" to notes,
+                    "createdAt" to createdAt
+                )
+                if (finalLat != null) taskData["latitude"] = finalLat
+                if (finalLng != null) taskData["longitude"] = finalLng
+
+                val setTask = fStore.collection("tasks").document(taskId).set(taskData)
                 com.google.android.gms.tasks.Tasks.await(setTask)
+
+                if (cleanMapLink.isNotBlank()) {
+                    val schoolUpdate = mutableMapOf<String, Any>(
+                        "mapLink" to cleanMapLink,
+                        "updatedAt" to System.currentTimeMillis()
+                    )
+                    if (finalLat != null) schoolUpdate["latitude"] = finalLat
+                    if (finalLng != null) schoolUpdate["longitude"] = finalLng
+                    val updateSchoolTask = fStore.collection("schools").document(schoolId).set(
+                        schoolUpdate,
+                        com.google.firebase.firestore.SetOptions.merge()
+                    )
+                    com.google.android.gms.tasks.Tasks.await(updateSchoolTask)
+                }
             }
 
             try {

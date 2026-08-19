@@ -22,6 +22,9 @@ data class Task(
     val assignedBy: String = "Admin",
     val visitDate: String = "",
     val status: VisitStatus = VisitStatus.ASSIGNED,
+    val mapLink: String = "",
+    val latitude: Double? = null,
+    val longitude: Double? = null,
     val notes: String = "",
     val createdAt: Long = System.currentTimeMillis()
 )
