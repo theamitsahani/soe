@@ -455,10 +455,11 @@ class SchoolRepository(private val context: Context) {
                         "createdAt" to now,
                         "updatedAt" to now
                     )
-                    fStore.collection("visits").document(visitId).set(
+                    val vTask = fStore.collection("visits").document(visitId).set(
                         visitData,
                         com.google.firebase.firestore.SetOptions.merge()
                     )
+                    com.google.android.gms.tasks.Tasks.await(vTask)
                 }
             }
 
@@ -612,12 +613,18 @@ class SchoolRepository(private val context: Context) {
                         "createdAt" to System.currentTimeMillis(),
                         "updatedAt" to System.currentTimeMillis()
                     )
-                    fStore.collection("visits").document(visitId).set(
+                    val vTask = fStore.collection("visits").document(visitId).set(
                         visitData,
                         com.google.firebase.firestore.SetOptions.merge()
                     )
+                    com.google.android.gms.tasks.Tasks.await(vTask)
                 } else {
-                    fStore.collection("visits").document(visitId).delete()
+                    val delTask = fStore.collection("visits").document(visitId).delete()
+                    try {
+                        com.google.android.gms.tasks.Tasks.await(delTask)
+                    } catch (delErr: Exception) {
+                        Log.w("SchoolRepository", "Notice deleting visit from Firestore: ${delErr.message}")
+                    }
                 }
             }
 
