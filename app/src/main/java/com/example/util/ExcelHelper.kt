@@ -73,26 +73,18 @@ object ExcelHelper {
     }
 
     /**
-     * Parses uploaded CSV or native Excel (.xlsx) file.
-     * 
-     * EXACT COLUMN MAPPING:
-     * 1st Row (Header Row): Ignored & Not counted. Reading starts strictly from 2nd row (index 1).
-     * Column A (0): S.R
-     * Column B (1): DISTRICT
-     * Column C (2): SCHOOL NAME (Required: Row is INVALID ONLY if Column C is empty)
-     * Column D (3): TYPE
-     * Column E (4): VILLAGE
-     * Column F (5): PRINCIPAL NAME
-     * Column G (6): PRINCIPAL MOBILE NUMBER
-     * Column H (7): BLOCK NAME
-     * Column I (8): VISIT DATE
-     * 
-     * VISIT STATUS LOGIC:
-     * - If Column I (VISIT DATE) contains a value, mark that school as COMPLETED.
-     * - If Column I is empty/blank, mark that school as PENDING / NOT COMPLETED.
-     * - Column G is ALWAYS treated as Principal Mobile Number.
-     * - Column H is ALWAYS treated as Block Name.
-     * - Column I is ALWAYS treated as Visit Date.
+     * Parses uploaded CSV or native Excel (.xlsx) file with smart header detection.
+     * Supports:
+     * - State (Default: Rajasthan)
+     * - District (Auto-normalized using IndiaLocationData)
+     * - Block Name
+     * - Village / City
+     * - School Name (Required)
+     * - School Type (Sr. Sec, Secondary, Primary)
+     * - Principal Name
+     * - Principal Mobile Number (10-digit clean)
+     * - Google Map Link (Admin Provided Map URL)
+     * - Visit Date (If present, marked as Completed + auto-creates legacy Visit record; if empty, marked as Pending)
      */
     fun parseSchoolCsv(context: Context, uri: Uri, existingSchools: List<School>): ImportValidationResult {
         val errors = mutableListOf<String>()
@@ -124,7 +116,29 @@ object ExcelHelper {
                 return ImportValidationResult(0, 0, 0, 0, emptyList(), emptyList(), listOf("File contains no data rows (only header or empty)"))
             }
 
-            // Skip row 0 (1st row is header). Process starting strictly from index 1 (2nd row).
+            // Smart Header Column Index Mapping
+            val headerRow = parsedRows[0].map { cleanText(it).lowercase() }
+            fun findColIndex(vararg keywords: String, defaultIdx: Int = -1): Int {
+                for (kw in keywords) {
+                    val idx = headerRow.indexOfFirst { it.contains(kw) }
+                    if (idx != -1) return idx
+                }
+                return defaultIdx
+            }
+
+            val srCol = findColIndex("s.r", "sr", "s no", "s.no", "serial", defaultIdx = 0)
+            val stateCol = findColIndex("state", "rajya", defaultIdx = -1)
+            val districtCol = findColIndex("district", "zila", "dist", defaultIdx = 1)
+            val schoolNameCol = findColIndex("school", "vidyalaya", "name of school", defaultIdx = 2)
+            val schoolTypeCol = findColIndex("type", "category", defaultIdx = 3)
+            val villageCol = findColIndex("village", "gram", "city", "town", defaultIdx = 4)
+            val principalCol = findColIndex("principal", "headmaster", "hm name", "pradhanacharya", defaultIdx = 5)
+            val mobileCol = findColIndex("mobile", "phone", "contact", defaultIdx = 6)
+            val blockCol = findColIndex("block", "khand", defaultIdx = 7)
+            val mapLinkCol = findColIndex("map", "gps", "location", "link", defaultIdx = -1)
+            val visitDateCol = findColIndex("visit", "date", "completed", "tariqh", defaultIdx = 8)
+
+            // Skip row 0 (header). Process data rows starting from index 1.
             for (i in 1 until parsedRows.size) {
                 val row = parsedRows[i]
                 if (row.all { it.isBlank() }) continue
@@ -135,28 +149,31 @@ object ExcelHelper {
                     return if (idx >= 0 && idx < row.size) cleanText(row[idx]) else ""
                 }
 
-                val sr = cleanSrNumber(getCol(0))                    // Column A: S.R
-                val districtName = getCol(1)                         // Column B: DISTRICT
-                val schoolName = getCol(2)                           // Column C: SCHOOL NAME (Required)
-                val schoolType = getCol(3)                           // Column D: TYPE
-                val villageName = getCol(4)                          // Column E: VILLAGE
-                val principalName = getCol(5)                        // Column F: PRINCIPAL NAME
-                val principalMobile = cleanMobileNumber(getCol(6))   // Column G: PRINCIPAL MOBILE NUMBER
-                val blockName = getCol(7)                            // Column H: BLOCK NAME
-                val rawVisitDate = getCol(8)                         // Column I: VISIT DATE
+                val sr = cleanSrNumber(getCol(srCol))
+                val rawState = if (stateCol != -1) getCol(stateCol) else "Rajasthan"
+                val stateName = IndiaLocationData.normalizeState(rawState)
+
+                val rawDistrict = getCol(districtCol)
+                val districtName = IndiaLocationData.normalizeDistrict(stateName, rawDistrict)
+
+                val schoolName = getCol(schoolNameCol)
+                val schoolType = getCol(schoolTypeCol)
+                val villageName = getCol(villageCol)
+                val principalName = getCol(principalCol)
+                val principalMobile = cleanMobileNumber(getCol(mobileCol))
+                val blockName = getCol(blockCol)
+                val mapLink = if (mapLinkCol != -1) getCol(mapLinkCol) else ""
+                val rawVisitDate = getCol(visitDateCol)
                 val visitDate = parseExcelDate(rawVisitDate)
 
-                // RULE: ONLY if Column C (school name) is empty, consider row INVALID
+                // Row is INVALID ONLY if School Name is empty
                 if (schoolName.isBlank()) {
                     invalidRows++
-                    errors.add("Row ${i + 1}: Column C (School Name) is empty")
+                    errors.add("Row ${i + 1}: School Name is empty")
                     continue
                 }
 
-                // BUG FIX: also match against schools already created earlier in THIS same import
-                // batch (not only schools that existed in the DB before the import started).
-                // Without this, two rows with the same school name+district inside one Excel file
-                // each generated a brand-new random schoolId, silently creating duplicate schools.
+                // Match duplicate against schools in this batch or existing DB
                 val existingSchool = schools.find {
                     it.schoolName.trim().equals(schoolName.trim(), ignoreCase = true) &&
                     (districtName.isBlank() || it.districtName.isBlank() || it.districtName.trim().equals(districtName.trim(), ignoreCase = true))
@@ -164,6 +181,7 @@ object ExcelHelper {
                     it.schoolName.trim().equals(schoolName.trim(), ignoreCase = true) && 
                     (districtName.isBlank() || it.districtName.isBlank() || it.districtName.trim().equals(districtName.trim(), ignoreCase = true))
                 }
+
                 val isDuplicate = existingSchool != null
                 if (isDuplicate) {
                     duplicateRows++
@@ -174,7 +192,7 @@ object ExcelHelper {
                 val school = School(
                     schoolId = schoolId,
                     sr = sr.ifBlank { existingSchool?.sr ?: "" },
-                    stateName = existingSchool?.stateName?.ifBlank { "Rajasthan" } ?: "Rajasthan",
+                    stateName = stateName.ifBlank { existingSchool?.stateName ?: "Rajasthan" },
                     districtName = districtName.ifBlank { existingSchool?.districtName ?: "" },
                     schoolName = schoolName,
                     schoolType = schoolType.ifBlank { existingSchool?.schoolType ?: "" },
@@ -182,6 +200,7 @@ object ExcelHelper {
                     principalName = principalName.ifBlank { existingSchool?.principalName ?: "" },
                     blockName = blockName.ifBlank { existingSchool?.blockName ?: "" },
                     principalMobile = principalMobile.ifBlank { existingSchool?.principalMobile ?: "" },
+                    mapLink = mapLink.ifBlank { existingSchool?.mapLink ?: "" },
                     visitDate = visitDate.ifBlank { existingSchool?.visitDate ?: "" },
                     isDeleted = existingSchool?.isDeleted ?: false,
                     deletedAt = existingSchool?.deletedAt ?: 0L,
@@ -192,14 +211,12 @@ object ExcelHelper {
                 schools.add(school)
                 validRows++
 
-                // VISIT STATUS LOGIC:
-                // If Column I (VISIT DATE) contains a value -> COMPLETED
-                // If Column I is empty/blank -> PENDING / NOT COMPLETED
+                // If Visit Date contains value -> Generate Completed Visit record
                 val isCompleted = visitDate.isNotBlank()
 
                 if (isCompleted) {
                     val answers = com.example.data.model.VisitAnswers(
-                        q1_soeName = "Excel Import System",
+                        q1_soeName = "Admin (Prior Completion)",
                         q2_visitDate = visitDate,
                         q3_schoolName = schoolName,
                         q4_udiseCode = "",
@@ -210,20 +227,21 @@ object ExcelHelper {
                         q9_metPrincipal = "हाँ",
                         q10_missionGyanAwareness = "हाँ",
                         q11_studentCount = "Verified",
-                        q12_schoolResponse = "Completed (Excel Import)",
-                        q20_finalRemarks = "Imported from Excel with Visit Date: $visitDate"
+                        q12_schoolResponse = "Completed (Previous Visit)",
+                        q20_finalRemarks = "Completed prior to app launch / Verified by Admin (Date: $visitDate)"
                     )
                     val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
                     val answersAdapter = moshi.adapter(com.example.data.model.VisitAnswers::class.java)
 
                     val visit = com.example.data.model.Visit(
-                        visitId = "vst_" + schoolId.removePrefix("sch_") + "_imported",
+                        visitId = "vst_" + schoolId.removePrefix("sch_") + "_legacy",
                         schoolId = schoolId,
-                        employeeId = "emp_system",
-                        employeeName = "System (Excel Import)",
+                        employeeId = "emp_admin",
+                        employeeName = "Admin (Prior Completion)",
                         schoolName = schoolName,
                         district = districtName,
                         block = blockName,
+                        state = stateName,
                         visitDate = visitDate,
                         status = com.example.data.model.VisitStatus.SUBMITTED,
                         answersJson = answersAdapter.toJson(answers),

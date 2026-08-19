@@ -174,3 +174,34 @@ CAPTURED ──► LOCAL_SAVED ──► PENDING ──► UPLOADING ──► U
 
 - **Cloudinary Secret Separation**: Cloudinary uploads utilize signed tokens from the backend (`https://cloudinary-server-six.vercel.app/api/sign-upload`); no private API secret is embedded in the APK.
 - **Single Active Mutex**: While `SyncManager` serializes uploads per device, concurrent writes across multiple devices for the same school are handled via deterministic last-write-wins on school metadata while preserving separate visit IDs.
+
+---
+
+## 12. Geographic Normalization, Legacy Visit Ingestion & Admin Visit Revision
+
+### 12.1 Standardized India States & Districts Master (`IndiaLocationData.kt`)
+- **Single Source of Truth**: Contains exhaustive listing of all 28 States and 8 Union Territories in India, with complete district breakdowns (including all 50 Rajasthan administrative districts).
+- **Fuzzy Normalization Engine**:
+  - `normalizeState(raw)`: Standardizes variations, abbreviations (e.g. `RJ` -> `Rajasthan`), casing (`RAJASTHAN` -> `Rajasthan`), and whitespace.
+  - `normalizeDistrict(state, raw)`: Standardizes casing (`JAIPUR` -> `Jaipur`), prefixes, and spelling variants against the matched state's district registry.
+- **Unified UI Component**: `StateDistrictSelector` composable provides searchable, dropdown-based state and dependent district selection, integrated in:
+  1. `EmployeeManagementTab.kt` (Add and Edit Employee dialogs)
+  2. `SchoolManagementTab.kt` (Add and Edit School dialogs)
+  3. `ExcelHelper.kt` (Automatic on-import normalization)
+
+### 12.2 Legacy & Pre-Deployment Completed Visits Ingestion
+- When schools are imported with a pre-existing visit completion date (via Excel/CSV columns like `Visit Date`, `Completion Date`, `Date`):
+  1. Creates the master `School` entity marked with `status = "Completed"`.
+  2. Synthesizes a matching `Task` entity in `SUBMITTED` state.
+  3. Synthesizes a `Visit` record in `SUBMITTED` state with `answersJson` recording `"Legacy completed visit imported by Admin"`.
+  4. Syncs both to Room SQLite and Cloud Firestore seamlessly.
+
+### 12.3 Google Maps Link Integration
+- Full support for `mapLink` (Google Maps URL) in Excel import, School management UI (Add/Edit), and Task assignment cards.
+- Clicking the map icon or button opens the precise coordinates/URL directly in Google Maps.
+
+### 12.4 Admin Visit Revision & In-Situ Photo Attachment
+- Administrators can view, revise, and update answers on submitted/legacy visits directly in `VisitDetailDialog`.
+- Admins can attach retrospective photographs directly to any specific `PhotoCategory` via the "Attach Photos (+ विज़िट फ़ोटो जोड़ें)" picker.
+- Attached media is saved locally to internal storage, synced to Firestore `photosJson`, and logged in the immutable `visit_events` audit trail.
+

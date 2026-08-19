@@ -383,6 +383,11 @@ class MainActivity : ComponentActivity() {
                                                             visitRepository.deletePhotoFromVisit(visitId, categoryId, photoUrl)
                                                         }
                                                     },
+                                                    onAddPhoto = { visitId, categoryId, photoUrl ->
+                                                        scope.launch {
+                                                            visitRepository.addPhotoToVisit(visitId, categoryId, photoUrl, state.adminUser)
+                                                        }
+                                                    },
                                                     onReviewVisit = { visitId, isApproved, notes ->
                                                         scope.launch {
                                                             visitRepository.reviewVisit(

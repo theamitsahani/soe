@@ -678,6 +678,63 @@ class VisitRepository(private val context: Context) {
         }
     }
 
+    suspend fun addPhotoToVisit(
+        visitId: String,
+        categoryId: String,
+        photoUriOrUrl: String,
+        actorUser: User? = null
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val existing = db.visitDao().getVisitById(visitId) ?: return@withContext Result.failure(Exception("Visit not found"))
+            val moshi = com.squareup.moshi.Moshi.Builder().addLast(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory()).build()
+            val mapType = com.squareup.moshi.Types.newParameterizedType(Map::class.java, String::class.java, List::class.java)
+            val adapter = moshi.adapter<Map<String, List<String>>>(mapType)
+            val currentMap = try { adapter.fromJson(existing.photosJson) ?: emptyMap() } catch (e: Exception) { emptyMap() }
+
+            val updatedMap = currentMap.toMutableMap()
+            val currentList = updatedMap[categoryId]?.toMutableList() ?: mutableListOf()
+            if (!currentList.contains(photoUriOrUrl)) {
+                currentList.add(photoUriOrUrl)
+            }
+            updatedMap[categoryId] = currentList
+
+            val updatedPhotosJson = adapter.toJson(updatedMap)
+            val updatedVisit = existing.copy(
+                photosJson = updatedPhotosJson,
+                updatedAt = System.currentTimeMillis()
+            )
+            db.visitDao().updateVisit(updatedVisit)
+
+            recordEvent(
+                visitId = visitId,
+                taskId = existing.taskId,
+                eventType = "PHOTO_ADDED",
+                actorId = actorUser?.userId ?: existing.employeeId,
+                actorName = actorUser?.name ?: existing.employeeName,
+                actorRole = actorUser?.role?.name ?: "ADMIN",
+                details = "Photo added to category: $categoryId"
+            )
+
+            val fStore = firestore
+            if (fStore != null && syncManager.isNetworkAvailable()) {
+                try {
+                    val task = fStore.collection("visits").document(visitId).update(
+                        mapOf(
+                            "photosJson" to updatedPhotosJson,
+                            "updatedAt" to updatedVisit.updatedAt
+                        )
+                    )
+                    com.google.android.gms.tasks.Tasks.await(task)
+                } catch (e: Exception) {
+                    android.util.Log.w("VisitRepository", "Notice updating added photo in Firestore: ${e.message}")
+                }
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun updateVisit(visit: Visit): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val updated = visit.copy(updatedAt = System.currentTimeMillis())

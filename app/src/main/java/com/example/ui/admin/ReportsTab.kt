@@ -88,6 +88,7 @@ fun ReportsTab(
     initialStatusFilter: String = "All Statuses",
     onUpdateVisitAnswers: ((String, VisitAnswers) -> Unit)? = null,
     onDeletePhoto: ((visitId: String, categoryId: String, photoUrl: String) -> Unit)? = null,
+    onAddPhoto: ((visitId: String, categoryId: String, photoUrl: String) -> Unit)? = null,
     onReviewVisit: ((visitId: String, isApproved: Boolean, notes: String) -> Unit)? = null
 ) {
     var searchQuery by remember { mutableStateOf("") }
@@ -494,6 +495,9 @@ fun ReportsTab(
             onDeletePhoto = { catId, url ->
                 onDeletePhoto?.invoke(visit.visitId, catId, url)
                 selectedVisitForDetails = null
+            },
+            onAddPhoto = { catId, url ->
+                onAddPhoto?.invoke(visit.visitId, catId, url)
             },
             onReviewVisit = if (onReviewVisit != null) { isApproved, notes ->
                 onReviewVisit(visit.visitId, isApproved, notes)

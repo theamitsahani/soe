@@ -73,6 +73,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.example.data.model.PhotoCategory
 import com.example.data.model.School
 import com.example.data.model.Visit
@@ -106,18 +111,46 @@ fun VisitDetailDialog(
     onEditClick: (() -> Unit)? = null,
     onUpdateAnswers: ((VisitAnswers) -> Unit)? = null,
     onDeletePhoto: ((categoryId: String, photoUrl: String) -> Unit)? = null,
+    onAddPhoto: ((categoryId: String, photoUrl: String) -> Unit)? = null,
     onReviewVisit: ((isApproved: Boolean, notes: String) -> Unit)? = null,
     isAdmin: Boolean = false,
     isEditable: Boolean = false,
     editTimeRemainingText: String = ""
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var previewPhotoUrl by remember { mutableStateOf<String?>(null) }
     var photoToDelete by remember { mutableStateOf<Pair<String, String>?>(null) }
     var showEditDialog by remember { mutableStateOf(false) }
     var showReviewDialog by remember { mutableStateOf(false) }
     var reviewApprovalMode by remember { mutableStateOf(true) }
     var reviewNotesText by remember { mutableStateOf("") }
+
+    // Admin Photo Attachment State
+    var showAddPhotoDialog by remember { mutableStateOf(false) }
+    var selectedCategoryForAdd by remember { mutableStateOf(PhotoCategory.OTHER_PHOTOS) }
+    var isAttachingPhotos by remember { mutableStateOf(false) }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            coroutineScope.launch {
+                isAttachingPhotos = true
+                try {
+                    uris.forEach { uri ->
+                        val localPath = com.example.util.MediaStorageHelper.saveMediaLocally(context, uri)
+                        onAddPhoto?.invoke(selectedCategoryForAdd.categoryId, localPath)
+                    }
+                    showAddPhotoDialog = false
+                } catch (e: Exception) {
+                    android.widget.Toast.makeText(context, "Error attaching photo: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                } finally {
+                    isAttachingPhotos = false
+                }
+            }
+        }
+    }
 
     val initialAnswers = remember(visit.answersJson) {
         try {
@@ -575,6 +608,19 @@ fun VisitDetailDialog(
                                 }
                             }
                         }
+
+                        if ((isAdmin || isEditable) && onAddPhoto != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = { showAddPhotoDialog = true },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.AddAPhoto, contentDescription = null, modifier = Modifier.size(16.dp), tint = Indigo600)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Attach Photos (+ विज़िट फ़ोटो जोड़ें)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Indigo600)
+                            }
+                        }
                     }
 
                     // 6. Review & Verification Information (समीक्षा एवं सत्यापन)
@@ -911,6 +957,93 @@ fun VisitDetailDialog(
                 }
             }
         }
+    }
+
+    // Attach Photo Dialog for Admin / Officer
+    if (showAddPhotoDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isAttachingPhotos) showAddPhotoDialog = false },
+            title = {
+                Column {
+                    Text("Attach Photos to Visit", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Navy900)
+                    Text("विज़िट रिपोर्ट में फ़ोटो जोड़ें", fontSize = 11.sp, color = Slate500)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("Select Photo Category (श्रेणी चुनें):", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Slate700)
+
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        PhotoCategory.entries.forEach { cat ->
+                            val isSelected = selectedCategoryForAdd == cat
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) Indigo600.copy(alpha = 0.12f) else Color(0xFFF8FAFC),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) Indigo600 else Color(0xFFE2E8F0)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedCategoryForAdd = cat }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    androidx.compose.material3.RadioButton(
+                                        selected = isSelected,
+                                        onClick = { selectedCategoryForAdd = cat },
+                                        colors = androidx.compose.material3.RadioButtonDefaults.colors(selectedColor = Indigo600)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = cat.displayName,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) Indigo600 else Slate700
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (isAttachingPhotos) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Indigo600)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Saving & compressing media...", fontSize = 12.sp, color = Indigo600)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        photoPickerLauncher.launch("image/*")
+                    },
+                    enabled = !isAttachingPhotos,
+                    colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.AddAPhoto, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Select Photos from Device", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showAddPhotoDialog = false },
+                    enabled = !isAttachingPhotos
+                ) {
+                    Text("Cancel", color = Slate500)
+                }
+            }
+        )
     }
 }
 

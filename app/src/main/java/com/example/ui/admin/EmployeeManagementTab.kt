@@ -97,6 +97,8 @@ import com.example.ui.theme.Slate100
 import com.example.ui.theme.Slate200
 import com.example.ui.theme.Slate500
 import com.example.ui.theme.Slate700
+import com.example.util.IndiaLocationData
+import com.example.util.StateDistrictSelector
 
 enum class EmployeeViewFilter {
     ACTIVE,
@@ -734,68 +736,19 @@ fun EmployeeManagementTab(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // 5. State & District
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = state,
-                            onValueChange = { state = it },
-                            label = { Text("State (राज्य)", fontSize = 12.sp) },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        OutlinedTextField(
-                            value = district,
-                            onValueChange = {
-                                district = it
-                                addErrorMessage = null
-                            },
-                            label = { Text("District (जिला)", fontSize = 12.sp) },
-                            placeholder = { Text("e.g. Jaipur", fontSize = 12.sp, color = Slate500) },
-                            leadingIcon = {
-                                Icon(Icons.Default.LocationOn, contentDescription = null, tint = Indigo600, modifier = Modifier.size(18.dp))
-                            },
-                            singleLine = true,
-                            modifier = Modifier.weight(1.2f)
-                        )
-                    }
-
-                    // District quick selector chips
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = "Quick Select District (जिला चुनें):",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Slate500
-                        )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            commonDistricts.forEach { dist ->
-                                val isSelected = district.equals(dist, ignoreCase = true)
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(16.dp))
-                                        .background(if (isSelected) Indigo600 else Slate100)
-                                        .clickable { district = dist }
-                                        .padding(horizontal = 10.dp, vertical = 5.dp)
-                                ) {
-                                    Text(
-                                        text = dist,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isSelected) Color.White else Slate700
-                                    )
-                                }
-                            }
+                    // 5. Standardized State & District Selector
+                    StateDistrictSelector(
+                        selectedState = state,
+                        selectedDistrict = district,
+                        onStateSelected = { newState ->
+                            state = newState
+                            addErrorMessage = null
+                        },
+                        onDistrictSelected = { newDist ->
+                            district = newDist
+                            addErrorMessage = null
                         }
-                    }
+                    )
                 }
             },
             confirmButton = {
@@ -805,8 +758,8 @@ fun EmployeeManagementTab(
                         val cleanEmail = email.trim()
                         val cleanPassword = password.trim().ifBlank { AuthRepository.generateSecureTemporaryPassword() }
                         val cleanMobile = mobile.trim()
-                        val cleanState = state.trim().ifBlank { "Rajasthan" }
-                        val cleanDistrict = district.trim()
+                        val cleanState = IndiaLocationData.normalizeState(state)
+                        val cleanDistrict = IndiaLocationData.normalizeDistrict(cleanState, district)
 
                         if (cleanName.isBlank()) {
                             addErrorMessage = "Please enter the officer's full name."
@@ -1098,22 +1051,18 @@ fun EmployeeManagementTab(
                         },
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = state,
-                            onValueChange = { state = it },
-                            label = { Text("State", fontSize = 11.sp) },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = district,
-                            onValueChange = { district = it },
-                            label = { Text("District", fontSize = 11.sp) },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
+                    StateDistrictSelector(
+                        selectedState = state,
+                        selectedDistrict = district,
+                        onStateSelected = { newState ->
+                            state = newState
+                            editErrorMessage = null
+                        },
+                        onDistrictSelected = { newDist ->
+                            district = newDist
+                            editErrorMessage = null
+                        }
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1157,14 +1106,17 @@ fun EmployeeManagementTab(
                             return@Button
                         }
 
+                        val cleanNormalizedState = IndiaLocationData.normalizeState(state)
+                        val cleanNormalizedDistrict = IndiaLocationData.normalizeDistrict(cleanNormalizedState, district)
+
                         isSaving = true
                         editErrorMessage = null
                         val updated = emp.copy(
                             name = name.trim(),
                             email = email.trim(),
                             mobile = cleanMobile,
-                            state = state.trim(),
-                            district = district.trim(),
+                            state = cleanNormalizedState,
+                            district = cleanNormalizedDistrict,
                             status = status
                         )
                         onSaveEmployee(updated, null) { result ->
