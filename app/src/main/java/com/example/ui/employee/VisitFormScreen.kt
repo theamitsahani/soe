@@ -482,6 +482,8 @@ fun VisitFormScreen(
                                         ""
                                     }
 
+                                    val effectiveAwareness = if (metPrincipal.trim() == "नहीं") "लागू नहीं (मुलाकात नहीं हुई)" else missionGyanAwareness
+
                                     val answers = VisitAnswers(
                                         q1_soeName = employeeUser.name,
                                         q2_visitDate = visitDate,
@@ -492,7 +494,7 @@ fun VisitFormScreen(
                                         q7_principalName = principalName,
                                         q8_principalMobile = principalMobile,
                                         q9_metPrincipal = metPrincipal,
-                                        q10_missionGyanAwareness = missionGyanAwareness,
+                                        q10_missionGyanAwareness = effectiveAwareness,
                                         q11_studentCount = studentCount,
                                         q12_schoolResponse = schoolResponse,
                                         q13_bciName = bciName.trim(),
@@ -942,7 +944,14 @@ fun VisitFormScreen(
                             subtitle = "Met Principal Sir?",
                             options = listOf("हाँ", "नहीं"),
                             selectedOption = metPrincipal,
-                            onOptionSelected = { metPrincipal = it }
+                            onOptionSelected = {
+                                metPrincipal = it
+                                if (it == "नहीं") {
+                                    missionGyanAwareness = "लागू नहीं (मुलाकात नहीं हुई)"
+                                } else if (missionGyanAwareness == "लागू नहीं (मुलाकात नहीं हुई)") {
+                                    missionGyanAwareness = ""
+                                }
+                            }
                         )
                     }
 
@@ -950,13 +959,15 @@ fun VisitFormScreen(
                         // ==========================================
                         // STEP 2: App Awareness & Attendance
                         // ==========================================
-                        ModernSingleChoiceCard(
-                            title = "10. Mission Gyan App के बारे में जानकारी?",
-                            subtitle = "App Knowledge & Awareness",
-                            options = listOf("हाँ", "नहीं", "थोड़ी जानकारी थी"),
-                            selectedOption = missionGyanAwareness,
-                            onOptionSelected = { missionGyanAwareness = it }
-                        )
+                        if (metPrincipal.trim() != "नहीं") {
+                            ModernSingleChoiceCard(
+                                title = "10. क्या प्रधानाचार्य महोदय को Mission Gyan App के बारे में जानकारी थी?",
+                                subtitle = "Was Principal Sir aware of Mission Gyan App?",
+                                options = listOf("हाँ", "नहीं", "थोड़ी जानकारी थी"),
+                                selectedOption = missionGyanAwareness,
+                                onOptionSelected = { missionGyanAwareness = it }
+                            )
+                        }
 
                         // Participating Classes (Class 6th to 12th)
                         Card(
