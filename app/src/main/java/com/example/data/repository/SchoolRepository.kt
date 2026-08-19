@@ -237,20 +237,49 @@ class SchoolRepository(private val context: Context) {
 
     suspend fun importSchools(
         schools: List<School>,
-        completedVisits: List<com.example.data.model.Visit> = emptyList()
+        completedVisits: List<com.example.data.model.Visit> = emptyList(),
+        importBatch: com.example.data.model.ImportBatch? = null
     ): Result<Int> = withContext(Dispatchers.IO) {
         try {
             if (schools.isEmpty()) return@withContext Result.success(0)
 
-            // 1. Save schools and completed visits to Room database cache immediately
+            // 1. Save schools, completed visits, and import batch to Room database cache immediately
             db.schoolDao().insertSchools(schools)
             if (completedVisits.isNotEmpty()) {
                 db.visitDao().insertVisits(completedVisits)
+            }
+            if (importBatch != null) {
+                db.importBatchDao().insertImportBatch(importBatch)
             }
 
             // 2. Sync schools and completed visits to Firestore in atomic batches
             val fStore = firestore
             if (fStore != null) {
+                if (importBatch != null) {
+                    try {
+                        val batchData = mapOf(
+                            "importBatchId" to importBatch.importBatchId,
+                            "startedBy" to importBatch.startedBy,
+                            "startedAt" to importBatch.startedAt,
+                            "completedAt" to (importBatch.completedAt ?: System.currentTimeMillis()),
+                            "totalRows" to importBatch.totalRows,
+                            "createdCount" to importBatch.createdCount,
+                            "updatedCount" to importBatch.updatedCount,
+                            "duplicateCount" to importBatch.duplicateCount,
+                            "failedCount" to importBatch.failedCount,
+                            "errorCount" to importBatch.errorCount,
+                            "errorsJson" to importBatch.errorsJson,
+                            "status" to importBatch.status
+                        )
+                        fStore.collection("importBatches").document(importBatch.importBatchId).set(
+                            batchData,
+                            com.google.firebase.firestore.SetOptions.merge()
+                        )
+                    } catch (e: Exception) {
+                        Log.w("SchoolRepository", "Notice saving importBatch to Firestore: ${e.message}")
+                    }
+                }
+
                 // Firestore batches can hold up to 500 operations
                 val batchSize = 400
                 schools.chunked(batchSize).forEach { chunk ->

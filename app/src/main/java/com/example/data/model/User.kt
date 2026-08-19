@@ -2,7 +2,10 @@ package com.example.data.model
 
 enum class UserRole {
     ADMIN,
-    EMPLOYEE
+    EMPLOYEE,
+    SUPER_ADMIN,
+    SUPERVISOR,
+    REVIEWER
 }
 
 enum class UserStatus {

@@ -31,7 +31,8 @@ data class ImportValidationResult(
     val duplicateRows: Int,
     val schoolsToImport: List<School>,
     val completedVisitsToImport: List<com.example.data.model.Visit> = emptyList(),
-    val errors: List<String>
+    val errors: List<String>,
+    val importBatchId: String = "batch_" + UUID.randomUUID().toString().replace("-", "").take(12)
 )
 
 object ExcelHelper {

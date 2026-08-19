@@ -8,15 +8,26 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Helper function to check if caller is an active Admin
+    // Helper function to check if caller is an active Admin or Super Admin
     function isAdmin() {
       return isAuthenticated() && (
-        request.auth.token.role == 'ADMIN' ||
+        request.auth.token.role in ['ADMIN', 'SUPER_ADMIN'] ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN' &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['ADMIN', 'SUPER_ADMIN'] &&
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INACTIVE' &&
          !(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isDeleted == true))
       );
+    }
+
+    // Helper function to check if caller is a Reviewer or Supervisor
+    function isReviewer() {
+      return isAdmin() || (isAuthenticated() && (
+        request.auth.token.role in ['REVIEWER', 'SUPERVISOR'] ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['REVIEWER', 'SUPERVISOR'] &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INACTIVE' &&
+         !(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isDeleted == true))
+      ));
     }
 
     // Helper function to check if caller is an active Employee
@@ -109,6 +120,25 @@ service cloud.firestore {
           get(/databases/$(database)/documents/visits/$(visitId)).data.status != 'REVIEWED'
         );
       }
+
+      // Audit Events subcollection (Append-only audit trail)
+      match /visitEvents/{eventId} {
+        allow read: if isAdmin() || isReviewer() || (
+          isEmployee() &&
+          get(/databases/$(database)/documents/visits/$(visitId)).data.employeeId == request.auth.uid
+        );
+        // Only admin or the assigned employee can append an audit event; events cannot be updated or deleted
+        allow create: if isAdmin() || isReviewer() || (
+          isEmployee() &&
+          get(/databases/$(database)/documents/visits/$(visitId)).data.employeeId == request.auth.uid
+        );
+        allow update, delete: if false;
+      }
+    }
+
+    // Import Batches Collection (Admin only)
+    match /importBatches/{batchId} {
+      allow read, write: if isAdmin();
     }
 
     // Notifications Collection
