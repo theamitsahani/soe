@@ -539,6 +539,21 @@ object ExcelHelper {
     }
 
     /**
+     * Generates a sample CSV template for school import with standard headers and sample data.
+     */
+    fun generateSampleSchoolCsv(context: Context): File {
+        val file = File(context.cacheDir, "sample_school_import_template.csv")
+        val writer = OutputStreamWriter(FileOutputStream(file), Charsets.UTF_8)
+        writer.write("S.No,State,District,School Name,School Type,Village/City,Principal Name,Principal Mobile,Block,Google Map Link,Visit Date\n")
+        writer.write("1,Rajasthan,Jaipur,Govt Sr Sec School Mansarovar,Sr. Sec,Mansarovar,Dr. Rajesh Sharma,9876543210,Sanganer,https://maps.google.com/?q=26.8530,75.7680,\n")
+        writer.write("2,Rajasthan,Jodhpur,Govt Secondary School Mandore,Secondary,Mandore,Smt. Sunita Verma,9876543211,Mandore,,15/08/2026\n")
+        writer.write("3,Rajasthan,Udaipur,Govt Girls School Girwa,Primary,Girwa,Shri Mohan Lal,9876543212,Girwa,,\n")
+        writer.flush()
+        writer.close()
+        return file
+    }
+
+    /**
      * Exports visits to a clean formatted PDF document.
      */
     fun exportVisitsToPdf(context: Context, visits: List<Visit>): File {
