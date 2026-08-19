@@ -106,7 +106,6 @@ Managed centrally via `AppPermissionManager.kt`:
 - **`VisitValidator`**:
   - Enforces mandatory hardware questions, smart classroom answers, student counts, and basic school details.
   - Ensures officer coordinates and timestamps are captured.
-  - **Conditional Questionnaire Branching**: If Question 9 (Met Principal Sir? / प्रधानाचार्य से मुलाकात हुई?) is answered `"नहीं"`, Question 10 (Mission Gyan App Awareness / प्रधानाचार्य को ऐप की जानकारी) is automatically hidden/skipped and saved as `"लागू नहीं (मुलाकात नहीं हुई)"`.
 - **`PhotoValidator`**:
   - Enforces mandatory photo categories (`school_photo`, `explaining_app`, `students_smart_board`, `principal_photo`, `letter_photo`).
   - Validates image size limits (max 15MB) and payload format.
