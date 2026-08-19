@@ -1,5 +1,6 @@
 package com.example.ui.admin
 
+import android.app.DatePickerDialog
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -28,15 +29,19 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.PendingActions
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restore
@@ -48,6 +53,10 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -73,6 +82,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.School
+import com.example.data.model.User
 import com.example.ui.components.SearchTextField
 import com.example.ui.theme.Emerald100
 import com.example.ui.theme.Emerald600
@@ -84,6 +94,10 @@ import com.example.ui.theme.Slate500
 import com.example.ui.theme.Slate700
 import com.example.util.ExcelHelper
 import com.example.util.ImportValidationResult
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 enum class SchoolViewFilter {
     ALL_ACTIVE,
@@ -92,11 +106,15 @@ enum class SchoolViewFilter {
     DELETED
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SchoolManagementTab(
     schools: List<School>,
+    employees: List<User> = emptyList(),
     onImportSchools: (List<School>, List<com.example.data.model.Visit>, (Result<Int>) -> Unit) -> Unit,
     onUpdateSchool: (School) -> Unit,
+    onMarkSchoolCompleted: ((schoolId: String, visitDate: String, employeeId: String, employeeName: String, remarks: String) -> Unit)? = null,
+    onMarkSchoolPending: ((schoolId: String) -> Unit)? = null,
     onDeleteSchool: ((String, ((Result<Unit>) -> Unit)?) -> Unit)? = null,
     onRestoreSchool: ((String, ((Result<Unit>) -> Unit)?) -> Unit)? = null,
     onPermanentDeleteSchool: ((String, ((Result<Unit>) -> Unit)?) -> Unit)? = null,
@@ -104,6 +122,8 @@ fun SchoolManagementTab(
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedSchoolForEdit by remember { mutableStateOf<School?>(null) }
+    var schoolToQuickComplete by remember { mutableStateOf<School?>(null) }
+    var schoolToQuickPending by remember { mutableStateOf<School?>(null) }
     var showAddSchoolDialog by remember { mutableStateOf(false) }
     var schoolToDelete by remember { mutableStateOf<School?>(null) }
     var schoolToPermanentDelete by remember { mutableStateOf<School?>(null) }
@@ -404,7 +424,9 @@ fun SchoolManagementTab(
                     SchoolCardItem(
                         school = sch,
                         onEditClick = { selectedSchoolForEdit = sch },
-                        onDeleteClick = { schoolToDelete = sch }
+                        onDeleteClick = { schoolToDelete = sch },
+                        onQuickCompleteClick = { schoolToQuickComplete = sch },
+                        onQuickPendingClick = { schoolToQuickPending = sch }
                     )
                 } else {
                     DeletedSchoolCardItem(
@@ -428,6 +450,235 @@ fun SchoolManagementTab(
                 }
             }
         }
+    }
+
+    // Quick Mark Completed Dialog
+    if (schoolToQuickComplete != null) {
+        val targetSchool = schoolToQuickComplete!!
+        val todayStr = remember {
+            SimpleDateFormat("dd-MMM-yyyy", Locale.ENGLISH).format(Date())
+        }
+        var selectedDate by remember { mutableStateOf(if (targetSchool.visitDate.isNotBlank()) targetSchool.visitDate else todayStr) }
+        var selectedEmployee by remember { mutableStateOf<User?>(null) }
+        var employeeDropdownExpanded by remember { mutableStateOf(false) }
+        var remarks by remember { mutableStateOf("") }
+        var isSavingCompletion by remember { mutableStateOf(false) }
+
+        val calendar = remember { Calendar.getInstance() }
+        val datePickerDialog = remember {
+            DatePickerDialog(
+                context,
+                { _, year, month, dayOfMonth ->
+                    val cal = Calendar.getInstance().apply {
+                        set(year, month, dayOfMonth)
+                    }
+                    selectedDate = SimpleDateFormat("dd-MMM-yyyy", Locale.ENGLISH).format(cal.time)
+                },
+                calendar.get(Calendar.YEAR),
+                calendar.get(Calendar.MONTH),
+                calendar.get(Calendar.DAY_OF_MONTH)
+            )
+        }
+
+        AlertDialog(
+            onDismissRequest = { if (!isSavingCompletion) schoolToQuickComplete = null },
+            icon = {
+                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Emerald600, modifier = Modifier.size(36.dp))
+            },
+            title = {
+                Column {
+                    Text("Mark as Completed (पूर्ण करें)", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Navy900)
+                    Text(targetSchool.schoolName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Indigo600)
+                    Text("${targetSchool.districtName} • ${targetSchool.blockName.ifBlank { "Block N/A" }}", fontSize = 11.sp, color = Slate500)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("इस स्कूल को कम्पलीट (पूर्ण) चिह्नित करने के लिए विवरण दर्ज करें:", fontSize = 12.sp, color = Slate700)
+
+                    // 1. Visit Date with DatePicker button
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFFF1F5F9),
+                        modifier = Modifier.fillMaxWidth().clickable { datePickerDialog.show() }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("Completion / Visit Date (तारीख)", fontSize = 11.sp, color = Slate500)
+                                Text(selectedDate, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Navy900)
+                            }
+                            Button(
+                                onClick = { datePickerDialog.show() },
+                                colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("तारीख बदलें", fontSize = 11.sp)
+                            }
+                        }
+                    }
+
+                    // 2. Completed By / Field Officer Dropdown
+                    ExposedDropdownMenuBox(
+                        expanded = employeeDropdownExpanded,
+                        onExpandedChange = { employeeDropdownExpanded = !employeeDropdownExpanded }
+                    ) {
+                        OutlinedTextField(
+                            value = selectedEmployee?.let { "${it.name} (${it.role.name})" } ?: "Admin (Manual Entry - स्वयं एडमिन)",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Completed By / Field Officer", fontSize = 12.sp) },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = employeeDropdownExpanded) },
+                            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = Indigo600) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        ExposedDropdownMenu(
+                            expanded = employeeDropdownExpanded,
+                            onDismissRequest = { employeeDropdownExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Admin (Manual Entry - स्वयं एडमिन)", fontWeight = FontWeight.Bold, fontSize = 13.sp) },
+                                onClick = {
+                                    selectedEmployee = null
+                                    employeeDropdownExpanded = false
+                                }
+                            )
+                            employees.forEach { emp ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(emp.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                            Text("${emp.role.name} • ${emp.mobile.ifBlank { emp.email }}", fontSize = 11.sp, color = Slate500)
+                                        }
+                                    },
+                                    onClick = {
+                                        selectedEmployee = emp
+                                        employeeDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // 3. Remarks
+                    OutlinedTextField(
+                        value = remarks,
+                        onValueChange = { remarks = it },
+                        label = { Text("Remarks / Note (टिप्पणी - वैकल्पिक)", fontSize = 12.sp) },
+                        placeholder = { Text("e.g. Completed during inspection / verified") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        isSavingCompletion = true
+                        val empId = selectedEmployee?.userId ?: "emp_admin"
+                        val empName = selectedEmployee?.name ?: "Admin (Manual Entry)"
+                        val finalRemarks = remarks.trim().ifBlank { "Marked completed by Admin on $selectedDate" }
+
+                        if (onMarkSchoolCompleted != null) {
+                            onMarkSchoolCompleted(targetSchool.schoolId, selectedDate, empId, empName, finalRemarks)
+                        } else {
+                            val updated = targetSchool.copy(
+                                visitDate = selectedDate,
+                                updatedAt = System.currentTimeMillis()
+                            )
+                            onUpdateSchool(updated)
+                        }
+                        isSavingCompletion = false
+                        schoolToQuickComplete = null
+                        successNotification = "${targetSchool.schoolName} marked as Completed (पूर्ण)!"
+                        triggerRefresh()
+                    },
+                    enabled = !isSavingCompletion,
+                    colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    if (isSavingCompletion) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Saving...")
+                    } else {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("✓ Mark Completed")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { schoolToQuickComplete = null }, enabled = !isSavingCompletion) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Quick Mark Pending Confirmation Dialog
+    if (schoolToQuickPending != null) {
+        val targetSchool = schoolToQuickPending!!
+        var isResetting by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = { if (!isResetting) schoolToQuickPending = null },
+            icon = {
+                Icon(Icons.Default.HourglassEmpty, contentDescription = null, tint = Color(0xFFB45309), modifier = Modifier.size(36.dp))
+            },
+            title = {
+                Text("Change Status to Pending? (बाकी करें)", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Navy900)
+            },
+            text = {
+                Text(
+                    text = "क्या आप '${targetSchool.schoolName}' को वापस PENDING (विजिट बाकी) में बदलना चाहते हैं? इसका कम्प्लीट स्टेटस और विजिट रिकॉर्ड हटा दिया जाएगा।",
+                    fontSize = 13.sp,
+                    color = Slate700
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        isResetting = true
+                        if (onMarkSchoolPending != null) {
+                            onMarkSchoolPending(targetSchool.schoolId)
+                        } else {
+                            val updated = targetSchool.copy(
+                                visitDate = "",
+                                updatedAt = System.currentTimeMillis()
+                            )
+                            onUpdateSchool(updated)
+                        }
+                        isResetting = false
+                        schoolToQuickPending = null
+                        successNotification = "${targetSchool.schoolName} status changed to Pending."
+                        triggerRefresh()
+                    },
+                    enabled = !isResetting,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB45309)),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Mark as Pending")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { schoolToQuickPending = null }, enabled = !isResetting) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     // Soft Delete School Confirmation Dialog
@@ -793,9 +1044,12 @@ fun SchoolManagementTab(
         )
     }
 
-    // Edit School Dialog (With 10-Digit Mobile Validation)
+    // Edit School Dialog (With 10-Digit Mobile Validation and Status/Completion Controls)
     if (selectedSchoolForEdit != null) {
         val sch = selectedSchoolForEdit!!
+        val todayStr = remember {
+            SimpleDateFormat("dd-MMM-yyyy", Locale.ENGLISH).format(Date())
+        }
         var eState by remember { mutableStateOf(sch.stateName) }
         var eDistrict by remember { mutableStateOf(sch.districtName) }
         var eSchoolName by remember { mutableStateOf(sch.schoolName) }
@@ -804,21 +1058,45 @@ fun SchoolManagementTab(
         var ePrincipal by remember { mutableStateOf(sch.principalName) }
         var eBlock by remember { mutableStateOf(sch.blockName) }
         var eMobile by remember { mutableStateOf(sch.principalMobile) }
-        var eVisitDate by remember { mutableStateOf(sch.visitDate) }
+        var isMarkedComplete by remember { mutableStateOf(sch.visitDate.isNotBlank()) }
+        var eVisitDate by remember { mutableStateOf(if (sch.visitDate.isNotBlank()) sch.visitDate else todayStr) }
+        var selectedEmployee by remember { mutableStateOf<User?>(null) }
+        var employeeDropdownExpanded by remember { mutableStateOf(false) }
+        var eRemarks by remember { mutableStateOf("") }
         var eMapLink by remember { mutableStateOf(sch.mapLink) }
         var eError by remember { mutableStateOf<String?>(null) }
+        var isSavingEdit by remember { mutableStateOf(false) }
+
+        val calendar = remember { Calendar.getInstance() }
+        val datePickerDialog = remember {
+            DatePickerDialog(
+                context,
+                { _, year, month, dayOfMonth ->
+                    val cal = Calendar.getInstance().apply {
+                        set(year, month, dayOfMonth)
+                    }
+                    eVisitDate = SimpleDateFormat("dd-MMM-yyyy", Locale.ENGLISH).format(cal.time)
+                },
+                calendar.get(Calendar.YEAR),
+                calendar.get(Calendar.MONTH),
+                calendar.get(Calendar.DAY_OF_MONTH)
+            )
+        }
 
         AlertDialog(
-            onDismissRequest = { selectedSchoolForEdit = null },
+            onDismissRequest = { if (!isSavingEdit) selectedSchoolForEdit = null },
             title = {
-                Text("Edit School Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Navy900)
+                Column {
+                    Text("Edit School Details (स्कूल संपादित करें)", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Navy900)
+                    Text("Admin can edit information or manually update completion status", fontSize = 11.sp, color = Slate500)
+                }
             },
             text = {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     if (eError != null) {
                         Surface(
@@ -835,6 +1113,170 @@ fun SchoolManagementTab(
                         }
                     }
 
+                    // Status Toggle Selector (Pending vs Completed)
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFFF8FAFC),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("School Visit Status (विजिट स्थिति):", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Navy900)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // Pending Button
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (!isMarkedComplete) Color(0xFFFEF3C7) else Color.White,
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (!isMarkedComplete) Color(0xFFB45309) else Color(0xFFE2E8F0)
+                                    ),
+                                    modifier = Modifier.weight(1f).clickable {
+                                        isMarkedComplete = false
+                                    }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Default.HourglassEmpty,
+                                            contentDescription = null,
+                                            tint = if (!isMarkedComplete) Color(0xFFB45309) else Slate500,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "⏳ Pending (बाकी)",
+                                            fontSize = 12.sp,
+                                            fontWeight = if (!isMarkedComplete) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (!isMarkedComplete) Color(0xFFB45309) else Slate700
+                                        )
+                                    }
+                                }
+
+                                // Completed Button
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isMarkedComplete) Color(0xFFD1FAE5) else Color.White,
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (isMarkedComplete) Color(0xFF059669) else Color(0xFFE2E8F0)
+                                    ),
+                                    modifier = Modifier.weight(1f).clickable {
+                                        isMarkedComplete = true
+                                        if (eVisitDate.isBlank()) eVisitDate = todayStr
+                                    }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = if (isMarkedComplete) Color(0xFF059669) else Slate500,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "✓ Complete (पूर्ण)",
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isMarkedComplete) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isMarkedComplete) Color(0xFF059669) else Slate700
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (isMarkedComplete) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                // Date picker row
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color.White,
+                                    modifier = Modifier.fillMaxWidth().clickable { datePickerDialog.show() }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column {
+                                            Text("Completion Date:", fontSize = 10.sp, color = Slate500)
+                                            Text(eVisitDate, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Emerald600)
+                                        }
+                                        OutlinedButton(
+                                            onClick = { datePickerDialog.show() },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                            modifier = Modifier.height(28.dp)
+                                        ) {
+                                            Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(12.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Pick Date", fontSize = 11.sp)
+                                        }
+                                    }
+                                }
+
+                                // Officer dropdown
+                                ExposedDropdownMenuBox(
+                                    expanded = employeeDropdownExpanded,
+                                    onExpandedChange = { employeeDropdownExpanded = !employeeDropdownExpanded }
+                                ) {
+                                    OutlinedTextField(
+                                        value = selectedEmployee?.let { "${it.name} (${it.role.name})" } ?: "Admin (Manual Entry - स्वयं एडमिन)",
+                                        onValueChange = {},
+                                        readOnly = true,
+                                        label = { Text("Completed By (फील्ड ऑफिसर)", fontSize = 11.sp) },
+                                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = employeeDropdownExpanded) },
+                                        modifier = Modifier.menuAnchor().fillMaxWidth(),
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    ExposedDropdownMenu(
+                                        expanded = employeeDropdownExpanded,
+                                        onDismissRequest = { employeeDropdownExpanded = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("Admin (Manual Entry - स्वयं एडमिन)", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                                            onClick = {
+                                                selectedEmployee = null
+                                                employeeDropdownExpanded = false
+                                            }
+                                        )
+                                        employees.forEach { emp ->
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Column {
+                                                        Text(emp.name, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                                        Text("${emp.role.name} • ${emp.mobile.ifBlank { emp.email }}", fontSize = 10.sp, color = Slate500)
+                                                    }
+                                                },
+                                                onClick = {
+                                                    selectedEmployee = emp
+                                                    employeeDropdownExpanded = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                OutlinedTextField(
+                                    value = eRemarks,
+                                    onValueChange = { eRemarks = it },
+                                    label = { Text("Completion Remarks (टिप्पणी)", fontSize = 11.sp) },
+                                    placeholder = { Text("e.g. Verified by Admin") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                            }
+                        }
+                    }
+
                     OutlinedTextField(
                         value = eSchoolName,
                         onValueChange = {
@@ -843,42 +1285,48 @@ fun SchoolManagementTab(
                         },
                         label = { Text("School Name *", fontSize = 12.sp) },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
                     )
                     OutlinedTextField(
                         value = eDistrict,
                         onValueChange = { eDistrict = it },
                         label = { Text("District", fontSize = 12.sp) },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
                     )
                     OutlinedTextField(
                         value = eBlock,
                         onValueChange = { eBlock = it },
                         label = { Text("Block", fontSize = 12.sp) },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
                     )
                     OutlinedTextField(
                         value = eVillage,
                         onValueChange = { eVillage = it },
                         label = { Text("Village", fontSize = 12.sp) },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
                     )
                     OutlinedTextField(
                         value = eSchoolType,
                         onValueChange = { eSchoolType = it },
                         label = { Text("School Type", fontSize = 12.sp) },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
                     )
                     OutlinedTextField(
                         value = ePrincipal,
                         onValueChange = { ePrincipal = it },
                         label = { Text("Principal Name", fontSize = 12.sp) },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
                     )
                     OutlinedTextField(
                         value = eMobile,
@@ -895,23 +1343,8 @@ fun SchoolManagementTab(
                                 Text("Mobile must be 10 digits", color = Red600, fontSize = 11.sp)
                             }
                         },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value = eVisitDate,
-                        onValueChange = { eVisitDate = it },
-                        label = { Text("Visit Date / Completion (विजिट की तारीख)", fontSize = 12.sp) },
-                        placeholder = { Text("e.g. 15-Mar-2025 (Leave empty if pending)") },
-                        singleLine = true,
-                        supportingText = {
-                            if (eVisitDate.isNotBlank()) {
-                                Text("✓ This school is marked as COMPLETED (पूर्ण)", color = Color(0xFF059669), fontSize = 11.sp)
-                            } else {
-                                Text("⏳ This school is PENDING (विजिट बाकी)", color = Color(0xFFB45309), fontSize = 11.sp)
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
                     )
 
                     OutlinedTextField(
@@ -923,7 +1356,8 @@ fun SchoolManagementTab(
                             Icon(Icons.Default.LocationOn, contentDescription = null, tint = Indigo600)
                         },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
                     )
                 }
             },
@@ -939,6 +1373,8 @@ fun SchoolManagementTab(
                             eError = "Principal mobile number must be exactly 10 digits."
                             return@Button
                         }
+                        isSavingEdit = true
+                        val finalVisitDate = if (isMarkedComplete) eVisitDate.trim().ifBlank { todayStr } else ""
                         val updated = sch.copy(
                             schoolName = eSchoolName.trim(),
                             districtName = eDistrict.trim(),
@@ -947,23 +1383,43 @@ fun SchoolManagementTab(
                             schoolType = eSchoolType.trim(),
                             principalName = ePrincipal.trim(),
                             principalMobile = cleanMobile,
-                            visitDate = eVisitDate.trim(),
+                            visitDate = finalVisitDate,
                             mapLink = eMapLink.trim(),
                             stateName = eState.trim().ifBlank { "Rajasthan" },
                             updatedAt = System.currentTimeMillis()
                         )
-                        onUpdateSchool(updated)
+                        if (isMarkedComplete && onMarkSchoolCompleted != null) {
+                            val empId = selectedEmployee?.userId ?: "emp_admin"
+                            val empName = selectedEmployee?.name ?: "Admin (Manual Entry)"
+                            val remarks = eRemarks.trim().ifBlank { "Updated and marked completed by Admin on $finalVisitDate" }
+                            onUpdateSchool(updated)
+                            onMarkSchoolCompleted(updated.schoolId, finalVisitDate, empId, empName, remarks)
+                        } else if (!isMarkedComplete && onMarkSchoolPending != null) {
+                            onUpdateSchool(updated)
+                            onMarkSchoolPending(updated.schoolId)
+                        } else {
+                            onUpdateSchool(updated)
+                        }
+                        isSavingEdit = false
                         selectedSchoolForEdit = null
                         successNotification = "${updated.schoolName} updated successfully!"
                         triggerRefresh()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Indigo600)
+                    enabled = !isSavingEdit,
+                    colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
+                    shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("Save Changes")
+                    if (isSavingEdit) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Saving...")
+                    } else {
+                        Text("Save Changes")
+                    }
                 }
             },
             dismissButton = {
-                TextButton(onClick = { selectedSchoolForEdit = null }) {
+                TextButton(onClick = { selectedSchoolForEdit = null }, enabled = !isSavingEdit) {
                     Text("Cancel")
                 }
             }
@@ -1172,8 +1628,11 @@ fun SchoolManagementTab(
 fun SchoolCardItem(
     school: School,
     onEditClick: () -> Unit,
-    onDeleteClick: () -> Unit
+    onDeleteClick: () -> Unit,
+    onQuickCompleteClick: () -> Unit = {},
+    onQuickPendingClick: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -1244,7 +1703,6 @@ fun SchoolCardItem(
                     color = Slate700
                 )
 
-                val context = LocalContext.current
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.clickable {
@@ -1265,43 +1723,99 @@ fun SchoolCardItem(
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
-            if (school.visitDate.isNotBlank()) {
+            if (school.mapLink.isNotBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier = Modifier.clickable {
+                        try {
+                            val uri = if (school.mapLink.startsWith("http://") || school.mapLink.startsWith("https://")) {
+                                Uri.parse(school.mapLink)
+                            } else {
+                                Uri.parse("geo:0,0?q=${Uri.encode(school.mapLink)}")
+                            }
+                            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Cannot open map link", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 ) {
+                    Icon(Icons.Default.LocationOn, contentDescription = "Map Location", tint = Indigo600, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("View on Google Maps", fontSize = 11.sp, color = Indigo600, fontWeight = FontWeight.SemiBold)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFF1F5F9)))
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Status & Quick Action Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (school.visitDate.isNotBlank()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Surface(
+                            color = Color(0xFFD1FAE5),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "✓ Completed (पूर्ण)",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF059669),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                        Text(
+                            text = school.visitDate,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Slate500
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = onQuickPendingClick,
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Icon(Icons.Default.HourglassEmpty, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color(0xFFB45309))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Make Pending", fontSize = 11.sp, color = Color(0xFFB45309))
+                    }
+                } else {
                     Surface(
-                        color = Color(0xFFD1FAE5),
+                        color = Color(0xFFFEF3C7),
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text(
-                            text = "✓ Completed (विजिट पूर्ण)",
+                            text = "⏳ Pending (विजिट बाकी)",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF059669),
+                            color = Color(0xFFB45309),
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                         )
                     }
-                    Text(
-                        text = "Date: ${school.visitDate}",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Slate500
-                    )
-                }
-            } else {
-                Surface(
-                    color = Color(0xFFFEF3C7),
-                    shape = RoundedCornerShape(6.dp)
-                ) {
-                    Text(
-                        text = "⏳ Pending (विजिट बाकी)",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFB45309),
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                    )
+
+                    Button(
+                        onClick = onQuickCompleteClick,
+                        colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Mark Complete (पूर्ण करें)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

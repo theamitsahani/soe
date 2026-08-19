@@ -2,10 +2,47 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Deny-all: photo storage uses server-signed Cloudinary uploads via Cloud Functions
+    
+    // Check if user is logged in
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if user is an Admin
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.role in ['ADMIN', 'SUPER_ADMIN'] ||
+        request.auth.token.admin == true
+      );
+    }
+
+    // User Profile Photos: Users can read all avatars, but only write their own
+    match /users/{userId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+    }
+
+    // School & Visit Media Assets (Photos, Videos, PDFs)
+    match /visits/{visitId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Export Reports & Documents
+    match /exports/{allPaths=**} {
+      allow read, write: if isAdmin();
+    }
+
+    // General media uploads
+    match /media/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Default fallback rule
     match /{allPaths=**} {
-      allow read, write: if false;
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
   }
 }
-

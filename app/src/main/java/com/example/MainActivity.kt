@@ -280,7 +280,8 @@ class MainActivity : ComponentActivity() {
                                             AdminTab.SCHOOLS -> {
                                                 SchoolManagementTab(
                                                     schools = schools,
-                                                     onImportSchools = { newSchools, completedVisits, callback ->
+                                                    employees = employees.filter { !it.isDeleted },
+                                                    onImportSchools = { newSchools, completedVisits, callback ->
                                                         scope.launch {
                                                             val res = schoolRepository.importSchools(newSchools, completedVisits)
                                                             // Trigger a sync so that the UI immediately receives latest Firestore state
@@ -290,7 +291,24 @@ class MainActivity : ComponentActivity() {
                                                         }
                                                     },
                                                     onUpdateSchool = { sch ->
-                                                        scope.launch { schoolRepository.updateSchoolRecord(sch) }
+                                                        scope.launch {
+                                                            schoolRepository.updateSchoolRecord(sch)
+                                                            launch { visitRepository.syncVisitsFromFirestore(state.adminUser.role, state.adminUser.userId) }
+                                                        }
+                                                    },
+                                                    onMarkSchoolCompleted = { schoolId, visitDate, empId, empName, remarks ->
+                                                        scope.launch {
+                                                            schoolRepository.markSchoolCompleted(schoolId, visitDate, empId, empName, remarks)
+                                                            launch { visitRepository.syncVisitsFromFirestore(state.adminUser.role, state.adminUser.userId) }
+                                                            launch { schoolRepository.syncSchoolsFromFirestore() }
+                                                        }
+                                                    },
+                                                    onMarkSchoolPending = { schoolId ->
+                                                        scope.launch {
+                                                            schoolRepository.markSchoolPending(schoolId)
+                                                            launch { visitRepository.syncVisitsFromFirestore(state.adminUser.role, state.adminUser.userId) }
+                                                            launch { schoolRepository.syncSchoolsFromFirestore() }
+                                                        }
                                                     },
                                                     onDeleteSchool = { schoolId, callback ->
                                                         scope.launch {

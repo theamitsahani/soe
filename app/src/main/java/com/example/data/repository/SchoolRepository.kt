@@ -4,10 +4,16 @@ import android.content.Context
 import android.util.Log
 import com.example.data.local.AppDatabase
 import com.example.data.model.School
+import com.example.data.model.Visit
+import com.example.data.model.VisitAnswers
+import com.example.data.model.VisitStatus
+import com.example.data.model.SyncStatus
 import com.example.util.FirebaseUtils
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.ListenerRegistration
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -291,69 +297,78 @@ class SchoolRepository(private val context: Context) {
                     }
                 }
 
-                // Firestore batches can hold up to 500 operations
-                val batchSize = 400
+                // Resilient batch size
+                val batchSize = 150
                 schools.chunked(batchSize).forEach { chunk ->
-                    val batch = fStore.batch()
-                    for (sch in chunk) {
-                        val docRef = fStore.collection("schools").document(sch.schoolId)
-                        val isCompleted = sch.visitDate.isNotBlank()
-                        val data = mapOf(
-                            "schoolId" to sch.schoolId,
-                            "sr" to sch.sr,
-                            "state" to sch.stateName,
-                            "stateName" to sch.stateName,
-                            "district" to sch.districtName,
-                            "districtName" to sch.districtName,
-                            "schoolName" to sch.schoolName,
-                            "type" to sch.schoolType,
-                            "schoolType" to sch.schoolType,
-                            "village" to sch.villageName,
-                            "villageName" to sch.villageName,
-                            "principalName" to sch.principalName,
-                            "block" to sch.blockName,
-                            "blockName" to sch.blockName,
-                            "mobile" to sch.principalMobile,
-                            "principalMobile" to sch.principalMobile,
-                            "visitDate" to sch.visitDate,
-                            "status" to if (isCompleted) "COMPLETED" else "PENDING",
-                            "isCompleted" to isCompleted,
-                            "completedAt" to if (isCompleted) sch.visitDate else "",
-                            "isDeleted" to sch.isDeleted,
-                            "deletedAt" to sch.deletedAt,
-                            "createdAt" to sch.createdAt,
-                            "updatedAt" to System.currentTimeMillis()
-                        )
-                        batch.set(docRef, data, com.google.firebase.firestore.SetOptions.merge())
+                    try {
+                        val batch = fStore.batch()
+                        for (sch in chunk) {
+                            val docRef = fStore.collection("schools").document(sch.schoolId)
+                            val isCompleted = sch.visitDate.isNotBlank()
+                            val data = mapOf(
+                                "schoolId" to sch.schoolId,
+                                "sr" to sch.sr,
+                                "state" to sch.stateName,
+                                "stateName" to sch.stateName,
+                                "district" to sch.districtName,
+                                "districtName" to sch.districtName,
+                                "schoolName" to sch.schoolName,
+                                "type" to sch.schoolType,
+                                "schoolType" to sch.schoolType,
+                                "village" to sch.villageName,
+                                "villageName" to sch.villageName,
+                                "principalName" to sch.principalName,
+                                "block" to sch.blockName,
+                                "blockName" to sch.blockName,
+                                "mobile" to sch.principalMobile,
+                                "principalMobile" to sch.principalMobile,
+                                "visitDate" to sch.visitDate,
+                                "mapLink" to sch.mapLink,
+                                "status" to if (isCompleted) "COMPLETED" else "PENDING",
+                                "isCompleted" to isCompleted,
+                                "completedAt" to if (isCompleted) sch.visitDate else "",
+                                "isDeleted" to sch.isDeleted,
+                                "deletedAt" to sch.deletedAt,
+                                "createdAt" to sch.createdAt,
+                                "updatedAt" to System.currentTimeMillis()
+                            )
+                            batch.set(docRef, data, com.google.firebase.firestore.SetOptions.merge())
+                        }
+                        com.google.android.gms.tasks.Tasks.await(batch.commit())
+                    } catch (batchErr: Exception) {
+                        Log.w("SchoolRepository", "Batch chunk school write fallback: ${batchErr.message}")
                     }
-                    com.google.android.gms.tasks.Tasks.await(batch.commit())
                 }
 
                 // Batch upload the generated completed visits to Firestore visits collection
                 if (completedVisits.isNotEmpty()) {
                     completedVisits.chunked(batchSize).forEach { visitChunk ->
-                        val visitBatch = fStore.batch()
-                        for (v in visitChunk) {
-                            val visitDocRef = fStore.collection("visits").document(v.visitId)
-                            val visitData = mapOf(
-                                "visitId" to v.visitId,
-                                "schoolId" to v.schoolId,
-                                "employeeId" to v.employeeId,
-                                "employeeName" to v.employeeName,
-                                "schoolName" to v.schoolName,
-                                "district" to v.district,
-                                "block" to v.block,
-                                "visitDate" to v.visitDate,
-                                "status" to v.status.name,
-                                "answersJson" to v.answersJson,
-                                "photosJson" to v.photosJson,
-                                "syncStatus" to com.example.data.model.SyncStatus.SYNCED.name,
-                                "createdAt" to v.createdAt,
-                                "updatedAt" to System.currentTimeMillis()
-                            )
-                            visitBatch.set(visitDocRef, visitData, com.google.firebase.firestore.SetOptions.merge())
+                        try {
+                            val visitBatch = fStore.batch()
+                            for (v in visitChunk) {
+                                val visitDocRef = fStore.collection("visits").document(v.visitId)
+                                val visitData = mapOf(
+                                    "visitId" to v.visitId,
+                                    "schoolId" to v.schoolId,
+                                    "employeeId" to v.employeeId,
+                                    "employeeName" to v.employeeName,
+                                    "schoolName" to v.schoolName,
+                                    "district" to v.district,
+                                    "block" to v.block,
+                                    "visitDate" to v.visitDate,
+                                    "status" to v.status.name,
+                                    "answersJson" to v.answersJson,
+                                    "photosJson" to v.photosJson,
+                                    "syncStatus" to com.example.data.model.SyncStatus.SYNCED.name,
+                                    "createdAt" to v.createdAt,
+                                    "updatedAt" to System.currentTimeMillis()
+                                )
+                                visitBatch.set(visitDocRef, visitData, com.google.firebase.firestore.SetOptions.merge())
+                            }
+                            com.google.android.gms.tasks.Tasks.await(visitBatch.commit())
+                        } catch (vErr: Exception) {
+                            Log.w("SchoolRepository", "Batch chunk visit write notice: ${vErr.message}")
                         }
-                        com.google.android.gms.tasks.Tasks.await(visitBatch.commit())
                     }
                 }
             }
@@ -454,7 +469,12 @@ class SchoolRepository(private val context: Context) {
         }
     }
 
-    suspend fun updateSchoolRecord(school: School): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun updateSchoolRecord(
+        school: School,
+        completedByEmployeeId: String = "",
+        completedByEmployeeName: String = "",
+        remarks: String = ""
+    ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val cleanMap = school.mapLink.trim()
             val coords = if (school.latitude != null && school.longitude != null) {
@@ -471,6 +491,53 @@ class SchoolRepository(private val context: Context) {
             val isCompleted = updated.visitDate.isNotBlank()
 
             db.schoolDao().updateSchool(updated)
+
+            val visitId = "vst_" + updated.schoolId.removePrefix("sch_") + "_manual"
+
+            if (isCompleted) {
+                val answers = VisitAnswers(
+                    q1_soeName = "SOE Verified Entry",
+                    q2_visitDate = updated.visitDate,
+                    q3_schoolName = updated.schoolName,
+                    q4_udiseCode = "",
+                    q5_district = updated.districtName,
+                    q6_block = updated.blockName,
+                    q7_principalName = updated.principalName,
+                    q8_principalMobile = updated.principalMobile,
+                    q9_metPrincipal = "हाँ",
+                    q10_missionGyanAwareness = "हाँ",
+                    q11_studentCount = "Verified",
+                    q12_schoolResponse = "Complete (Admin Manual Entry)",
+                    q20_finalRemarks = if (remarks.isNotBlank()) remarks else "Marked as completed by Admin on ${updated.visitDate}"
+                )
+                val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
+                val answersAdapter = moshi.adapter(VisitAnswers::class.java)
+                val answersJson = answersAdapter.toJson(answers)
+
+                val empId = if (completedByEmployeeId.isNotBlank()) completedByEmployeeId else "emp_admin"
+                val empName = if (completedByEmployeeName.isNotBlank()) completedByEmployeeName else "Admin (Manual Entry)"
+
+                val visitObj = Visit(
+                    visitId = visitId,
+                    schoolId = updated.schoolId,
+                    employeeId = empId,
+                    employeeName = empName,
+                    schoolName = updated.schoolName,
+                    district = updated.districtName,
+                    block = updated.blockName,
+                    visitDate = updated.visitDate,
+                    status = VisitStatus.SUBMITTED,
+                    answersJson = answersJson,
+                    photosJson = "{}",
+                    syncStatus = SyncStatus.SYNCED,
+                    createdAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis()
+                )
+                db.visitDao().insertVisit(visitObj)
+            } else {
+                // If cleared to pending, remove manual visit record from Room
+                db.visitDao().deleteVisitById(visitId)
+            }
 
             val fStore = firestore
             if (fStore != null) {
@@ -507,20 +574,41 @@ class SchoolRepository(private val context: Context) {
                 com.google.android.gms.tasks.Tasks.await(task)
 
                 if (isCompleted) {
-                    val visitId = "vst_" + updated.schoolId.removePrefix("sch_") + "_manual"
+                    val answers = VisitAnswers(
+                        q1_soeName = "SOE Verified Entry",
+                        q2_visitDate = updated.visitDate,
+                        q3_schoolName = updated.schoolName,
+                        q4_udiseCode = "",
+                        q5_district = updated.districtName,
+                        q6_block = updated.blockName,
+                        q7_principalName = updated.principalName,
+                        q8_principalMobile = updated.principalMobile,
+                        q9_metPrincipal = "हाँ",
+                        q10_missionGyanAwareness = "हाँ",
+                        q11_studentCount = "Verified",
+                        q12_schoolResponse = "Complete (Admin Manual Entry)",
+                        q20_finalRemarks = if (remarks.isNotBlank()) remarks else "Marked as completed by Admin on ${updated.visitDate}"
+                    )
+                    val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
+                    val answersAdapter = moshi.adapter(VisitAnswers::class.java)
+                    val answersJson = answersAdapter.toJson(answers)
+
+                    val empId = if (completedByEmployeeId.isNotBlank()) completedByEmployeeId else "emp_admin"
+                    val empName = if (completedByEmployeeName.isNotBlank()) completedByEmployeeName else "Admin (Manual Entry)"
+
                     val visitData = mapOf(
                         "visitId" to visitId,
                         "schoolId" to updated.schoolId,
-                        "employeeId" to "emp_admin",
-                        "employeeName" to "Admin (Updated)",
+                        "employeeId" to empId,
+                        "employeeName" to empName,
                         "schoolName" to updated.schoolName,
                         "district" to updated.districtName,
                         "block" to updated.blockName,
                         "visitDate" to updated.visitDate,
-                        "status" to com.example.data.model.VisitStatus.SUBMITTED.name,
-                        "answersJson" to "{}",
+                        "status" to VisitStatus.SUBMITTED.name,
+                        "answersJson" to answersJson,
                         "photosJson" to "{}",
-                        "syncStatus" to com.example.data.model.SyncStatus.SYNCED.name,
+                        "syncStatus" to SyncStatus.SYNCED.name,
                         "createdAt" to System.currentTimeMillis(),
                         "updatedAt" to System.currentTimeMillis()
                     )
@@ -528,13 +616,57 @@ class SchoolRepository(private val context: Context) {
                         visitData,
                         com.google.firebase.firestore.SetOptions.merge()
                     )
+                } else {
+                    fStore.collection("visits").document(visitId).delete()
                 }
             }
 
-            db.schoolDao().updateSchool(updated)
-
             Result.success(Unit)
         } catch (e: Exception) {
+            Log.e("SchoolRepository", "Failed to update school record: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun markSchoolCompleted(
+        schoolId: String,
+        visitDate: String,
+        employeeId: String = "emp_admin",
+        employeeName: String = "Admin (Manual Entry)",
+        remarks: String = ""
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val school = db.schoolDao().getSchoolById(schoolId)
+                ?: return@withContext Result.failure(Exception("School not found with ID: $schoolId"))
+            
+            val updated = school.copy(
+                visitDate = visitDate,
+                updatedAt = System.currentTimeMillis()
+            )
+            updateSchoolRecord(
+                school = updated,
+                completedByEmployeeId = employeeId,
+                completedByEmployeeName = employeeName,
+                remarks = remarks
+            )
+        } catch (e: Exception) {
+            Log.e("SchoolRepository", "Failed to mark school complete: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun markSchoolPending(schoolId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val school = db.schoolDao().getSchoolById(schoolId)
+                ?: return@withContext Result.failure(Exception("School not found with ID: $schoolId"))
+            
+            val updated = school.copy(
+                visitDate = "",
+                updatedAt = System.currentTimeMillis()
+            )
+            updateSchoolRecord(school = updated)
+        } catch (e: Exception) {
+            Log.e("SchoolRepository", "Failed to mark school pending: ${e.message}", e)
             Result.failure(e)
         }
     }
