@@ -1006,6 +1006,39 @@ fun EmployeeMapSection(
 ) {
     val context = LocalContext.current
 
+    // Only display schools assigned to this employee (tasks and visits)
+    val assignedSchools = remember(schools, tasks, completedVisits) {
+        val assignedSchoolIds = (tasks.map { it.schoolId } + completedVisits.map { it.schoolId })
+            .filter { it.isNotBlank() }
+            .toSet()
+
+        val matchedSchools = schools.filter { assignedSchoolIds.contains(it.schoolId) && !it.isDeleted }
+        val matchedIds = matchedSchools.map { it.schoolId }.toSet()
+
+        // Synthesize School objects from any tasks whose schoolId is missing in the schools list
+        val fallbackFromTasks = tasks
+            .filter { it.schoolId.isNotBlank() && !matchedIds.contains(it.schoolId) }
+            .distinctBy { it.schoolId }
+            .map { t ->
+                School(
+                    schoolId = t.schoolId,
+                    schoolName = t.schoolName,
+                    stateName = t.state,
+                    districtName = t.district,
+                    blockName = t.block,
+                    villageName = t.villageName,
+                    schoolType = t.schoolType,
+                    principalName = t.principalName,
+                    principalMobile = t.principalMobile,
+                    mapLink = t.mapLink,
+                    latitude = t.latitude,
+                    longitude = t.longitude
+                )
+            }
+
+        (matchedSchools + fallbackFromTasks).distinctBy { it.schoolId }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         // Multi-Stop Route shortcut banner if there are 2 or more assigned tasks
         if (tasks.size >= 2) {
@@ -1059,9 +1092,9 @@ fun EmployeeMapSection(
             }
         }
 
-        // Full Interactive Map View with Cluster Pins & Nearby Distance Filter
+        // Full Interactive Map View showing only assigned schools for this employee
         SchoolInteractiveMapView(
-            schools = schools,
+            schools = assignedSchools,
             tasks = tasks,
             visits = completedVisits,
             onStartVisit = onStartVisit,
