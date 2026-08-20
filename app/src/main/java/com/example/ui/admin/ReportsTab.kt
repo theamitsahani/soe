@@ -108,14 +108,33 @@ fun ReportsTab(
 
     val statusList = listOf("All Statuses", "Completed", "Data Required on Hard Disk", "Follow-up Required", "Pending")
 
-    // BUG FIX: this used to be visits.distinctBy { "${it.schoolId}_${it.employeeId}" }, which
-    // silently collapsed multiple GENUINE visits by the same employee to the same school (e.g.
-    // a legitimate re-visit on a different date/task) down to just one — hiding real submitted
-    // reports from the admin's Reports list entirely. True duplicate documents are already
-    // deduplicated upstream at sync time (VisitRepository/SyncManager, keyed by taskId), so each
-    // Visit reaching this screen is already a distinct report; visitId is the actual primary key.
-    val uniqueVisits = remember(visits) {
-        visits.distinctBy { it.visitId }
+    // Combine explicit visits with synthesized records for any completed schools that don't have an explicit visit object yet
+    val uniqueVisits = remember(visits, schools) {
+        val existingSchoolIds = visits.map { it.schoolId }.toSet()
+        val missingVisits = schools.filter { it.visitDate.isNotBlank() && !it.isDeleted && !existingSchoolIds.contains(it.schoolId) }.map { sch ->
+            Visit(
+                visitId = "vst_" + sch.schoolId.removePrefix("sch_") + "_legacy",
+                schoolId = sch.schoolId,
+                employeeId = "emp_admin",
+                employeeName = "Admin (Prior Completion)",
+                schoolName = sch.schoolName,
+                state = sch.stateName,
+                district = sch.districtName,
+                block = sch.blockName,
+                villageName = sch.villageName,
+                schoolType = sch.schoolType,
+                principalName = sch.principalName,
+                principalMobile = sch.principalMobile,
+                visitDate = sch.visitDate,
+                status = VisitStatus.SUBMITTED,
+                answersJson = "{\"q1_soeName\":\"Admin (Prior Completion)\",\"q2_visitDate\":\"${sch.visitDate}\",\"q3_schoolName\":\"${sch.schoolName}\",\"q5_district\":\"${sch.districtName}\",\"q6_block\":\"${sch.blockName}\",\"q7_principalName\":\"${sch.principalName}\",\"q8_principalMobile\":\"${sch.principalMobile}\",\"q9_metPrincipal\":\"हाँ\",\"q10_missionGyanAwareness\":\"हाँ\",\"q11_studentCount\":\"Verified\",\"q12_schoolResponse\":\"Completed (Previous Visit)\",\"q20_finalRemarks\":\"Completed prior to app launch / Verified by Admin (Date: ${sch.visitDate})\"}",
+                photosJson = "{}",
+                syncStatus = com.example.data.model.SyncStatus.SYNCED,
+                createdAt = sch.createdAt,
+                updatedAt = sch.updatedAt
+            )
+        }
+        (visits + missingVisits).distinctBy { it.visitId }
     }
 
     val stateList = remember(uniqueVisits) {

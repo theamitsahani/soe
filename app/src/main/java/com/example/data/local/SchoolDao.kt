@@ -13,6 +13,9 @@ interface SchoolDao {
     @Query("SELECT * FROM schools ORDER BY schoolName ASC")
     fun getAllSchools(): Flow<List<School>>
 
+    @Query("SELECT * FROM schools")
+    suspend fun getAllSchoolsList(): List<School>
+
     @Query("SELECT * FROM schools WHERE schoolId = :schoolId LIMIT 1")
     suspend fun getSchoolById(schoolId: String): School?
 

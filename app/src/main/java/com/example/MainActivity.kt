@@ -220,6 +220,7 @@ class MainActivity : ComponentActivity() {
                                             AdminTab.DASHBOARD -> {
                                                 AdminDashboardTab(
                                                     visits = visits,
+                                                    schools = schools,
                                                     totalSchoolsCount = schools.size,
                                                     totalEmployeesCount = employees.size,
                                                     onNavigateTab = { targetTab ->

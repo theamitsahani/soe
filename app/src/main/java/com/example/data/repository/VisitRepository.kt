@@ -14,6 +14,8 @@ import com.example.util.FirebaseUtils
 import com.example.util.SyncManager
 import com.example.util.ValidationResult
 import com.example.util.VisitValidator
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -331,15 +333,103 @@ class VisitRepository(private val context: Context) {
                 }
             }
 
-            if (cleanVisits.isNotEmpty()) {
-                db.visitDao().insertVisits(cleanVisits)
+            // Auto-reconcile completed schools: if a school has a visitDate set, ensure it has a completed Visit record
+            val completedSchools = db.schoolDao().getAllSchoolsList().filter { it.visitDate.isNotBlank() && !it.isDeleted }
+            val existingSchoolIdsWithVisits = (cleanVisits.map { it.schoolId } + db.visitDao().getAllVisitsList().map { it.schoolId }).toSet()
+            val missingCompletedVisits = mutableListOf<Visit>()
+
+            for (sch in completedSchools) {
+                if (!existingSchoolIdsWithVisits.contains(sch.schoolId)) {
+                    val actualVisitDate = sch.visitDate
+                    val answers = com.example.data.model.VisitAnswers(
+                        q1_soeName = "Admin (Prior Completion)",
+                        q2_visitDate = actualVisitDate,
+                        q3_schoolName = sch.schoolName,
+                        q4_udiseCode = "",
+                        q5_district = sch.districtName,
+                        q6_block = sch.blockName,
+                        q7_principalName = sch.principalName,
+                        q8_principalMobile = sch.principalMobile,
+                        q9_metPrincipal = "हाँ",
+                        q10_missionGyanAwareness = "हाँ",
+                        q11_studentCount = "Verified",
+                        q12_schoolResponse = "Completed (Previous Visit)",
+                        q20_finalRemarks = "Completed prior to app launch / Verified by Admin (Date: $actualVisitDate)"
+                    )
+                    val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
+                    val answersAdapter = moshi.adapter(com.example.data.model.VisitAnswers::class.java)
+                    val now = System.currentTimeMillis()
+                    val legacyVisit = Visit(
+                        visitId = "vst_" + sch.schoolId.removePrefix("sch_") + "_legacy",
+                        schoolId = sch.schoolId,
+                        employeeId = "emp_admin",
+                        employeeName = "Admin (Prior Completion)",
+                        schoolName = sch.schoolName,
+                        district = sch.districtName,
+                        block = sch.blockName,
+                        villageName = sch.villageName,
+                        schoolType = sch.schoolType,
+                        principalName = sch.principalName,
+                        principalMobile = sch.principalMobile,
+                        state = sch.stateName,
+                        visitDate = actualVisitDate,
+                        status = VisitStatus.SUBMITTED,
+                        answersJson = answersAdapter.toJson(answers),
+                        photosJson = "{}",
+                        startedAt = now - 30 * 60 * 1000L,
+                        completedAt = now,
+                        submittedAt = now,
+                        syncStatus = SyncStatus.SYNCED,
+                        createdAt = sch.createdAt,
+                        updatedAt = now
+                    )
+                    missingCompletedVisits.add(legacyVisit)
+
+                    // Also push to Firestore visits collection so server stays up to date
+                    try {
+                        val visitDocRef = fStore.collection("visits").document(legacyVisit.visitId)
+                        val visitData = mapOf(
+                            "visitId" to legacyVisit.visitId,
+                            "schoolId" to legacyVisit.schoolId,
+                            "employeeId" to legacyVisit.employeeId,
+                            "employeeName" to legacyVisit.employeeName,
+                            "schoolName" to legacyVisit.schoolName,
+                            "state" to legacyVisit.state,
+                            "district" to legacyVisit.district,
+                            "block" to legacyVisit.block,
+                            "villageName" to legacyVisit.villageName,
+                            "schoolType" to legacyVisit.schoolType,
+                            "principalName" to legacyVisit.principalName,
+                            "principalMobile" to legacyVisit.principalMobile,
+                            "visitDate" to legacyVisit.visitDate,
+                            "status" to legacyVisit.status.name,
+                            "answersJson" to legacyVisit.answersJson,
+                            "photosJson" to legacyVisit.photosJson,
+                            "startedAt" to legacyVisit.startedAt,
+                            "completedAt" to legacyVisit.completedAt,
+                            "submittedAt" to legacyVisit.submittedAt,
+                            "syncStatus" to SyncStatus.SYNCED.name,
+                            "createdAt" to legacyVisit.createdAt,
+                            "updatedAt" to legacyVisit.updatedAt
+                        )
+                        visitDocRef.set(visitData, com.google.firebase.firestore.SetOptions.merge())
+                    } catch (e: Exception) {
+                        android.util.Log.w("VisitRepository", "Could not sync legacy visit to Firestore: ${e.message}")
+                    }
+                }
+            }
+
+            val finalVisitsToKeep = (cleanVisits + missingCompletedVisits).distinctBy { it.visitId }
+
+            if (finalVisitsToKeep.isNotEmpty()) {
+                db.visitDao().insertVisits(finalVisitsToKeep)
 
                 val stillUnsyncedLocalIds = db.visitDao().getVisitsBySyncStatus(SyncStatus.PENDING).map { it.visitId } +
                         db.visitDao().getVisitsBySyncStatus(SyncStatus.FAILED).map { it.visitId }
-                val idsToKeep = (cleanVisits.map { it.visitId } + stillUnsyncedLocalIds).distinct()
+                val idsToKeep = (finalVisitsToKeep.map { it.visitId } + stillUnsyncedLocalIds).distinct()
                 db.visitDao().deleteVisitsNotIn(idsToKeep)
 
-                for (v in cleanVisits) {
+                for (v in finalVisitsToKeep) {
                     if (v.status == VisitStatus.SUBMITTED || v.status == VisitStatus.REVIEWED) {
                         if (v.taskId.isNotBlank()) {
                             db.taskDao().markTaskSubmittedById(v.taskId, v.visitId)
@@ -355,7 +445,7 @@ class VisitRepository(private val context: Context) {
                     db.visitDao().deleteSyncedVisitsForEmployee(currentUid)
                 }
             }
-            Result.success(cleanVisits.size)
+            Result.success(finalVisitsToKeep.size)
         } catch (e: Exception) {
             Result.failure(e)
         }

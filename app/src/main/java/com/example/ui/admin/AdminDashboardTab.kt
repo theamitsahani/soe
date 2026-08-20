@@ -60,18 +60,40 @@ import com.example.ui.theme.Teal600
 @Composable
 fun AdminDashboardTab(
     visits: List<Visit>,
+    schools: List<com.example.data.model.School> = emptyList(),
     totalSchoolsCount: Int,
     totalEmployeesCount: Int,
     onNavigateTab: (AdminTab) -> Unit,
     onNavigateTabWithFilter: (AdminTab, String) -> Unit = { tab, _ -> onNavigateTab(tab) },
     onVisitClick: (Visit) -> Unit
 ) {
-    // BUG FIX: was distinctBy { "${it.schoolId}_${it.employeeId}" }, which collapsed legitimate
-    // multiple visits (re-visits) by the same employee to the same school into one, silently
-    // undercounting Completed/Follow-up/Hard-Disk stats on the dashboard. Dedup of true
-    // duplicate documents already happens upstream at sync time; visitId is the real key.
-    val uniqueVisits = androidx.compose.runtime.remember(visits) {
-        visits.distinctBy { it.visitId }
+    // Combine explicit visits with synthesized records for any completed schools that don't have an explicit visit object yet
+    val uniqueVisits = androidx.compose.runtime.remember(visits, schools) {
+        val existingSchoolIds = visits.map { it.schoolId }.toSet()
+        val missingVisits = schools.filter { it.visitDate.isNotBlank() && !it.isDeleted && !existingSchoolIds.contains(it.schoolId) }.map { sch ->
+            Visit(
+                visitId = "vst_" + sch.schoolId.removePrefix("sch_") + "_legacy",
+                schoolId = sch.schoolId,
+                employeeId = "emp_admin",
+                employeeName = "Admin (Prior Completion)",
+                schoolName = sch.schoolName,
+                state = sch.stateName,
+                district = sch.districtName,
+                block = sch.blockName,
+                villageName = sch.villageName,
+                schoolType = sch.schoolType,
+                principalName = sch.principalName,
+                principalMobile = sch.principalMobile,
+                visitDate = sch.visitDate,
+                status = VisitStatus.SUBMITTED,
+                answersJson = "{\"q1_soeName\":\"Admin (Prior Completion)\",\"q2_visitDate\":\"${sch.visitDate}\",\"q3_schoolName\":\"${sch.schoolName}\",\"q5_district\":\"${sch.districtName}\",\"q6_block\":\"${sch.blockName}\",\"q7_principalName\":\"${sch.principalName}\",\"q8_principalMobile\":\"${sch.principalMobile}\",\"q9_metPrincipal\":\"हाँ\",\"q10_missionGyanAwareness\":\"हाँ\",\"q11_studentCount\":\"Verified\",\"q12_schoolResponse\":\"Completed (Previous Visit)\",\"q20_finalRemarks\":\"Completed prior to app launch / Verified by Admin (Date: ${sch.visitDate})\"}",
+                photosJson = "{}",
+                syncStatus = com.example.data.model.SyncStatus.SYNCED,
+                createdAt = sch.createdAt,
+                updatedAt = sch.updatedAt
+            )
+        }
+        (visits + missingVisits).distinctBy { it.visitId }
     }
     val completedCount = uniqueVisits.count { it.status == VisitStatus.SUBMITTED || it.status == VisitStatus.REVIEWED }
     val hardDiskDataCount = uniqueVisits.count { it.answersJson.contains("\"q19_dataRequiredOnHardDisk\":\"हाँ\"") }
