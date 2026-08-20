@@ -85,7 +85,6 @@ import com.example.data.model.Visit
 import com.example.data.model.VisitStatus
 import com.example.ui.components.NotificationBellIcon
 import com.example.ui.components.NotificationDialog
-import com.example.ui.components.SchoolInteractiveMapView
 import com.example.ui.components.StatusChip
 import com.example.ui.components.SyncStatusBanner
 import com.example.ui.components.VisitDetailDialog
@@ -102,7 +101,6 @@ import com.example.util.GoogleMapHelper
 
 enum class EmployeeNavTab(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     TODAY_TASKS("Today", Icons.Default.Home),
-    VISIT_MAP("Visit Map", Icons.Default.LocationOn),
     UPCOMING("Upcoming", Icons.Default.Assignment),
     COMPLETED("Reports", Icons.Default.CheckCircle),
     PROFILE("Profile", Icons.Default.Person)
@@ -231,18 +229,6 @@ fun EmployeeMainScreen(
                         tasks = todayTasks,
                         completedVisits = cleanCompletedVisits,
                         schools = schools,
-                        onStartVisit = onStartVisit,
-                        onOpenMapTab = {
-                            val mapTabIndex = tabs.indexOf(EmployeeNavTab.VISIT_MAP)
-                            if (mapTabIndex >= 0) selectedTab = mapTabIndex
-                        }
-                    )
-                }
-                EmployeeNavTab.VISIT_MAP -> {
-                    EmployeeMapSection(
-                        tasks = tasks,
-                        completedVisits = cleanCompletedVisits,
-                        schools = schools,
                         onStartVisit = onStartVisit
                     )
                 }
@@ -252,11 +238,7 @@ fun EmployeeMainScreen(
                         tasks = upcomingTasks,
                         completedVisits = cleanCompletedVisits,
                         schools = schools,
-                        onStartVisit = onStartVisit,
-                        onOpenMapTab = {
-                            val mapTabIndex = tabs.indexOf(EmployeeNavTab.VISIT_MAP)
-                            if (mapTabIndex >= 0) selectedTab = mapTabIndex
-                        }
+                        onStartVisit = onStartVisit
                     )
                 }
                 EmployeeNavTab.COMPLETED -> {
@@ -317,8 +299,7 @@ fun TasksListSection(
     tasks: List<Task>,
     completedVisits: List<Visit> = emptyList(),
     schools: List<School> = emptyList(),
-    onStartVisit: (Task) -> Unit,
-    onOpenMapTab: (() -> Unit)? = null
+    onStartVisit: (Task) -> Unit
 ) {
     val context = LocalContext.current
 
@@ -402,56 +383,27 @@ fun TasksListSection(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        Row(
+                        Button(
+                            onClick = { GoogleMapHelper.startMultiStopNavigation(context, tasks) },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF2563EB),
+                                contentColor = Color.White
+                            ),
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
                         ) {
-                            Button(
-                                onClick = { GoogleMapHelper.startMultiStopNavigation(context, tasks) },
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF2563EB),
-                                    contentColor = Color.White
-                                ),
-                                modifier = Modifier.weight(1.3f),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Navigation,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = if (tasks.size > 1) "Start Route Navigation" else "Start Navigation",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            if (onOpenMapTab != null) {
-                                OutlinedButton(
-                                    onClick = onOpenMapTab,
-                                    shape = RoundedCornerShape(10.dp),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        contentColor = Color(0xFF38BDF8)
-                                    ),
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.LocationOn,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "View Map",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                            }
+                            Icon(
+                                imageVector = Icons.Default.Navigation,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (tasks.size > 1) "Start Route Navigation (${tasks.size} Stops in Google Maps)" else "Start Google Maps Navigation",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
@@ -989,116 +941,6 @@ fun TaskCardItem(
                     Text("Close", fontSize = 12.sp, color = Slate700)
                 }
             }
-        )
-    }
-}
-
-/**
- * Dedicated Visit Map & Route Optimization Section for Field Officers.
- * Displays all assigned visits as ordered stops and provides Google Maps navigation.
- */
-@Composable
-fun EmployeeMapSection(
-    tasks: List<Task>,
-    completedVisits: List<Visit> = emptyList(),
-    schools: List<School> = emptyList(),
-    onStartVisit: (Task) -> Unit
-) {
-    val context = LocalContext.current
-
-    // Only display schools assigned to this employee (tasks and visits)
-    val assignedSchools = remember(schools, tasks, completedVisits) {
-        val assignedSchoolIds = (tasks.map { it.schoolId } + completedVisits.map { it.schoolId })
-            .filter { it.isNotBlank() }
-            .toSet()
-
-        val matchedSchools = schools.filter { assignedSchoolIds.contains(it.schoolId) && !it.isDeleted }
-        val matchedIds = matchedSchools.map { it.schoolId }.toSet()
-
-        // Synthesize School objects from any tasks whose schoolId is missing in the schools list
-        val fallbackFromTasks = tasks
-            .filter { it.schoolId.isNotBlank() && !matchedIds.contains(it.schoolId) }
-            .distinctBy { it.schoolId }
-            .map { t ->
-                School(
-                    schoolId = t.schoolId,
-                    schoolName = t.schoolName,
-                    stateName = t.state,
-                    districtName = t.district,
-                    blockName = t.block,
-                    villageName = t.villageName,
-                    schoolType = t.schoolType,
-                    principalName = t.principalName,
-                    principalMobile = t.principalMobile,
-                    mapLink = t.mapLink,
-                    latitude = t.latitude,
-                    longitude = t.longitude
-                )
-            }
-
-        (matchedSchools + fallbackFromTasks).distinctBy { it.schoolId }
-    }
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Multi-Stop Route shortcut banner if there are 2 or more assigned tasks
-        if (tasks.size >= 2) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0xFF0F172A),
-                shadowElevation = 2.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Directions,
-                            contentDescription = null,
-                            tint = Color(0xFF38BDF8),
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = "Multi-Stop Route (${tasks.size} Visits)",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                            Text(
-                                text = "Connect all assigned stops in Google Maps",
-                                fontSize = 10.sp,
-                                color = Color(0xFF94A3B8)
-                            )
-                        }
-                    }
-                    Button(
-                        onClick = { GoogleMapHelper.startMultiStopNavigation(context, tasks) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                    ) {
-                        Text("Start Route", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-
-        // Full Interactive Map View showing only assigned schools for this employee
-        SchoolInteractiveMapView(
-            schools = assignedSchools,
-            tasks = tasks,
-            visits = completedVisits,
-            onStartVisit = onStartVisit,
-            modifier = Modifier.fillMaxSize()
         )
     }
 }
