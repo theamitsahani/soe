@@ -138,24 +138,46 @@ fun LoginScreen(
                     }
                 }
 
-                // Email / User ID Input
+                // Email / User ID Input (Max 15 characters)
                 OutlinedTextField(
                     value = emailOrUserId,
-                    onValueChange = { emailOrUserId = it },
-                    label = { Text("Email Address") },
+                    onValueChange = {
+                        if (it.length <= 15) {
+                            emailOrUserId = it.trim()
+                        }
+                    },
+                    label = { Text("Email Address (Max 15 chars)") },
+                    supportingText = {
+                        Text(
+                            text = "${emailOrUserId.length}/15 chars (अधिकतम 15 अक्षर)",
+                            fontSize = 11.sp,
+                            color = if (emailOrUserId.length > 15) Red600 else Slate500
+                        )
+                    },
                     leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = Slate500) },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Password Input
+                // Password Input (Strictly 8 characters/digits)
                 OutlinedTextField(
                     value = password,
-                    onValueChange = { password = it },
-                    label = { Text("Password") },
+                    onValueChange = {
+                        if (it.length <= 8) {
+                            password = it
+                        }
+                    },
+                    label = { Text("Password (8 digits/chars)") },
+                    supportingText = {
+                        Text(
+                            text = "${password.length}/8 digits/chars (ठीक 8 अक्षर)",
+                            fontSize = 11.sp,
+                            color = if (password.length == 8) Indigo600 else Slate500
+                        )
+                    },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Slate500) },
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
@@ -163,11 +185,19 @@ fun LoginScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
                 // Submit Button
                 Button(
                     onClick = {
+                        if (emailOrUserId.length > 15) {
+                            errorMessage = "ईमेल 15 अक्षरों से अधिक नहीं हो सकता (Email must be at most 15 characters)"
+                            return@Button
+                        }
+                        if (password.length != 8) {
+                            errorMessage = "पासवर्ड ठीक 8 अंकों/अक्षरों का होना अनिवार्य है (Password must be exactly 8 digits/characters)"
+                            return@Button
+                        }
                         isLoading = true
                         errorMessage = null
                         onLoginClick(emailOrUserId, password) { result ->
@@ -177,7 +207,7 @@ fun LoginScreen(
                             }
                         }
                     },
-                    enabled = !isLoading && emailOrUserId.isNotBlank() && password.isNotBlank(),
+                    enabled = !isLoading && emailOrUserId.isNotBlank() && password.length == 8,
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
                     modifier = Modifier

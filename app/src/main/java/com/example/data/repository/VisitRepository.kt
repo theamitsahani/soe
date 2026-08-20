@@ -573,27 +573,12 @@ class VisitRepository(private val context: Context) {
                 }
             }
 
-            // Step 3: If online, attempt immediate background upload with timeout protection
+            // Step 3: Trigger background async upload to cloud (Fast submit - UI returns immediately)
             if (isOnline) {
-                val uploaded = syncManager.uploadSingleVisitToServer(finalVisit)
-                if (uploaded) {
-                    // NOTE: syncManager.uploadSingleVisitToServer already updated the Room DB record
-                    // with the permanent Cloudinary photo URLs and SYNCED status. Do NOT overwrite with
-                    // finalVisit (which still holds local file URIs), or checkPendingCount will see local
-                    // media and re-upload the same photos 2-3 times!
-                    recordEvent(
-                        visitId = finalVisit.visitId,
-                        taskId = finalVisit.taskId,
-                        eventType = "SYNCED",
-                        actorId = finalVisit.employeeId,
-                        actorName = finalVisit.employeeName,
-                        actorRole = "EMPLOYEE",
-                        details = "All inspection data and media uploaded to cloud"
-                    )
-                }
+                syncManager.triggerBackgroundVisitSync(finalVisit.visitId)
+            } else {
+                syncManager.checkPendingCount()
             }
-
-            syncManager.checkPendingCount()
 
             try {
                 NotificationRepository(

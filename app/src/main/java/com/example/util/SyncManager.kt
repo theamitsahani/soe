@@ -36,6 +36,7 @@ class SyncManager private constructor(private val context: Context) {
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
     private val syncMutex = Mutex()
+    private val inProgressUploadVisits = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
@@ -310,110 +311,121 @@ class SyncManager private constructor(private val context: Context) {
         }
     }
 
+    fun triggerBackgroundVisitSync(visitId: String) {
+        syncScope.launch {
+            try {
+                val v = db.visitDao().getVisitById(visitId) ?: return@launch
+                uploadSingleVisitToServer(v)
+                checkPendingCount()
+            } catch (e: Exception) {
+                android.util.Log.e("SyncManager", "Background visit sync error: ${e.message}")
+            }
+        }
+    }
+
     suspend fun uploadSingleVisitToServer(visit: Visit): Boolean = withContext(Dispatchers.IO) {
-        // BUG FIX (duplicate photo upload race): this function used to be callable from two
-        // independent, unsynchronized paths — VisitRepository.submitVisit() calls it DIRECTLY
-        // right after saving a visit as PENDING, while syncPendingData() (protected by
-        // syncMutex) can independently query Room for PENDING visits and pick up that SAME
-        // visit if a network-reconnect/auto-sync happens to fire in that same window. Both
-        // paths would then call MediaStorageHelper.uploadPhotosJsonToFirebaseStorage for the
-        // same local photos at the same time — duplicate concurrent uploads to the server for
-        // the same visit, and a race on which call's result gets written back last. Wrapping
-        // the whole upload in the same syncMutex used by syncPendingData() serializes every
-        // call to this function, from either entry point, so a given visit's photos are never
-        // uploaded twice in parallel.
-        syncMutex.withLock {
-            uploadSingleVisitToServerInternal(visit)
+        // Prevent concurrent double uploads of the same visit
+        if (!inProgressUploadVisits.add(visit.visitId)) {
+            android.util.Log.d("SyncManager", "Visit ${visit.visitId} is already uploading. Skipping duplicate call.")
+            return@withContext true
+        }
+        try {
+            syncMutex.withLock {
+                uploadSingleVisitToServerInternal(visit)
+            }
+        } finally {
+            inProgressUploadVisits.remove(visit.visitId)
         }
     }
 
     private suspend fun uploadSingleVisitToServerInternal(visit: Visit): Boolean = withContext(Dispatchers.IO) {
         val fStore = firestore ?: return@withContext false
+        val currentVisit = db.visitDao().getVisitById(visit.visitId) ?: visit
         try {
             // 1. Upload photos/videos directly to Cloudinary and get permanent download URLs
             val updatedPhotosJson = try {
                 MediaStorageHelper.uploadPhotosJsonToFirebaseStorage(
                     context = context,
-                    visitId = visit.visitId,
-                    schoolId = visit.schoolId,
-                    employeeId = visit.employeeId,
-                    photosJson = visit.photosJson,
-                    schoolName = visit.schoolName,
-                    visitDate = visit.visitDate
+                    visitId = currentVisit.visitId,
+                    schoolId = currentVisit.schoolId,
+                    employeeId = currentVisit.employeeId,
+                    photosJson = currentVisit.photosJson,
+                    schoolName = currentVisit.schoolName,
+                    visitDate = currentVisit.visitDate
                 )
             } catch (e: Exception) {
-                visit.photosJson
+                currentVisit.photosJson
             }
 
             // 2. Check if 100% of photos and videos are now Cloudinary remote URLs
             val isAllMediaUploaded = MediaStorageHelper.isAllMediaUploaded(updatedPhotosJson)
             val finalSyncStatus = if (isAllMediaUploaded) SyncStatus.SYNCED else SyncStatus.PENDING
 
-            android.util.Log.d("VISIT_SYNC_START", "Starting visit sync for visitId=${visit.visitId}, schoolId=${visit.schoolId}, employeeId=${visit.employeeId}")
+            android.util.Log.d("VISIT_SYNC_START", "Starting visit sync for visitId=${currentVisit.visitId}, schoolId=${currentVisit.schoolId}, employeeId=${currentVisit.employeeId}")
 
             // 3. Set timeout for Firestore write
             val success = withTimeoutOrNull(120000L) {
                 val visitMap = hashMapOf(
-                    "visitId" to visit.visitId,
-                    "taskId" to visit.taskId,
-                    "schoolId" to visit.schoolId,
-                    "employeeId" to visit.employeeId,
-                    "employeeName" to visit.employeeName,
-                    "schoolName" to visit.schoolName,
-                    "state" to visit.state,
-                    "district" to visit.district,
-                    "block" to visit.block,
-                    "villageName" to visit.villageName,
-                    "schoolType" to visit.schoolType,
-                    "udiseCode" to visit.udiseCode,
-                    "principalName" to visit.principalName,
-                    "principalMobile" to visit.principalMobile,
-                    "visitDate" to visit.visitDate,
-                    "status" to visit.status.name,
-                    "answersJson" to visit.answersJson,
+                    "visitId" to currentVisit.visitId,
+                    "taskId" to currentVisit.taskId,
+                    "schoolId" to currentVisit.schoolId,
+                    "employeeId" to currentVisit.employeeId,
+                    "employeeName" to currentVisit.employeeName,
+                    "schoolName" to currentVisit.schoolName,
+                    "state" to currentVisit.state,
+                    "district" to currentVisit.district,
+                    "block" to currentVisit.block,
+                    "villageName" to currentVisit.villageName,
+                    "schoolType" to currentVisit.schoolType,
+                    "udiseCode" to currentVisit.udiseCode,
+                    "principalName" to currentVisit.principalName,
+                    "principalMobile" to currentVisit.principalMobile,
+                    "visitDate" to currentVisit.visitDate,
+                    "status" to currentVisit.status.name,
+                    "answersJson" to currentVisit.answersJson,
                     "photosJson" to updatedPhotosJson,
-                    "startedAt" to (visit.startedAt ?: 0L),
-                    "completedAt" to (visit.completedAt ?: 0L),
-                    "submittedAt" to (visit.submittedAt ?: 0L),
-                    "reviewedAt" to (visit.reviewedAt ?: 0L),
-                    "reviewedBy" to visit.reviewedBy,
-                    "reviewNotes" to visit.reviewNotes,
-                    "rejectionReason" to visit.rejectionReason,
-                    "appVersion" to visit.appVersion,
+                    "startedAt" to (currentVisit.startedAt ?: 0L),
+                    "completedAt" to (currentVisit.completedAt ?: 0L),
+                    "submittedAt" to (currentVisit.submittedAt ?: 0L),
+                    "reviewedAt" to (currentVisit.reviewedAt ?: 0L),
+                    "reviewedBy" to currentVisit.reviewedBy,
+                    "reviewNotes" to currentVisit.reviewNotes,
+                    "rejectionReason" to currentVisit.rejectionReason,
+                    "appVersion" to currentVisit.appVersion,
                     "syncStatus" to finalSyncStatus.name,
-                    "editCount" to visit.editCount,
-                    "createdAt" to visit.createdAt,
+                    "editCount" to currentVisit.editCount,
+                    "createdAt" to currentVisit.createdAt,
                     "updatedAt" to System.currentTimeMillis()
                 )
 
                 val setTask = fStore.collection("visits")
-                    .document(visit.visitId)
+                    .document(currentVisit.visitId)
                     .set(visitMap, com.google.firebase.firestore.SetOptions.merge())
                 com.google.android.gms.tasks.Tasks.await(setTask)
 
                 // Update local Room database with permanent photo URLs and current sync status
-                db.visitDao().updateVisit(visit.copy(photosJson = updatedPhotosJson, syncStatus = finalSyncStatus))
+                db.visitDao().updateVisit(currentVisit.copy(photosJson = updatedPhotosJson, syncStatus = finalSyncStatus))
 
                 // Update exact assigned task in Firestore
                 try {
-                    if (visit.taskId.isNotBlank()) {
-                        fStore.collection("tasks").document(visit.taskId).update(
+                    if (currentVisit.taskId.isNotBlank()) {
+                        fStore.collection("tasks").document(currentVisit.taskId).update(
                             mapOf(
                                 "status" to "SUBMITTED",
-                                "visitId" to visit.visitId,
+                                "visitId" to currentVisit.visitId,
                                 "updatedAt" to System.currentTimeMillis()
                             )
                         )
                     } else {
                         val taskQuery = fStore.collection("tasks")
-                            .whereEqualTo("visitId", visit.visitId)
+                            .whereEqualTo("visitId", currentVisit.visitId)
                             .get()
                         val taskSnap = com.google.android.gms.tasks.Tasks.await(taskQuery)
                         for (taskDoc in taskSnap.documents) {
                             taskDoc.reference.update(
                                 mapOf(
                                     "status" to "SUBMITTED",
-                                    "visitId" to visit.visitId,
+                                    "visitId" to currentVisit.visitId,
                                     "updatedAt" to System.currentTimeMillis()
                                 )
                             )
@@ -422,9 +434,9 @@ class SyncManager private constructor(private val context: Context) {
                 } catch (_: Exception) {}
 
                 if (finalSyncStatus == SyncStatus.SYNCED) {
-                    android.util.Log.d("VISIT_SYNC_SUCCESS", "Visit ${visit.visitId} synced successfully with all Cloudinary media uploaded.")
+                    android.util.Log.d("VISIT_SYNC_SUCCESS", "Visit ${currentVisit.visitId} synced successfully with all Cloudinary media uploaded.")
                 } else {
-                    android.util.Log.w("VISIT_SYNC_PENDING", "Visit ${visit.visitId} written to Firestore but media is pending Cloudinary upload.")
+                    android.util.Log.w("VISIT_SYNC_PENDING", "Visit ${currentVisit.visitId} written to Firestore but media is pending Cloudinary upload.")
                 }
 
                 true

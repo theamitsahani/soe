@@ -65,7 +65,7 @@ object MediaStorageHelper {
                             inJustDecodeBounds = true
                         }
                         BitmapFactory.decodeStream(input, null, options)
-                        val maxDim = 1920
+                        val maxDim = 1280
                         val rawWidth = options.outWidth
                         val rawHeight = options.outHeight
                         if (rawWidth > maxDim || rawHeight > maxDim) {
@@ -88,7 +88,7 @@ object MediaStorageHelper {
 
                     if (bitmap != null) {
                         FileOutputStream(destFile).use { output ->
-                            bitmap!!.compress(Bitmap.CompressFormat.JPEG, 85, output)
+                            bitmap!!.compress(Bitmap.CompressFormat.JPEG, 80, output)
                         }
                         bitmap?.recycle()
                         return@withContext Uri.fromFile(destFile).toString()

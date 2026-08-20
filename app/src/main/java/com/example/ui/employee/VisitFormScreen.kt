@@ -1369,32 +1369,109 @@ fun VisitFormScreen(
                                     Spacer(modifier = Modifier.height(12.dp))
 
                                     if (currentList.isEmpty()) {
-                                        Surface(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(84.dp)
-                                                .clip(RoundedCornerShape(14.dp))
-                                                .clickable {
-                                                    activePhotoCategory = category
-                                                    photoPickerLauncher.launch("image/*")
-                                                },
-                                            shape = RoundedCornerShape(14.dp),
-                                            color = FormBackground,
-                                            border = BorderStroke(1.dp, CardBorderColor)
-                                        ) {
+                                        if (category.supportsVideo) {
                                             Row(
-                                                modifier = Modifier.fillMaxSize(),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.Center
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
-                                                Icon(Icons.Default.Add, contentDescription = null, tint = BrandPurple, modifier = Modifier.size(20.dp))
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text(
-                                                    text = if (category.supportsVideo) "Add Photos / Videos (No limit)" else "+ Add Photo",
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = BrandPurple
-                                                )
+                                                // Add Photo Button
+                                                Surface(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(84.dp)
+                                                        .clip(RoundedCornerShape(14.dp))
+                                                        .clickable {
+                                                            activePhotoCategory = category
+                                                            photoPickerLauncher.launch("image/*")
+                                                        },
+                                                    shape = RoundedCornerShape(14.dp),
+                                                    color = FormBackground,
+                                                    border = BorderStroke(1.dp, CardBorderColor)
+                                                ) {
+                                                    Column(
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        verticalArrangement = Arrangement.Center,
+                                                        horizontalAlignment = Alignment.CenterHorizontally
+                                                    ) {
+                                                        Icon(Icons.Default.CameraAlt, contentDescription = null, tint = BrandPurple, modifier = Modifier.size(22.dp))
+                                                        Spacer(modifier = Modifier.height(4.dp))
+                                                        Text(
+                                                            text = "+ Add Photo",
+                                                            fontSize = 13.sp,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            color = BrandPurple
+                                                        )
+                                                        Text(
+                                                            text = "फोटो जोड़ें",
+                                                            fontSize = 10.sp,
+                                                            color = Slate500
+                                                        )
+                                                    }
+                                                }
+
+                                                // Add Video Button
+                                                Surface(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(84.dp)
+                                                        .clip(RoundedCornerShape(14.dp))
+                                                        .clickable {
+                                                            activePhotoCategory = category
+                                                            videoPickerLauncher.launch("video/*")
+                                                        },
+                                                    shape = RoundedCornerShape(14.dp),
+                                                    color = BrandPurpleLight.copy(alpha = 0.5f),
+                                                    border = BorderStroke(1.5.dp, BrandPurple)
+                                                ) {
+                                                    Column(
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        verticalArrangement = Arrangement.Center,
+                                                        horizontalAlignment = Alignment.CenterHorizontally
+                                                    ) {
+                                                        Icon(Icons.Default.Videocam, contentDescription = null, tint = BrandPurple, modifier = Modifier.size(24.dp))
+                                                        Spacer(modifier = Modifier.height(4.dp))
+                                                        Text(
+                                                            text = "+ Add Video",
+                                                            fontSize = 13.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = BrandPurple
+                                                        )
+                                                        Text(
+                                                            text = "वीडियो जोड़ें / बनाएं",
+                                                            fontSize = 10.sp,
+                                                            color = BrandPurple
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            Surface(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(84.dp)
+                                                    .clip(RoundedCornerShape(14.dp))
+                                                    .clickable {
+                                                        activePhotoCategory = category
+                                                        photoPickerLauncher.launch("image/*")
+                                                    },
+                                                shape = RoundedCornerShape(14.dp),
+                                                color = FormBackground,
+                                                border = BorderStroke(1.dp, CardBorderColor)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.Center
+                                                ) {
+                                                    Icon(Icons.Default.Add, contentDescription = null, tint = BrandPurple, modifier = Modifier.size(20.dp))
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(
+                                                        text = "+ Add Photo",
+                                                        fontSize = 13.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = BrandPurple
+                                                    )
+                                                }
                                             }
                                         }
                                     } else {
@@ -1410,16 +1487,30 @@ fun VisitFormScreen(
                                                     color = Slate500,
                                                     fontWeight = FontWeight.Medium
                                                 )
-                                                Text(
-                                                    text = "+ Add More",
-                                                    fontSize = 12.sp,
-                                                    color = BrandPurple,
-                                                    fontWeight = FontWeight.Bold,
-                                                    modifier = Modifier.clickable {
-                                                        activePhotoCategory = category
-                                                        photoPickerLauncher.launch("image/*")
+                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                    if (category.supportsVideo) {
+                                                        Text(
+                                                            text = "+ Video",
+                                                            fontSize = 12.sp,
+                                                            color = BrandPurple,
+                                                            fontWeight = FontWeight.Bold,
+                                                            modifier = Modifier.clickable {
+                                                                activePhotoCategory = category
+                                                                videoPickerLauncher.launch("video/*")
+                                                            }
+                                                        )
                                                     }
-                                                )
+                                                    Text(
+                                                         text = "+ Photo",
+                                                        fontSize = 12.sp,
+                                                        color = BrandPurple,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.clickable {
+                                                            activePhotoCategory = category
+                                                            photoPickerLauncher.launch("image/*")
+                                                        }
+                                                    )
+                                                }
                                             }
 
                                             Spacer(modifier = Modifier.height(8.dp))

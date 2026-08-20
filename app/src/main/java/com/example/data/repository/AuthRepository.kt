@@ -29,6 +29,7 @@ import java.util.UUID
 
 class AuthRepository(private val context: Context) {
 
+    val sessionManager = com.example.util.SecureSessionManager.getInstance(context)
     private val db = AppDatabase.getDatabase(context)
     private val firebaseAuth: FirebaseAuth? get() = FirebaseUtils.auth
     private val firestore: FirebaseFirestore? get() = FirebaseUtils.firestore
@@ -152,169 +153,203 @@ class AuthRepository(private val context: Context) {
 
     suspend fun checkCurrentSession(): User? = withContext(Dispatchers.IO) {
         try {
-            val fAuth = firebaseAuth ?: return@withContext null
-            val currentFbUser = fAuth.currentUser ?: return@withContext null
-            val uid = currentFbUser.uid
-            val userEmail = currentFbUser.email ?: ""
+            val fAuth = firebaseAuth
+            val currentFbUser = fAuth?.currentUser
 
-            val fStore = firestore
-            if (fStore != null) {
-                try {
-                    var userDoc: DocumentSnapshot? = null
-                    val docTask = fStore.collection("users").document(uid).get()
-                    val doc = Tasks.await(docTask)
-                    if (doc.exists()) {
-                        userDoc = doc
-                    } else if (userEmail.isNotBlank()) {
-                        val queryTask = fStore.collection("users").whereEqualTo("email", userEmail).limit(1).get()
-                        val querySnap = Tasks.await(queryTask)
-                        if (!querySnap.isEmpty) {
-                            userDoc = querySnap.documents.firstOrNull()
+            if (currentFbUser != null) {
+                val uid = currentFbUser.uid
+                val userEmail = currentFbUser.email ?: ""
+
+                val idToken = try {
+                    val tokenTask = currentFbUser.getIdToken(false)
+                    Tasks.await(tokenTask).token
+                } catch (_: Exception) {
+                    sessionManager.getAuthToken()
+                }
+
+                val fStore = firestore
+                if (fStore != null) {
+                    try {
+                        var userDoc: DocumentSnapshot? = null
+                        val docTask = fStore.collection("users").document(uid).get()
+                        val doc = Tasks.await(docTask)
+                        if (doc.exists()) {
+                            userDoc = doc
+                        } else if (userEmail.isNotBlank()) {
+                            val queryTask = fStore.collection("users").whereEqualTo("email", userEmail).limit(1).get()
+                            val querySnap = Tasks.await(queryTask)
+                            if (!querySnap.isEmpty) {
+                                userDoc = querySnap.documents.firstOrNull()
+                            }
                         }
-                    }
 
-                    if (userDoc != null && userDoc.exists()) {
-                        val statusStr = userDoc.getString("status")?.trim()?.uppercase() ?: UserStatus.ACTIVE.name
-                        if (statusStr == "INACTIVE") {
-                            fAuth.signOut()
-                            _currentUser.value = null
-                            return@withContext null
+                        if (userDoc != null && userDoc.exists()) {
+                            val statusStr = userDoc.getString("status")?.trim()?.uppercase() ?: UserStatus.ACTIVE.name
+                            if (statusStr == "INACTIVE") {
+                                sessionManager.clearSession()
+                                fAuth.signOut()
+                                _currentUser.value = null
+                                return@withContext null
+                            }
+
+                            val rawRole = userDoc.getString("role")?.trim()?.uppercase()
+                            val isAdminEmail = userEmail.equals("amitsahani552@gmail.com", ignoreCase = true) ||
+                                    userEmail.equals("admin@gmail.com", ignoreCase = true) ||
+                                    userEmail.equals("admin@soe.com", ignoreCase = true) ||
+                                    userEmail.contains("admin", ignoreCase = true)
+                            val role = if (isAdminEmail || rawRole == "ADMIN") UserRole.ADMIN else UserRole.EMPLOYEE
+
+                            val name = userDoc.getString("name")?.takeIf { it.isNotBlank() }
+                                ?: currentFbUser.displayName
+                                ?: userEmail.substringBefore("@")
+                            val email = userDoc.getString("email") ?: userEmail
+                            val mobile = userDoc.getString("mobile") ?: ""
+                            val state = userDoc.getString("state") ?: "Rajasthan"
+                            val district = userDoc.getString("district") ?: ""
+                            val mustChangePassword = userDoc.getBoolean("mustChangePassword") ?: false
+
+                            val user = User(
+                                userId = uid,
+                                name = name,
+                                email = email,
+                                mobile = mobile,
+                                state = state,
+                                district = district,
+                                role = role,
+                                status = UserStatus.ACTIVE,
+                                mustChangePassword = mustChangePassword
+                            )
+
+                            db.userDao().insertUser(
+                                UserEntity(
+                                    userId = user.userId,
+                                    name = user.name,
+                                    email = user.email,
+                                    mobile = user.mobile,
+                                    state = user.state,
+                                    district = user.district,
+                                    role = user.role.name,
+                                    status = user.status.name,
+                                    mustChangePassword = user.mustChangePassword
+                                )
+                            )
+                            sessionManager.saveSession(user, authToken = idToken)
+                            _currentUser.value = user
+                            startListeningToFirestoreUsers()
+                            return@withContext user
+                        } else {
+                            // User doc missing in Firestore: Auto-provision profile from Firebase Auth user
+                            val isAdminEmail = userEmail.equals("amitsahani552@gmail.com", ignoreCase = true) ||
+                                    userEmail.equals("admin@gmail.com", ignoreCase = true) ||
+                                    userEmail.equals("admin@soe.com", ignoreCase = true) ||
+                                    userEmail.contains("admin", ignoreCase = true)
+                            val role = if (isAdminEmail) UserRole.ADMIN else UserRole.EMPLOYEE
+                            val name = currentFbUser.displayName?.takeIf { it.isNotBlank() } ?: (if (isAdminEmail) "Admin" else userEmail.substringBefore("@"))
+                            val user = User(
+                                userId = uid,
+                                name = name,
+                                email = userEmail,
+                                mobile = "",
+                                state = "Rajasthan",
+                                district = "",
+                                role = role,
+                                status = UserStatus.ACTIVE,
+                                mustChangePassword = false
+                            )
+                            val profileMap = mapOf(
+                                "userId" to uid,
+                                "name" to name,
+                                "email" to userEmail,
+                                "mobile" to "",
+                                "state" to "Rajasthan",
+                                "district" to "",
+                                "role" to role.name,
+                                "status" to UserStatus.ACTIVE.name,
+                                "mustChangePassword" to false,
+                                "createdAt" to System.currentTimeMillis(),
+                                "updatedAt" to System.currentTimeMillis()
+                            )
+                            val setTask = fStore.collection("users").document(uid).set(profileMap, SetOptions.merge())
+                            Tasks.await(setTask)
+
+                            db.userDao().insertUser(
+                                UserEntity(
+                                    userId = user.userId,
+                                    name = user.name,
+                                    email = user.email,
+                                    mobile = user.mobile,
+                                    state = user.state,
+                                    district = user.district,
+                                    role = user.role.name,
+                                    status = user.status.name,
+                                    mustChangePassword = user.mustChangePassword
+                                )
+                            )
+                            sessionManager.saveSession(user, authToken = idToken)
+                            _currentUser.value = user
+                            startListeningToFirestoreUsers()
+                            return@withContext user
                         }
-
-                        val rawRole = userDoc.getString("role")?.trim()?.uppercase()
-                        val isAdminEmail = userEmail.equals("amitsahani552@gmail.com", ignoreCase = true) ||
-                                userEmail.equals("admin@gmail.com", ignoreCase = true) ||
-                                userEmail.equals("admin@soe.com", ignoreCase = true) ||
-                                userEmail.contains("admin", ignoreCase = true)
-                        val role = if (isAdminEmail || rawRole == "ADMIN") UserRole.ADMIN else UserRole.EMPLOYEE
-
-                        val name = userDoc.getString("name")?.takeIf { it.isNotBlank() }
-                            ?: currentFbUser.displayName
-                            ?: userEmail.substringBefore("@")
-                        val email = userDoc.getString("email") ?: userEmail
-                        val mobile = userDoc.getString("mobile") ?: ""
-                        val state = userDoc.getString("state") ?: "Rajasthan"
-                        val district = userDoc.getString("district") ?: ""
-                        val mustChangePassword = userDoc.getBoolean("mustChangePassword") ?: false
-
-                        val user = User(
-                            userId = uid,
-                            name = name,
-                            email = email,
-                            mobile = mobile,
-                            state = state,
-                            district = district,
-                            role = role,
-                            status = UserStatus.ACTIVE,
-                            mustChangePassword = mustChangePassword
-                        )
-
-                        db.userDao().insertUser(
-                            UserEntity(
-                                userId = user.userId,
-                                name = user.name,
-                                email = user.email,
-                                mobile = user.mobile,
-                                state = user.state,
-                                district = user.district,
-                                role = user.role.name,
-                                status = user.status.name,
-                                mustChangePassword = user.mustChangePassword
-                            )
-                        )
-                        _currentUser.value = user
-                        startListeningToFirestoreUsers()
-                        return@withContext user
-                    } else {
-                        // User doc missing in Firestore: Auto-provision profile from Firebase Auth user
-                        val isAdminEmail = userEmail.equals("amitsahani552@gmail.com", ignoreCase = true) ||
-                                userEmail.equals("admin@gmail.com", ignoreCase = true) ||
-                                userEmail.equals("admin@soe.com", ignoreCase = true) ||
-                                userEmail.contains("admin", ignoreCase = true)
-                        val role = if (isAdminEmail) UserRole.ADMIN else UserRole.EMPLOYEE
-                        val name = currentFbUser.displayName?.takeIf { it.isNotBlank() } ?: (if (isAdminEmail) "Admin" else userEmail.substringBefore("@"))
-                        val user = User(
-                            userId = uid,
-                            name = name,
-                            email = userEmail,
-                            mobile = "",
-                            state = "Rajasthan",
-                            district = "",
-                            role = role,
-                            status = UserStatus.ACTIVE,
-                            mustChangePassword = false
-                        )
-                        val profileMap = mapOf(
-                            "userId" to uid,
-                            "name" to name,
-                            "email" to userEmail,
-                            "mobile" to "",
-                            "state" to "Rajasthan",
-                            "district" to "",
-                            "role" to role.name,
-                            "status" to UserStatus.ACTIVE.name,
-                            "mustChangePassword" to false,
-                            "createdAt" to System.currentTimeMillis(),
-                            "updatedAt" to System.currentTimeMillis()
-                        )
-                        val setTask = fStore.collection("users").document(uid).set(profileMap, SetOptions.merge())
-                        Tasks.await(setTask)
-
-                        db.userDao().insertUser(
-                            UserEntity(
-                                userId = user.userId,
-                                name = user.name,
-                                email = user.email,
-                                mobile = user.mobile,
-                                state = user.state,
-                                district = user.district,
-                                role = user.role.name,
-                                status = user.status.name,
-                                mustChangePassword = user.mustChangePassword
-                            )
-                        )
-                        _currentUser.value = user
-                        startListeningToFirestoreUsers()
-                        return@withContext user
+                    } catch (e: Exception) {
+                        Log.w("AuthRepository", "Failed to fetch session user profile from Firestore: ${e.message}")
                     }
-                } catch (e: Exception) {
-                    Log.w("AuthRepository", "Failed to fetch session user profile from Firestore: ${e.message}")
+                }
+
+                // Check cached session on this device
+                val localUser = db.userDao().getUserById(uid)
+                if (localUser != null) {
+                    if (localUser.status.uppercase() == "INACTIVE") {
+                        sessionManager.clearSession()
+                        fAuth.signOut()
+                        _currentUser.value = null
+                        return@withContext null
+                    }
+                    val role = when (localUser.role.uppercase()) {
+                        "ADMIN" -> UserRole.ADMIN
+                        else -> UserRole.EMPLOYEE
+                    }
+                    val user = User(
+                        userId = localUser.userId,
+                        name = localUser.name,
+                        email = localUser.email,
+                        mobile = localUser.mobile,
+                        state = localUser.state,
+                        district = localUser.district,
+                        role = role,
+                        status = UserStatus.ACTIVE,
+                        mustChangePassword = localUser.mustChangePassword
+                    )
+                    sessionManager.saveSession(user, authToken = idToken)
+                    _currentUser.value = user
+                    startListeningToFirestoreUsers()
+                    return@withContext user
                 }
             }
 
-            // Check cached session on this device
-            val localUser = db.userDao().getUserById(uid)
-            if (localUser != null) {
-                if (localUser.status.uppercase() == "INACTIVE") {
-                    fAuth.signOut()
-                    _currentUser.value = null
-                    return@withContext null
+            // Offline mode / Fast resume from encrypted keystore session
+            if (sessionManager.isSessionValid()) {
+                val cachedUser = sessionManager.getCachedUser()
+                if (cachedUser != null && cachedUser.status == UserStatus.ACTIVE) {
+                    sessionManager.touchSession()
+                    _currentUser.value = cachedUser
+                    return@withContext cachedUser
                 }
-                val role = when (localUser.role.uppercase()) {
-                    "ADMIN" -> UserRole.ADMIN
-                    else -> UserRole.EMPLOYEE
-                }
-                val user = User(
-                    userId = localUser.userId,
-                    name = localUser.name,
-                    email = localUser.email,
-                    mobile = localUser.mobile,
-                    state = localUser.state,
-                    district = localUser.district,
-                    role = role,
-                    status = UserStatus.ACTIVE,
-                    mustChangePassword = localUser.mustChangePassword
-                )
-                _currentUser.value = user
-                startListeningToFirestoreUsers()
-                return@withContext user
             }
 
-            fAuth.signOut()
+            sessionManager.clearSession()
+            firebaseAuth?.signOut()
             _currentUser.value = null
             null
         } catch (e: Exception) {
             Log.e("AuthRepository", "Error checking current session", e)
+            if (sessionManager.isSessionValid()) {
+                val cachedUser = sessionManager.getCachedUser()
+                if (cachedUser != null && cachedUser.status == UserStatus.ACTIVE) {
+                    _currentUser.value = cachedUser
+                    return@withContext cachedUser
+                }
+            }
+            sessionManager.clearSession()
             firebaseAuth?.signOut()
             _currentUser.value = null
             null
@@ -355,6 +390,13 @@ class AuthRepository(private val context: Context) {
             var district = ""
             var status = UserStatus.ACTIVE
 
+            val idToken = try {
+                val idTask = fbUser.getIdToken(false)
+                Tasks.await(idTask).token
+            } catch (_: Exception) {
+                null
+            }
+
             if (fStore != null) {
                 try {
                     var userDoc: DocumentSnapshot? = null
@@ -373,12 +415,14 @@ class AuthRepository(private val context: Context) {
                     if (userDoc != null && userDoc.exists()) {
                         val isDeleted = userDoc.getBoolean("isDeleted") ?: false
                         if (isDeleted) {
+                            sessionManager.clearSession()
                             fAuth.signOut()
                             return@withContext Result.failure(Exception("Aapka account delete kar diya gaya hai. Kripya Administrator se sampark karein."))
                         }
 
                         val statusStr = userDoc.getString("status")?.trim()?.uppercase() ?: UserStatus.ACTIVE.name
                         if (statusStr == "INACTIVE" || statusStr == "PENDING") {
+                            sessionManager.clearSession()
                             fAuth.signOut()
                             return@withContext Result.failure(Exception("Aapka account abhi active/verify nahi hai. Admin dwara verify hone ke baad login karein."))
                         }
@@ -440,6 +484,7 @@ class AuthRepository(private val context: Context) {
                             )
                         )
 
+                        sessionManager.saveSession(authenticatedUser, authToken = idToken)
                         _currentUser.value = authenticatedUser
                         startListeningToFirestoreUsers()
                         return@withContext Result.success(authenticatedUser)
@@ -498,6 +543,7 @@ class AuthRepository(private val context: Context) {
                                 mustChangePassword = authedUser.mustChangePassword
                             )
                         )
+                        sessionManager.saveSession(authedUser, authToken = idToken)
                         _currentUser.value = authedUser
                         startListeningToFirestoreUsers()
                         return@withContext Result.success(authedUser)
@@ -533,6 +579,7 @@ class AuthRepository(private val context: Context) {
                 )
             )
 
+            sessionManager.saveSession(authenticatedUser, authToken = idToken)
             _currentUser.value = authenticatedUser
             startListeningToFirestoreUsers()
             return@withContext Result.success(authenticatedUser)
@@ -552,6 +599,7 @@ class AuthRepository(private val context: Context) {
                 val localUser = db.userDao().getUserByEmail(input)
                 if (localUser != null) {
                     if (localUser.status.uppercase() == "INACTIVE") {
+                        sessionManager.clearSession()
                         return@withContext Result.failure(Exception("Your account has been deactivated. Please contact administrator."))
                     }
                     val role = when (localUser.role.uppercase()) {
@@ -569,11 +617,18 @@ class AuthRepository(private val context: Context) {
                         status = UserStatus.ACTIVE,
                         mustChangePassword = localUser.mustChangePassword
                     )
+                    sessionManager.saveSession(authenticatedUser)
                     _currentUser.value = authenticatedUser
                     return@withContext Result.success(authenticatedUser)
-                } else {
-                    return@withContext Result.failure(Exception("Internet connection required to sign in for the first time."))
+                } else if (sessionManager.isSessionValid()) {
+                    val cachedUser = sessionManager.getCachedUser()
+                    if (cachedUser != null && cachedUser.email.equals(input, ignoreCase = true) && cachedUser.status == UserStatus.ACTIVE) {
+                        sessionManager.touchSession()
+                        _currentUser.value = cachedUser
+                        return@withContext Result.success(cachedUser)
+                    }
                 }
+                return@withContext Result.failure(Exception("Internet connection required to sign in for the first time."))
             }
 
             // Real authentication failure (invalid password, user not found, account disabled, etc.)
@@ -638,6 +693,7 @@ class AuthRepository(private val context: Context) {
 
     fun logout() {
         stopListeningToFirestoreUsers()
+        sessionManager.clearSession()
         firebaseAuth?.signOut()
         _currentUser.value = null
     }
