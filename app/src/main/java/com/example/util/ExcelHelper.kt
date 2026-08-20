@@ -126,17 +126,17 @@ object ExcelHelper {
                 return defaultIdx
             }
 
-            val srCol = findColIndex("s.r", "sr", "s no", "s.no", "serial", defaultIdx = 0)
-            val stateCol = findColIndex("state", "rajya", defaultIdx = -1)
-            val districtCol = findColIndex("district", "zila", "dist", defaultIdx = 1)
-            val schoolNameCol = findColIndex("school", "vidyalaya", "name of school", defaultIdx = 2)
-            val schoolTypeCol = findColIndex("type", "category", defaultIdx = 3)
-            val villageCol = findColIndex("village", "gram", "city", "town", defaultIdx = 4)
-            val principalCol = findColIndex("principal", "headmaster", "hm name", "pradhanacharya", defaultIdx = 5)
-            val mobileCol = findColIndex("mobile", "phone", "contact", defaultIdx = 6)
-            val blockCol = findColIndex("block", "khand", defaultIdx = 7)
-            val mapLinkCol = findColIndex("map", "gps", "location", "link", defaultIdx = -1)
-            val visitDateCol = findColIndex("visit", "date", "completed", "tariqh", defaultIdx = 8)
+            val srCol = findColIndex("s.r", "sr", "s no", "s.no", "serial", "क्रमांक", defaultIdx = 0)
+            val stateCol = findColIndex("state", "rajya", "राज्य", defaultIdx = -1)
+            val districtCol = findColIndex("district", "zila", "dist", "ज़िला", "जिला", defaultIdx = 1)
+            val schoolNameCol = findColIndex("school", "vidyalaya", "name of school", "विद्यालय", "स्कूल", defaultIdx = 2)
+            val schoolTypeCol = findColIndex("type", "category", "प्रकार", defaultIdx = 3)
+            val villageCol = findColIndex("village", "gram", "city", "town", "गाँव", "गांव", "ग्राम", defaultIdx = 4)
+            val principalCol = findColIndex("principal", "headmaster", "hm name", "pradhanacharya", "प्रधानाचार्य", "प्रिंसिपल", defaultIdx = 5)
+            val mobileCol = findColIndex("mobile", "phone", "contact", "मोबाइल", "फोन", defaultIdx = 6)
+            val blockCol = findColIndex("block", "khand", "ब्लॉक", "खण्ड", defaultIdx = 7)
+            val mapLinkCol = findColIndex("map", "gps", "location", "link", "मैप", "लोकेशन", defaultIdx = -1)
+            val visitDateCol = findColIndex("visit date", "visit_date", "visitdate", "date of visit", "visiting date", "visit", "date", "completed date", "completion date", "completed", "completion", "visited", "tariqh", "tarikh", "dinank", "status", "दिनांक", "विज़िट", "विजिट", "तारीख", "पूर्ण", "स्थिति", defaultIdx = -1)
 
             // Skip row 0 (header). Process data rows starting from index 1.
             for (i in 1 until parsedRows.size) {
@@ -163,7 +163,22 @@ object ExcelHelper {
                 val principalMobile = cleanMobileNumber(getCol(mobileCol))
                 val blockName = getCol(blockCol)
                 val mapLink = if (mapLinkCol != -1) getCol(mapLinkCol) else ""
-                val rawVisitDate = getCol(visitDateCol)
+                
+                var rawVisitDate = if (visitDateCol != -1) getCol(visitDateCol) else ""
+                // If visit date column wasn't explicitly matched, check all remaining columns for date/completed status
+                if (rawVisitDate.isBlank()) {
+                    for (cIdx in row.indices) {
+                        if (cIdx != srCol && cIdx != stateCol && cIdx != districtCol && cIdx != schoolNameCol &&
+                            cIdx != schoolTypeCol && cIdx != villageCol && cIdx != principalCol && cIdx != mobileCol &&
+                            cIdx != blockCol && cIdx != mapLinkCol) {
+                            val candidate = cleanText(row[cIdx])
+                            if (candidate.isNotBlank() && isDateOrCompletedString(candidate)) {
+                                rawVisitDate = candidate
+                                break
+                            }
+                        }
+                    }
+                }
                 val visitDate = parseExcelDate(rawVisitDate)
 
                 // Row is INVALID ONLY if School Name is empty
@@ -212,12 +227,13 @@ object ExcelHelper {
                 validRows++
 
                 // If Visit Date contains value -> Generate Completed Visit record
-                val isCompleted = visitDate.isNotBlank()
+                val isCompleted = school.visitDate.isNotBlank()
 
                 if (isCompleted) {
+                    val actualVisitDate = school.visitDate
                     val answers = com.example.data.model.VisitAnswers(
                         q1_soeName = "Admin (Prior Completion)",
-                        q2_visitDate = visitDate,
+                        q2_visitDate = actualVisitDate,
                         q3_schoolName = schoolName,
                         q4_udiseCode = "",
                         q5_district = districtName,
@@ -228,11 +244,12 @@ object ExcelHelper {
                         q10_missionGyanAwareness = "हाँ",
                         q11_studentCount = "Verified",
                         q12_schoolResponse = "Completed (Previous Visit)",
-                        q20_finalRemarks = "Completed prior to app launch / Verified by Admin (Date: $visitDate)"
+                        q20_finalRemarks = "Completed prior to app launch / Verified by Admin (Date: $actualVisitDate)"
                     )
                     val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
                     val answersAdapter = moshi.adapter(com.example.data.model.VisitAnswers::class.java)
 
+                    val now = System.currentTimeMillis()
                     val visit = com.example.data.model.Visit(
                         visitId = "vst_" + schoolId.removePrefix("sch_") + "_legacy",
                         schoolId = schoolId,
@@ -241,14 +258,21 @@ object ExcelHelper {
                         schoolName = schoolName,
                         district = districtName,
                         block = blockName,
+                        villageName = villageName,
+                        schoolType = schoolType,
+                        principalName = principalName,
+                        principalMobile = principalMobile,
                         state = stateName,
-                        visitDate = visitDate,
+                        visitDate = actualVisitDate,
                         status = com.example.data.model.VisitStatus.SUBMITTED,
                         answersJson = answersAdapter.toJson(answers),
                         photosJson = "{}",
+                        startedAt = now - 30 * 60 * 1000L,
+                        completedAt = now,
+                        submittedAt = now,
                         syncStatus = com.example.data.model.SyncStatus.SYNCED,
-                        createdAt = System.currentTimeMillis(),
-                        updatedAt = System.currentTimeMillis()
+                        createdAt = now,
+                        updatedAt = now
                     )
                     completedVisits.add(visit)
                 }
@@ -288,9 +312,30 @@ object ExcelHelper {
         return s.filter { it.isDigit() }
     }
 
+    fun isDateOrCompletedString(text: String): Boolean {
+        val trimmed = text.trim().lowercase()
+        if (trimmed.isEmpty()) return false
+        if (trimmed in listOf("completed", "done", "visited", "yes", "y", "true", "हाँ", "पूर्ण", "हो गया", "हो गई", "complete", "visited", "done")) {
+            return true
+        }
+        val doubleVal = trimmed.toDoubleOrNull()
+        if (doubleVal != null && doubleVal > 20000 && doubleVal < 80000) {
+            return true
+        }
+        // Match common date patterns like 12/05/2024, 12-05-2024, 2024-05-12, 12.05.2024
+        val dateRegex = Regex("^\\d{1,4}[-/.]\\d{1,2}[-/.]\\d{1,4}.*")
+        return dateRegex.matches(trimmed)
+    }
+
     fun parseExcelDate(raw: String): String {
         val trimmed = cleanText(raw)
         if (trimmed.isBlank()) return ""
+
+        val lower = trimmed.lowercase()
+        if (lower in listOf("completed", "done", "visited", "yes", "y", "true", "हाँ", "पूर्ण", "हो गया", "हो गई", "complete")) {
+            val sdf = java.text.SimpleDateFormat("dd-MM-yyyy", java.util.Locale.ENGLISH)
+            return sdf.format(java.util.Date())
+        }
 
         // Check if it's an Excel numeric date serial (typically 20000..80000)
         val doubleVal = trimmed.toDoubleOrNull()
@@ -304,6 +349,25 @@ object ExcelHelper {
                 val sdf = java.text.SimpleDateFormat("dd-MM-yyyy", java.util.Locale.ENGLISH)
                 sdf.timeZone = java.util.TimeZone.getDefault()
                 return sdf.format(java.util.Date(millis))
+            } catch (_: Exception) {}
+        }
+
+        // Try standard date formats
+        val formats = listOf(
+            "dd-MM-yyyy", "dd/MM/yyyy", "dd.MM.yyyy",
+            "yyyy-MM-dd", "yyyy/MM/dd",
+            "dd-MMM-yyyy", "dd MMM yyyy",
+            "d-M-yyyy", "d/M/yyyy"
+        )
+        for (pattern in formats) {
+            try {
+                val sdf = java.text.SimpleDateFormat(pattern, java.util.Locale.ENGLISH)
+                sdf.isLenient = false
+                val parsed = sdf.parse(trimmed)
+                if (parsed != null) {
+                    val outSdf = java.text.SimpleDateFormat("dd-MM-yyyy", java.util.Locale.ENGLISH)
+                    return outSdf.format(parsed)
+                }
             } catch (_: Exception) {}
         }
 

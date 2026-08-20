@@ -353,12 +353,20 @@ class SchoolRepository(private val context: Context) {
                                     "employeeId" to v.employeeId,
                                     "employeeName" to v.employeeName,
                                     "schoolName" to v.schoolName,
+                                    "state" to v.state,
                                     "district" to v.district,
                                     "block" to v.block,
+                                    "villageName" to v.villageName,
+                                    "schoolType" to v.schoolType,
+                                    "principalName" to v.principalName,
+                                    "principalMobile" to v.principalMobile,
                                     "visitDate" to v.visitDate,
                                     "status" to v.status.name,
                                     "answersJson" to v.answersJson,
                                     "photosJson" to v.photosJson,
+                                    "startedAt" to (v.startedAt ?: (System.currentTimeMillis() - 30 * 60 * 1000L)),
+                                    "completedAt" to (v.completedAt ?: System.currentTimeMillis()),
+                                    "submittedAt" to (v.submittedAt ?: System.currentTimeMillis()),
                                     "syncStatus" to com.example.data.model.SyncStatus.SYNCED.name,
                                     "createdAt" to v.createdAt,
                                     "updatedAt" to System.currentTimeMillis()
@@ -367,7 +375,41 @@ class SchoolRepository(private val context: Context) {
                             }
                             com.google.android.gms.tasks.Tasks.await(visitBatch.commit())
                         } catch (vErr: Exception) {
-                            Log.w("SchoolRepository", "Batch chunk visit write notice: ${vErr.message}")
+                            Log.w("SchoolRepository", "Batch chunk visit write fallback: ${vErr.message}")
+                            // Fallback to individual document sets
+                            for (v in visitChunk) {
+                                try {
+                                    val visitDocRef = fStore.collection("visits").document(v.visitId)
+                                    val visitData = mapOf(
+                                        "visitId" to v.visitId,
+                                        "schoolId" to v.schoolId,
+                                        "employeeId" to v.employeeId,
+                                        "employeeName" to v.employeeName,
+                                        "schoolName" to v.schoolName,
+                                        "state" to v.state,
+                                        "district" to v.district,
+                                        "block" to v.block,
+                                        "villageName" to v.villageName,
+                                        "schoolType" to v.schoolType,
+                                        "principalName" to v.principalName,
+                                        "principalMobile" to v.principalMobile,
+                                        "visitDate" to v.visitDate,
+                                        "status" to v.status.name,
+                                        "answersJson" to v.answersJson,
+                                        "photosJson" to v.photosJson,
+                                        "startedAt" to (v.startedAt ?: (System.currentTimeMillis() - 30 * 60 * 1000L)),
+                                        "completedAt" to (v.completedAt ?: System.currentTimeMillis()),
+                                        "submittedAt" to (v.submittedAt ?: System.currentTimeMillis()),
+                                        "syncStatus" to com.example.data.model.SyncStatus.SYNCED.name,
+                                        "createdAt" to v.createdAt,
+                                        "updatedAt" to System.currentTimeMillis()
+                                    )
+                                    val setTask = visitDocRef.set(visitData, com.google.firebase.firestore.SetOptions.merge())
+                                    com.google.android.gms.tasks.Tasks.await(setTask)
+                                } catch (indErr: Exception) {
+                                    Log.e("SchoolRepository", "Individual visit write failed for ${v.visitId}: ${indErr.message}")
+                                }
+                            }
                         }
                     }
                 }
