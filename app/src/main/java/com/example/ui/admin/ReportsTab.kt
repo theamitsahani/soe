@@ -79,6 +79,7 @@ import com.example.data.model.School
 import com.example.data.model.Visit
 import com.example.data.model.VisitAnswers
 import com.example.data.model.VisitStatus
+import com.example.ui.components.SearchTextField
 import com.example.ui.components.StatusChip
 import com.example.ui.components.VisitDetailDialog
 import com.example.ui.theme.Amber100
@@ -291,56 +292,13 @@ fun ReportsTab(
                 }
             }
 
-            // Top Search Bar
+            // Top Search Bar (Compact)
             item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                ) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(4.dp),
-                        placeholder = {
-                            Text(
-                                "Search by school, district, block, officer...",
-                                fontSize = 13.sp,
-                                color = Slate500
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.Search,
-                                contentDescription = null,
-                                tint = BrandAccent,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        },
-                        trailingIcon = {
-                            if (searchQuery.isNotBlank()) {
-                                IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(
-                                        Icons.Default.Clear,
-                                        contentDescription = "Clear search",
-                                        tint = Slate500,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-                        },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent
-                        )
-                    )
-                }
+                SearchTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = "Search by school, district, block, officer..."
+                )
             }
 
             // Collapsible Filters Bar

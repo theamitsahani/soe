@@ -81,6 +81,7 @@ import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.example.data.model.PhotoCategory
 import com.example.data.model.Visit
+import com.example.ui.components.SearchTextField
 import com.example.ui.theme.Amber100
 import com.example.ui.theme.Amber600
 import com.example.ui.theme.BrandAccent
@@ -437,55 +438,12 @@ fun PhotoGalleryTab(
                 }
             }
 
-            // Top Search Bar
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-            ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(4.dp),
-                    placeholder = {
-                        Text(
-                            "Search photos by school, district, block, category...",
-                            fontSize = 13.sp,
-                            color = Slate500
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.Search,
-                            contentDescription = null,
-                            tint = BrandAccent,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotBlank()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(
-                                    Icons.Default.Clear,
-                                    contentDescription = "Clear search",
-                                    tint = Slate500,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color.Transparent,
-                        unfocusedBorderColor = Color.Transparent,
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent
-                    )
-                )
-            }
+            // Top Search Bar (Compact)
+            SearchTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = "Search photos by school, district, block, category..."
+            )
 
             // Collapsible Filters Bar
             Card(
