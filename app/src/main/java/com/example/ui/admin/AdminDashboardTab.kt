@@ -199,11 +199,6 @@ fun AdminDashboardTab(
                             onClick = { onNavigateTab(AdminTab.ASSIGN_VISITS) }
                         )
                         QuickActionButton(
-                            title = "Map View",
-                            icon = Icons.Default.Map,
-                            onClick = { onNavigateTab(AdminTab.MAP_VIEW) }
-                        )
-                        QuickActionButton(
                             title = "Officers",
                             icon = Icons.Default.Group,
                             onClick = { onNavigateTab(AdminTab.EMPLOYEES) }
@@ -217,6 +212,11 @@ fun AdminDashboardTab(
                             title = "Reports",
                             icon = Icons.Default.Download,
                             onClick = { onNavigateTab(AdminTab.VISIT_REPORTS) }
+                        )
+                        QuickActionButton(
+                            title = "Gallery",
+                            icon = Icons.Default.PhotoLibrary,
+                            onClick = { onNavigateTab(AdminTab.PHOTO_GALLERY) }
                         )
                     }
                 }
