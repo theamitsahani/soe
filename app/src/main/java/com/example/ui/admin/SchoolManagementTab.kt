@@ -84,6 +84,7 @@ import com.example.ui.theme.Slate700
 import com.example.util.ExcelHelper
 import com.example.util.GoogleMapHelper
 import com.example.util.ImportValidationResult
+import com.example.util.IndiaLocationData
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -741,8 +742,9 @@ fun SchoolManagementTab(
             confirmButton = {
                 Button(
                     onClick = {
-                        val cleanSchoolName = mSchoolName.trim()
-                        val cleanDistrict = mDistrictName.trim()
+                        val cleanState = IndiaLocationData.normalizeState(mStateName)
+                        val cleanDistrict = IndiaLocationData.normalizeDistrict(cleanState, mDistrictName)
+                        val cleanSchoolName = IndiaLocationData.normalizeSchoolName(mSchoolName)
                         val cleanMobile = mPrincipalMobile.trim().filter { it.isDigit() }
 
                         if (cleanSchoolName.isBlank()) {
@@ -765,13 +767,13 @@ fun SchoolManagementTab(
                         isSaving = true
                         val newSchool = School(
                             schoolId = "sch_" + java.util.UUID.randomUUID().toString().take(8),
-                            stateName = mStateName.trim().ifBlank { "Rajasthan" },
+                            stateName = cleanState,
                             districtName = cleanDistrict,
                             schoolName = cleanSchoolName,
-                            schoolType = mSchoolType.trim(),
-                            villageName = mVillageName.trim(),
-                            principalName = mPrincipalName.trim(),
-                            blockName = mBlockName.trim(),
+                            schoolType = IndiaLocationData.normalizeSchoolType(mSchoolType),
+                            villageName = IndiaLocationData.normalizeVillage(mVillageName),
+                            principalName = IndiaLocationData.normalizeGenericName(mPrincipalName),
+                            blockName = IndiaLocationData.normalizeBlock(mBlockName),
                             principalMobile = cleanMobile,
                             visitDate = "",
                             mapLink = mMapLink.trim(),
@@ -1097,8 +1099,9 @@ fun SchoolManagementTab(
             confirmButton = {
                 Button(
                     onClick = {
-                        val cleanName = eSchoolName.trim()
-                        val cleanDist = eDistrict.trim()
+                        val cleanState = IndiaLocationData.normalizeState(eState)
+                        val cleanDist = IndiaLocationData.normalizeDistrict(cleanState, eDistrict)
+                        val cleanName = IndiaLocationData.normalizeSchoolName(eSchoolName)
                         val cleanMob = eMobile.trim().filter { it.isDigit() }
 
                         if (cleanName.isBlank()) {
@@ -1118,12 +1121,12 @@ fun SchoolManagementTab(
                         val updated = sch.copy(
                             schoolName = cleanName,
                             districtName = cleanDist,
-                            blockName = eBlock.trim(),
-                            villageName = eVillage.trim(),
-                            schoolType = eSchoolType.trim(),
-                            principalName = ePrincipal.trim(),
+                            blockName = IndiaLocationData.normalizeBlock(eBlock),
+                            villageName = IndiaLocationData.normalizeVillage(eVillage),
+                            schoolType = IndiaLocationData.normalizeSchoolType(eSchoolType),
+                            principalName = IndiaLocationData.normalizeGenericName(ePrincipal),
                             principalMobile = cleanMob,
-                            stateName = eState.trim().ifBlank { "Rajasthan" },
+                            stateName = cleanState,
                             mapLink = eMapLink.trim(),
                             updatedAt = System.currentTimeMillis()
                         )

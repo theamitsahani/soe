@@ -89,8 +89,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import com.example.data.model.Visit
 import com.example.data.model.VisitAnswers
-import com.example.ui.theme.Slate300
-import com.example.ui.theme.Slate900
+import com.example.util.IndiaLocationData
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 
@@ -191,28 +190,31 @@ fun AssignVisitsTab(
     }
 
     val stateList = remember(availableSchools) {
-        listOf("All States") + availableSchools.map { if (it.state.isNotBlank()) it.state else "Rajasthan" }.distinct()
+        listOf("All States") + availableSchools.map { IndiaLocationData.normalizeState(it.state) }.distinct().sorted()
     }
 
     val districtList = remember(availableSchools, selectedState) {
-        val base = if (selectedState == "All States") availableSchools else availableSchools.filter { (it.state.ifBlank { "Rajasthan" }) == selectedState }
-        listOf("All Districts") + base.map { it.district }.filter { it.isNotBlank() }.distinct()
+        val base = if (selectedState == "All States") availableSchools else availableSchools.filter { IndiaLocationData.areEqual(it.state.ifBlank { "Rajasthan" }, selectedState) }
+        listOf("All Districts") + base.map { IndiaLocationData.normalizeDistrict(it.state, it.district) }.filter { it.isNotBlank() }.distinct().sorted()
     }
 
     val blockList = remember(availableSchools, selectedState, selectedDistrict) {
         val base = availableSchools.filter {
-            (selectedState == "All States" || (it.state.ifBlank { "Rajasthan" }) == selectedState) &&
-            (selectedDistrict == "All Districts" || it.district == selectedDistrict)
+            (selectedState == "All States" || IndiaLocationData.areEqual(it.state.ifBlank { "Rajasthan" }, selectedState)) &&
+            (selectedDistrict == "All Districts" || IndiaLocationData.areEqual(it.district, selectedDistrict))
         }
-        listOf("All Blocks") + base.map { it.block }.filter { it.isNotBlank() }.distinct()
+        listOf("All Blocks") + base.map { IndiaLocationData.normalizeBlock(it.block) }.filter { it.isNotBlank() }.distinct().sorted()
     }
 
     val filteredSchools = remember(availableSchools, selectedState, selectedDistrict, selectedBlock) {
         availableSchools.filter { school ->
-            val sState = school.state.ifBlank { "Rajasthan" }
-            (selectedState == "All States" || sState == selectedState) &&
-            (selectedDistrict == "All Districts" || school.district == selectedDistrict) &&
-            (selectedBlock == "All Blocks" || school.block == selectedBlock)
+            val sState = IndiaLocationData.normalizeState(school.state)
+            val sDistrict = IndiaLocationData.normalizeDistrict(sState, school.district)
+            val sBlock = IndiaLocationData.normalizeBlock(school.block)
+
+            (selectedState == "All States" || IndiaLocationData.areEqual(sState, selectedState)) &&
+            (selectedDistrict == "All Districts" || IndiaLocationData.areEqual(sDistrict, selectedDistrict)) &&
+            (selectedBlock == "All Blocks" || IndiaLocationData.areEqual(sBlock, selectedBlock))
         }
     }
 
@@ -224,14 +226,14 @@ fun AssignVisitsTab(
     // Determine target district for officer filtering
     val targetDistrict = remember(selectedSchool, selectedDistrict) {
         val d = selectedSchool?.district?.ifBlank { selectedDistrict } ?: selectedDistrict
-        if (d == "All Districts") "" else d
+        if (d == "All Districts") "" else IndiaLocationData.normalizeDistrict("", d)
     }
 
     val filteredEmployees = remember(activeEmployees, targetDistrict) {
         if (targetDistrict.isBlank()) {
             activeEmployees
         } else {
-            val matched = activeEmployees.filter { it.district.equals(targetDistrict, ignoreCase = true) }
+            val matched = activeEmployees.filter { IndiaLocationData.areEqual(it.district, targetDistrict) }
             if (matched.isNotEmpty()) matched else activeEmployees
         }
     }

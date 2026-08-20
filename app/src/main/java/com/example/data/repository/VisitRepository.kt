@@ -603,6 +603,64 @@ class VisitRepository(private val context: Context) {
         }
     }
 
+    private suspend fun getOrCreateVisit(visitId: String): Visit? {
+        val existing = db.visitDao().getVisitById(visitId)
+        if (existing != null) return existing
+
+        // Check if this was a synthesized visit for an Excel-imported or completed school
+        val schoolIdCandidate1 = visitId.removePrefix("vst_").removeSuffix("_legacy").removeSuffix("_manual").removeSuffix("_excel")
+        val schoolIdCandidate2 = if (!schoolIdCandidate1.startsWith("sch_")) "sch_$schoolIdCandidate1" else schoolIdCandidate1
+
+        val matchedSchool = db.schoolDao().getSchoolById(schoolIdCandidate1)
+            ?: db.schoolDao().getSchoolById(schoolIdCandidate2)
+            ?: db.schoolDao().getAllSchoolsList().find { it.schoolId == schoolIdCandidate1 || it.schoolId == schoolIdCandidate2 }
+
+        if (matchedSchool != null) {
+            val now = System.currentTimeMillis()
+            val newVisit = Visit(
+                visitId = visitId,
+                taskId = "task_" + matchedSchool.schoolId.removePrefix("sch_") + "_legacy",
+                schoolId = matchedSchool.schoolId,
+                employeeId = "emp_admin",
+                employeeName = "Admin (Prior Completion)",
+                schoolName = matchedSchool.schoolName,
+                state = matchedSchool.stateName,
+                district = matchedSchool.districtName,
+                block = matchedSchool.blockName,
+                villageName = matchedSchool.villageName,
+                schoolType = matchedSchool.schoolType,
+                udiseCode = "",
+                principalName = matchedSchool.principalName,
+                principalMobile = matchedSchool.principalMobile,
+                visitDate = matchedSchool.visitDate,
+                status = VisitStatus.SUBMITTED,
+                answersJson = "{\"q1_soeName\":\"Admin (Prior Completion)\",\"q2_visitDate\":\"${matchedSchool.visitDate}\",\"q3_schoolName\":\"${matchedSchool.schoolName}\",\"q5_district\":\"${matchedSchool.districtName}\",\"q6_block\":\"${matchedSchool.blockName}\",\"q7_principalName\":\"${matchedSchool.principalName}\",\"q8_principalMobile\":\"${matchedSchool.principalMobile}\",\"q9_metPrincipal\":\"हाँ\",\"q10_missionGyanAwareness\":\"हाँ\",\"q11_studentCount\":\"Verified\",\"q12_schoolResponse\":\"Completed (Previous Visit)\",\"q20_finalRemarks\":\"Completed prior to app launch / Verified by Admin (Date: ${matchedSchool.visitDate})\"}",
+                photosJson = "{}",
+                startedAt = matchedSchool.createdAt,
+                completedAt = matchedSchool.createdAt,
+                submittedAt = matchedSchool.createdAt,
+                reviewedAt = null,
+                reviewedBy = "",
+                reviewNotes = "",
+                rejectionReason = "",
+                latitude = matchedSchool.latitude,
+                longitude = matchedSchool.longitude,
+                appVersion = "1.0.0",
+                formVersion = "V1",
+                revisionNumber = 1,
+                previousRevisionId = "",
+                correctionReason = "",
+                editCount = 0,
+                syncStatus = SyncStatus.SYNCED,
+                createdAt = matchedSchool.createdAt,
+                updatedAt = now
+            )
+            db.visitDao().insertVisit(newVisit)
+            return newVisit
+        }
+        return null
+    }
+
     /**
      * Admin review action: Marks report as REVIEWED or REJECTED with notes.
      */
@@ -613,7 +671,7 @@ class VisitRepository(private val context: Context) {
         reviewNotes: String
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val existing = db.visitDao().getVisitById(visitId) ?: return@withContext Result.failure(Exception("Visit record not found"))
+            val existing = getOrCreateVisit(visitId) ?: return@withContext Result.failure(Exception("Visit record not found"))
             val now = System.currentTimeMillis()
             val newStatus = if (isApproved) VisitStatus.REVIEWED else VisitStatus.REJECTED
 
@@ -647,6 +705,17 @@ class VisitRepository(private val context: Context) {
             if (fStore != null && syncManager.isNetworkAvailable()) {
                 try {
                     val updateMap = hashMapOf<String, Any>(
+                        "visitId" to updated.visitId,
+                        "schoolId" to updated.schoolId,
+                        "schoolName" to updated.schoolName,
+                        "state" to updated.state,
+                        "district" to updated.district,
+                        "block" to updated.block,
+                        "employeeId" to updated.employeeId,
+                        "employeeName" to updated.employeeName,
+                        "visitDate" to updated.visitDate,
+                        "answersJson" to updated.answersJson,
+                        "photosJson" to updated.photosJson,
                         "status" to newStatus.name,
                         "reviewedAt" to now,
                         "reviewedBy" to updated.reviewedBy,
@@ -656,7 +725,7 @@ class VisitRepository(private val context: Context) {
                     if (!isApproved) {
                         updateMap["rejectionReason"] = reviewNotes
                     }
-                    fStore.collection("visits").document(visitId).update(updateMap)
+                    fStore.collection("visits").document(visitId).set(updateMap, com.google.firebase.firestore.SetOptions.merge())
 
                     if (updated.taskId.isNotBlank()) {
                         fStore.collection("tasks").document(updated.taskId).update(
@@ -697,25 +766,81 @@ class VisitRepository(private val context: Context) {
 
     suspend fun updateVisitAnswers(visitId: String, updatedAnswers: com.example.data.model.VisitAnswers): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val existing = db.visitDao().getVisitById(visitId) ?: return@withContext Result.failure(Exception("Visit not found"))
+            val existing = getOrCreateVisit(visitId) ?: return@withContext Result.failure(Exception("Visit not found"))
             val moshi = com.squareup.moshi.Moshi.Builder().addLast(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory()).build()
             val answersJson = moshi.adapter(com.example.data.model.VisitAnswers::class.java).toJson(updatedAnswers)
+            val now = System.currentTimeMillis()
+
             val updated = existing.copy(
                 answersJson = answersJson,
-                updatedAt = System.currentTimeMillis()
+                principalName = updatedAnswers.q7_principalName.ifBlank { existing.principalName },
+                principalMobile = updatedAnswers.q8_principalMobile.ifBlank { existing.principalMobile },
+                visitDate = if (updatedAnswers.q2_visitDate.isNotBlank()) updatedAnswers.q2_visitDate else existing.visitDate,
+                updatedAt = now
             )
             db.visitDao().updateVisit(updated)
+
+            // Update linked School record if present
+            if (updated.schoolId.isNotBlank()) {
+                val sch = db.schoolDao().getSchoolById(updated.schoolId)
+                if (sch != null) {
+                    val updatedSchool = sch.copy(
+                        principalName = updatedAnswers.q7_principalName.ifBlank { sch.principalName },
+                        principalMobile = updatedAnswers.q8_principalMobile.ifBlank { sch.principalMobile },
+                        visitDate = if (updatedAnswers.q2_visitDate.isNotBlank()) updatedAnswers.q2_visitDate else sch.visitDate,
+                        updatedAt = now
+                    )
+                    db.schoolDao().updateSchool(updatedSchool)
+                }
+            }
 
             val fStore = firestore
             if (fStore != null && syncManager.isNetworkAvailable()) {
                 try {
-                    val task = fStore.collection("visits").document(visitId).update(
-                        mapOf(
-                            "answersJson" to answersJson,
-                            "updatedAt" to updated.updatedAt
-                        )
+                    val visitData = mapOf(
+                        "visitId" to updated.visitId,
+                        "schoolId" to updated.schoolId,
+                        "schoolName" to updated.schoolName,
+                        "state" to updated.state,
+                        "district" to updated.district,
+                        "block" to updated.block,
+                        "villageName" to updated.villageName,
+                        "schoolType" to updated.schoolType,
+                        "principalName" to updated.principalName,
+                        "principalMobile" to updated.principalMobile,
+                        "employeeId" to updated.employeeId,
+                        "employeeName" to updated.employeeName,
+                        "visitDate" to updated.visitDate,
+                        "answersJson" to answersJson,
+                        "photosJson" to updated.photosJson,
+                        "status" to updated.status.name,
+                        "syncStatus" to SyncStatus.SYNCED.name,
+                        "updatedAt" to now
+                    )
+                    val task = fStore.collection("visits").document(visitId).set(
+                        visitData,
+                        com.google.firebase.firestore.SetOptions.merge()
                     )
                     com.google.android.gms.tasks.Tasks.await(task)
+
+                    if (updated.schoolId.isNotBlank()) {
+                        val schoolUpdates = mutableMapOf<String, Any>(
+                            "updatedAt" to now
+                        )
+                        if (updatedAnswers.q7_principalName.isNotBlank()) {
+                            schoolUpdates["principalName"] = updatedAnswers.q7_principalName
+                        }
+                        if (updatedAnswers.q8_principalMobile.isNotBlank()) {
+                            schoolUpdates["principalMobile"] = updatedAnswers.q8_principalMobile
+                        }
+                        if (updatedAnswers.q2_visitDate.isNotBlank()) {
+                            schoolUpdates["visitDate"] = updatedAnswers.q2_visitDate
+                        }
+                        fStore.collection("schools").document(updated.schoolId).set(
+                            schoolUpdates,
+                            com.google.firebase.firestore.SetOptions.merge()
+                        )
+                    }
                 } catch (e: Exception) {
                     android.util.Log.w("VisitRepository", "Notice updating answers in Firestore: ${e.message}")
                 }
@@ -728,7 +853,7 @@ class VisitRepository(private val context: Context) {
 
     suspend fun deletePhotoFromVisit(visitId: String, categoryId: String, photoUrl: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val existing = db.visitDao().getVisitById(visitId) ?: return@withContext Result.failure(Exception("Visit not found"))
+            val existing = getOrCreateVisit(visitId) ?: return@withContext Result.failure(Exception("Visit not found"))
             val moshi = com.squareup.moshi.Moshi.Builder().addLast(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory()).build()
             val mapType = com.squareup.moshi.Types.newParameterizedType(Map::class.java, String::class.java, List::class.java)
             val adapter = moshi.adapter<Map<String, List<String>>>(mapType)
@@ -785,7 +910,7 @@ class VisitRepository(private val context: Context) {
         actorUser: User? = null
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val existing = db.visitDao().getVisitById(visitId) ?: return@withContext Result.failure(Exception("Visit not found"))
+            val existing = getOrCreateVisit(visitId) ?: return@withContext Result.failure(Exception("Visit not found"))
             val moshi = com.squareup.moshi.Moshi.Builder().addLast(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory()).build()
             val mapType = com.squareup.moshi.Types.newParameterizedType(Map::class.java, String::class.java, List::class.java)
             val adapter = moshi.adapter<Map<String, List<String>>>(mapType)

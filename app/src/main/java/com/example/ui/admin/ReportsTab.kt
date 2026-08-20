@@ -77,6 +77,7 @@ import com.example.ui.theme.Red600
 import com.example.ui.theme.Slate500
 import com.example.ui.theme.Slate700
 import com.example.util.ExcelHelper
+import com.example.util.IndiaLocationData
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 
@@ -141,28 +142,31 @@ fun ReportsTab(
     }
 
     val stateList = remember(uniqueVisits) {
-        listOf("All States") + uniqueVisits.map { if (it.state.isNotBlank()) it.state else "Rajasthan" }.distinct()
+        listOf("All States") + uniqueVisits.map { IndiaLocationData.normalizeState(it.state) }.distinct().sorted()
     }
 
     val districtList = remember(uniqueVisits, selectedState) {
-        val base = if (selectedState == "All States") uniqueVisits else uniqueVisits.filter { (it.state.ifBlank { "Rajasthan" }) == selectedState }
-        listOf("All Districts") + base.map { it.district }.filter { it.isNotBlank() }.distinct()
+        val base = if (selectedState == "All States") uniqueVisits else uniqueVisits.filter { IndiaLocationData.areEqual(it.state.ifBlank { "Rajasthan" }, selectedState) }
+        listOf("All Districts") + base.map { IndiaLocationData.normalizeDistrict(it.state, it.district) }.filter { it.isNotBlank() }.distinct().sorted()
     }
 
     val blockList = remember(uniqueVisits, selectedState, selectedDistrict) {
         val base = uniqueVisits.filter {
-            (selectedState == "All States" || (it.state.ifBlank { "Rajasthan" }) == selectedState) &&
-            (selectedDistrict == "All Districts" || it.district == selectedDistrict)
+            (selectedState == "All States" || IndiaLocationData.areEqual(it.state.ifBlank { "Rajasthan" }, selectedState)) &&
+            (selectedDistrict == "All Districts" || IndiaLocationData.areEqual(it.district, selectedDistrict))
         }
-        listOf("All Blocks") + base.map { it.block }.filter { it.isNotBlank() }.distinct()
+        listOf("All Blocks") + base.map { IndiaLocationData.normalizeBlock(it.block) }.filter { it.isNotBlank() }.distinct().sorted()
     }
 
     val filteredVisits = remember(uniqueVisits, searchQuery, selectedStatus, selectedState, selectedDistrict, selectedBlock) {
         uniqueVisits.filter { v ->
-            val vState = v.state.ifBlank { "Rajasthan" }
-            val matchState = selectedState == "All States" || vState == selectedState
-            val matchDistrict = selectedDistrict == "All Districts" || v.district == selectedDistrict
-            val matchBlock = selectedBlock == "All Blocks" || v.block == selectedBlock
+            val vState = IndiaLocationData.normalizeState(v.state)
+            val vDistrict = IndiaLocationData.normalizeDistrict(vState, v.district)
+            val vBlock = IndiaLocationData.normalizeBlock(v.block)
+
+            val matchState = selectedState == "All States" || IndiaLocationData.areEqual(vState, selectedState)
+            val matchDistrict = selectedDistrict == "All Districts" || IndiaLocationData.areEqual(vDistrict, selectedDistrict)
+            val matchBlock = selectedBlock == "All Blocks" || IndiaLocationData.areEqual(vBlock, selectedBlock)
             
             val matchStatus = when (selectedStatus) {
                 "Completed" -> v.status == VisitStatus.SUBMITTED || v.status == VisitStatus.REVIEWED

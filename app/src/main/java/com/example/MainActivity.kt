@@ -350,6 +350,8 @@ class MainActivity : ComponentActivity() {
                                                     onUpdateVisitAnswers = { visitId, updatedAnswers ->
                                                         scope.launch {
                                                             visitRepository.updateVisitAnswers(visitId, updatedAnswers)
+                                                            launch { visitRepository.syncVisitsFromFirestore(state.adminUser.role, state.adminUser.userId) }
+                                                            launch { schoolRepository.syncSchoolsFromFirestore() }
                                                         }
                                                     },
                                                     onDeleteTask = { taskId ->
@@ -384,6 +386,8 @@ class MainActivity : ComponentActivity() {
                                                     onUpdateVisitAnswers = { visitId, updatedAnswers ->
                                                         scope.launch {
                                                             visitRepository.updateVisitAnswers(visitId, updatedAnswers)
+                                                            launch { visitRepository.syncVisitsFromFirestore(state.adminUser.role, state.adminUser.userId) }
+                                                            launch { schoolRepository.syncSchoolsFromFirestore() }
                                                         }
                                                     },
                                                     onDeletePhoto = { visitId, categoryId, photoUrl ->

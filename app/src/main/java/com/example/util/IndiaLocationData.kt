@@ -187,12 +187,88 @@ object IndiaLocationData {
         return STATES_MAP[validState] ?: STATES_MAP["Rajasthan"] ?: emptyList()
     }
 
+    /**
+     * Collapses multiple whitespaces/tabs/newlines into a single space and trims.
+     */
+    fun collapseWhitespace(text: String?): String {
+        if (text == null) return ""
+        return text.replace("\uFEFF", "").trim().replace(Regex("\\s+"), " ")
+    }
+
+    /**
+     * Converts string to proper Title Case ("JAIPUR" -> "Jaipur", "sawai madhopur" -> "Sawai Madhopur")
+     */
     fun toTitleCase(text: String): String {
-        if (text.isBlank()) return ""
-        return text.split(Regex("\\s+")).joinToString(" ") { word ->
+        val clean = collapseWhitespace(text)
+        if (clean.isBlank()) return ""
+        return clean.split(" ").joinToString(" ") { word ->
             if (word.isBlank()) ""
+            // Preserve acronyms like "GPS", "SOE", "GSSS" if they are standard uppercase acronyms or roman numerals
+            else if (word.uppercase() in listOf("GPS", "SOE", "GSSS", "GGSSS", "GSS", "GGSS", "DIET", "CBEO", "PEEO", "CDEO", "HM", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII")) word.uppercase()
             else word.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
         }
+    }
+
+    /**
+     * Normalizes block name: collapses spaces and formats to Title Case.
+     */
+    fun normalizeBlock(rawBlock: String?): String {
+        val clean = collapseWhitespace(rawBlock)
+        if (clean.isBlank()) return ""
+        return toTitleCase(clean)
+    }
+
+    /**
+     * Normalizes village or city name.
+     */
+    fun normalizeVillage(rawVillage: String?): String {
+        val clean = collapseWhitespace(rawVillage)
+        if (clean.isBlank()) return ""
+        return toTitleCase(clean)
+    }
+
+    /**
+     * Normalizes school type to standard enum-like values (Sr. Sec, Secondary, Primary, etc.)
+     */
+    fun normalizeSchoolType(rawType: String?): String {
+        val clean = collapseWhitespace(rawType).lowercase()
+        return when {
+            clean.isBlank() -> ""
+            clean.contains("sr") || clean.contains("senior") || clean.contains("उच्च माध्यमिक") || clean.contains("12th") || clean.contains("12") -> "Sr. Sec"
+            clean.contains("sec") || clean.contains("माध्यमिक") || clean.contains("10th") || clean.contains("10") -> "Secondary"
+            clean.contains("upper primary") || clean.contains("ups") || clean.contains("उच्च प्राथमिक") || clean.contains("8th") || clean.contains("8") -> "Upper Primary"
+            clean.contains("primary") || clean.contains("ps") || clean.contains("प्राथमिक") || clean.contains("5th") || clean.contains("5") -> "Primary"
+            clean.contains("model") || clean.contains("mg") || clean.contains("mahatma gandhi") -> "Mahatma Gandhi Model"
+            clean.contains("kgbv") || clean.contains("kasturba") -> "KGBV"
+            else -> toTitleCase(clean)
+        }
+    }
+
+    /**
+     * Normalizes school name by collapsing duplicate spaces and trimming.
+     */
+    fun normalizeSchoolName(rawName: String?): String {
+        val clean = collapseWhitespace(rawName)
+        if (clean.isBlank()) return ""
+        return clean
+    }
+
+    /**
+     * Normalizes generic names like Principal Name, Employee Name, etc.
+     */
+    fun normalizeGenericName(rawName: String?): String {
+        val clean = collapseWhitespace(rawName)
+        if (clean.isBlank()) return ""
+        return toTitleCase(clean)
+    }
+
+    /**
+     * Helper to compare two location strings case-insensitively with space collapsing.
+     */
+    fun areEqual(a: String?, b: String?): Boolean {
+        val cleanA = collapseWhitespace(a).lowercase()
+        val cleanB = collapseWhitespace(b).lowercase()
+        return cleanA == cleanB
     }
 }
 

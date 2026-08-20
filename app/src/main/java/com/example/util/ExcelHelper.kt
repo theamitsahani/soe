@@ -156,13 +156,13 @@ object ExcelHelper {
                 val rawDistrict = getCol(districtCol)
                 val districtName = IndiaLocationData.normalizeDistrict(stateName, rawDistrict)
 
-                val schoolName = getCol(schoolNameCol)
-                val schoolType = getCol(schoolTypeCol)
-                val villageName = getCol(villageCol)
-                val principalName = getCol(principalCol)
+                val schoolName = IndiaLocationData.normalizeSchoolName(getCol(schoolNameCol))
+                val schoolType = IndiaLocationData.normalizeSchoolType(getCol(schoolTypeCol))
+                val villageName = IndiaLocationData.normalizeVillage(getCol(villageCol))
+                val principalName = IndiaLocationData.normalizeGenericName(getCol(principalCol))
                 val principalMobile = cleanMobileNumber(getCol(mobileCol))
-                val blockName = getCol(blockCol)
-                val mapLink = if (mapLinkCol != -1) getCol(mapLinkCol) else ""
+                val blockName = IndiaLocationData.normalizeBlock(getCol(blockCol))
+                val mapLink = if (mapLinkCol != -1) getCol(mapLinkCol).trim() else ""
                 
                 var rawVisitDate = if (visitDateCol != -1) getCol(visitDateCol) else ""
                 // If visit date column wasn't explicitly matched, check all remaining columns for date/completed status

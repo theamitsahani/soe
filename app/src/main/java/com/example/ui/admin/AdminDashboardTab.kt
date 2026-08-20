@@ -385,11 +385,16 @@ fun VisitCardItem(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            Text(
-                text = "${visit.district} • ${visit.block}",
-                fontSize = 12.sp,
-                color = Slate500
-            )
+            val cleanDistrict = com.example.util.IndiaLocationData.normalizeDistrict(visit.state, visit.district)
+            val cleanBlock = com.example.util.IndiaLocationData.normalizeBlock(visit.block)
+            val locationText = if (cleanDistrict.isNotBlank() && cleanBlock.isNotBlank()) "$cleanDistrict • $cleanBlock" else (cleanDistrict.ifBlank { cleanBlock })
+            if (locationText.isNotBlank()) {
+                Text(
+                    text = locationText,
+                    fontSize = 12.sp,
+                    color = Slate500
+                )
+            }
 
             Spacer(modifier = Modifier.height(4.dp))
 
