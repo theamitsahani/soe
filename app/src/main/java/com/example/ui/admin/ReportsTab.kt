@@ -1,7 +1,14 @@
 package com.example.ui.admin
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,22 +21,28 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -41,8 +54,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -63,19 +79,25 @@ import com.example.data.model.School
 import com.example.data.model.Visit
 import com.example.data.model.VisitAnswers
 import com.example.data.model.VisitStatus
-import com.example.ui.components.SearchTextField
 import com.example.ui.components.StatusChip
 import com.example.ui.components.VisitDetailDialog
 import com.example.ui.theme.Amber100
 import com.example.ui.theme.Amber600
+import com.example.ui.theme.BrandAccent
+import com.example.ui.theme.BrandAccentDark
+import com.example.ui.theme.BrandAccentLight
+import com.example.ui.theme.BrandBackground
 import com.example.ui.theme.Emerald100
 import com.example.ui.theme.Emerald600
-import com.example.ui.theme.Indigo600
 import com.example.ui.theme.Navy900
 import com.example.ui.theme.Red100
 import com.example.ui.theme.Red600
+import com.example.ui.theme.Slate100
+import com.example.ui.theme.Slate200
+import com.example.ui.theme.Slate300
 import com.example.ui.theme.Slate500
 import com.example.ui.theme.Slate700
+import com.example.ui.theme.Slate900
 import com.example.util.ExcelHelper
 import com.example.util.IndiaLocationData
 import com.squareup.moshi.Moshi
@@ -86,19 +108,20 @@ import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 fun ReportsTab(
     visits: List<Visit>,
     schools: List<School> = emptyList(),
-    initialStatusFilter: String = "All Statuses",
+    initialStatusFilter: String = "All",
     onUpdateVisitAnswers: ((String, VisitAnswers) -> Unit)? = null,
     onDeletePhoto: ((visitId: String, categoryId: String, photoUrl: String) -> Unit)? = null,
     onAddPhoto: ((visitId: String, categoryId: String, photoUrl: String) -> Unit)? = null,
     onReviewVisit: ((visitId: String, isApproved: Boolean, notes: String) -> Unit)? = null
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    var selectedStatus by remember { mutableStateOf(initialStatusFilter) }
+    var selectedStatusChip by remember { mutableStateOf(initialStatusFilter) }
     var selectedState by remember { mutableStateOf("All States") }
     var selectedDistrict by remember { mutableStateOf("All Districts") }
     var selectedBlock by remember { mutableStateOf("All Blocks") }
 
-    var statusExpanded by remember { mutableStateOf(false) }
+    var isFiltersExpanded by remember { mutableStateOf(false) }
+
     var stateExpanded by remember { mutableStateOf(false) }
     var districtExpanded by remember { mutableStateOf(false) }
     var blockExpanded by remember { mutableStateOf(false) }
@@ -107,20 +130,19 @@ fun ReportsTab(
     var showExportDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
-    val statusList = listOf("All Statuses", "Completed", "Data Required on Hard Disk", "Follow-up Required", "Pending")
+    val statusChips = listOf("All", "Data Required", "Pending Review", "Completed", "Rejected")
 
-    // Combine explicit visits with synthesized records for any completed schools that don't have an explicit visit object yet,
-    // and strictly exclude any visits that belong to deleted schools
+    // Combine explicit visits with synthesized records for completed schools, excluding deleted schools
     val uniqueVisits = remember(visits, schools) {
         val deletedSchoolIds = schools.filter { it.isDeleted }.map { it.schoolId }.toSet()
         val nonDeletedVisits = visits.filter { !deletedSchoolIds.contains(it.schoolId) }
         val existingSchoolIds = nonDeletedVisits.map { it.schoolId }.toSet() +
                 nonDeletedVisits.map { it.schoolId.removePrefix("sch_") }.toSet() +
                 nonDeletedVisits.map { "sch_" + it.schoolId.removePrefix("sch_") }.toSet()
-        val missingVisits = schools.filter { 
-            it.visitDate.isNotBlank() && !it.isDeleted && 
-            !existingSchoolIds.contains(it.schoolId) && 
-            !existingSchoolIds.contains(it.schoolId.removePrefix("sch_")) 
+        val missingVisits = schools.filter {
+            it.visitDate.isNotBlank() && !it.isDeleted &&
+            !existingSchoolIds.contains(it.schoolId) &&
+            !existingSchoolIds.contains(it.schoolId.removePrefix("sch_"))
         }.map { sch ->
             Visit(
                 visitId = "vst_" + sch.schoolId.removePrefix("sch_") + "_legacy",
@@ -164,7 +186,16 @@ fun ReportsTab(
         listOf("All Blocks") + base.map { IndiaLocationData.normalizeBlock(it.block) }.filter { it.isNotBlank() }.distinct().sorted()
     }
 
-    val filteredVisits = remember(uniqueVisits, searchQuery, selectedStatus, selectedState, selectedDistrict, selectedBlock) {
+    val activeFiltersCount = remember(selectedState, selectedDistrict, selectedBlock, selectedStatusChip, searchQuery) {
+        var count = 0
+        if (selectedState != "All States") count++
+        if (selectedDistrict != "All Districts") count++
+        if (selectedBlock != "All Blocks") count++
+        if (selectedStatusChip != "All") count++
+        count
+    }
+
+    val filteredVisits = remember(uniqueVisits, searchQuery, selectedStatusChip, selectedState, selectedDistrict, selectedBlock) {
         uniqueVisits.filter { v ->
             val vState = IndiaLocationData.normalizeState(v.state)
             val vDistrict = IndiaLocationData.normalizeDistrict(vState, v.district)
@@ -173,12 +204,12 @@ fun ReportsTab(
             val matchState = selectedState == "All States" || IndiaLocationData.areEqual(vState, selectedState)
             val matchDistrict = selectedDistrict == "All Districts" || IndiaLocationData.areEqual(vDistrict, selectedDistrict)
             val matchBlock = selectedBlock == "All Blocks" || IndiaLocationData.areEqual(vBlock, selectedBlock)
-            
-            val matchStatus = when (selectedStatus) {
+
+            val matchStatus = when (selectedStatusChip) {
                 "Completed" -> v.status == VisitStatus.SUBMITTED || v.status == VisitStatus.REVIEWED
-                "Pending" -> v.status == VisitStatus.ASSIGNED || v.status == VisitStatus.STARTED
-                "Follow-up Required" -> v.answersJson.contains("\"q18_followupRequired\":\"हाँ\"")
-                "Data Required on Hard Disk" -> v.answersJson.contains("\"q19_dataRequiredOnHardDisk\":\"हाँ\"")
+                "Pending Review" -> v.status == VisitStatus.ASSIGNED || v.status == VisitStatus.STARTED || (v.status == VisitStatus.SUBMITTED && v.reviewedBy.isNullOrBlank())
+                "Data Required" -> v.answersJson.contains("\"q19_dataRequiredOnHardDisk\":\"हाँ\"")
+                "Rejected" -> v.status == VisitStatus.REJECTED || v.rejectionReason.isNotBlank() || v.answersJson.contains("\"q18_followupRequired\":\"हाँ\"")
                 else -> true
             }
 
@@ -192,311 +223,616 @@ fun ReportsTab(
         }
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+    val dropdownFieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = Slate900,
+        unfocusedTextColor = Slate900,
+        focusedContainerColor = Color.White,
+        unfocusedContainerColor = Color.White,
+        focusedBorderColor = BrandAccent,
+        unfocusedBorderColor = Slate300
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BrandBackground),
+        contentAlignment = Alignment.TopCenter
     ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("Visit Reports", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Navy900)
-                    Text("${visits.size} submitted field reports", fontSize = 12.sp, color = Slate500)
-                }
-
-                Button(
-                    onClick = {
-                        showExportDialog = true
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Indigo600)
-                ) {
-                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Export", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Status Filter Dropdown
-                ExposedDropdownMenuBox(
-                    expanded = statusExpanded,
-                    onExpandedChange = { statusExpanded = !statusExpanded },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = "Filter Status: $selectedStatus",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Visit Status Filter", fontSize = 11.sp) },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = statusExpanded) },
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor()
-                    )
-                    ExposedDropdownMenu(
-                        expanded = statusExpanded,
-                        onDismissRequest = { statusExpanded = false }
-                    ) {
-                        statusList.forEach { st ->
-                            DropdownMenuItem(
-                                text = { Text(st, fontSize = 13.sp, fontWeight = if (selectedStatus == st) FontWeight.Bold else FontWeight.Normal) },
-                                onClick = {
-                                    selectedStatus = st
-                                    statusExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = 600.dp),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            // Header Row with Title and Export Button
+            item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // State Filter
-                    ExposedDropdownMenuBox(
-                        expanded = stateExpanded,
-                        onExpandedChange = { stateExpanded = !stateExpanded },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        OutlinedTextField(
-                            value = selectedState,
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("State", fontSize = 11.sp) },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = stateExpanded) },
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.menuAnchor()
+                    Column {
+                        Text(
+                            text = "Visit Reports",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Navy900
                         )
-                        ExposedDropdownMenu(
-                            expanded = stateExpanded,
-                            onDismissRequest = { stateExpanded = false }
-                        ) {
-                            stateList.forEach { s ->
-                                DropdownMenuItem(
-                                    text = { Text(s, fontSize = 12.sp) },
-                                    onClick = {
-                                        selectedState = s
-                                        selectedDistrict = "All Districts"
-                                        selectedBlock = "All Blocks"
-                                        stateExpanded = false
-                                    }
-                                )
-                            }
-                        }
+                        Text(
+                            text = "${uniqueVisits.size} field reports in total",
+                            fontSize = 12.sp,
+                            color = Slate500
+                        )
                     }
 
-                // District Filter
-                ExposedDropdownMenuBox(
-                    expanded = districtExpanded,
-                    onExpandedChange = { districtExpanded = !districtExpanded },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    OutlinedTextField(
-                        value = selectedDistrict,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("District", fontSize = 11.sp) },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = districtExpanded) },
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.menuAnchor()
-                    )
-                    ExposedDropdownMenu(
-                        expanded = districtExpanded,
-                        onDismissRequest = { districtExpanded = false }
+                    // Primary Export Button
+                    Button(
+                        onClick = { showExportDialog = true },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = BrandAccent,
+                            contentColor = Color.White
+                        ),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
                     ) {
-                        districtList.forEach { d ->
-                            DropdownMenuItem(
-                                text = { Text(d, fontSize = 12.sp) },
-                                onClick = {
-                                    selectedDistrict = d
-                                    selectedBlock = "All Blocks"
-                                    districtExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-
-                // Block Filter
-                ExposedDropdownMenuBox(
-                    expanded = blockExpanded,
-                    onExpandedChange = { blockExpanded = !blockExpanded },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    OutlinedTextField(
-                        value = selectedBlock,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Block", fontSize = 11.sp) },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = blockExpanded) },
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.menuAnchor()
-                    )
-                    ExposedDropdownMenu(
-                        expanded = blockExpanded,
-                        onDismissRequest = { blockExpanded = false }
-                    ) {
-                        blockList.forEach { b ->
-                            DropdownMenuItem(
-                                text = { Text(b, fontSize = 12.sp) },
-                                onClick = {
-                                    selectedBlock = b
-                                    blockExpanded = false
-                                }
-                            )
-                        }
+                        Icon(
+                            Icons.Default.Download,
+                            contentDescription = "Export Reports",
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Export",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
-        }
-        }
 
-        item {
-            SearchTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = "Search reports by school, district, block, or officer..."
-            )
-        }
-
-        if (filteredVisits.isEmpty()) {
+            // Top Search Bar
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
-                    Column(
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(28.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(Icons.Default.Assessment, contentDescription = null, tint = Slate500, modifier = Modifier.size(44.dp))
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text("No reports found matching criteria", fontSize = 14.sp, color = Slate500)
-                    }
+                            .padding(4.dp),
+                        placeholder = {
+                            Text(
+                                "Search by school, district, block, officer...",
+                                fontSize = 13.sp,
+                                color = Slate500
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = null,
+                                tint = BrandAccent,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            if (searchQuery.isNotBlank()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(
+                                        Icons.Default.Clear,
+                                        contentDescription = "Clear search",
+                                        tint = Slate500,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent
+                        )
+                    )
                 }
             }
-        } else {
-            items(filteredVisits) { visit ->
-                val answers = remember(visit.answersJson) {
-                    try {
-                        val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
-                        moshi.adapter(VisitAnswers::class.java).fromJson(visit.answersJson) ?: VisitAnswers()
-                    } catch (e: Exception) {
-                        VisitAnswers()
-                    }
-                }
-                val hasFollowup = answers.q18_followupRequired.trim().equals("हाँ", ignoreCase = true)
-                val hasHardDisk = answers.q19_dataRequiredOnHardDisk.trim().equals("हाँ", ignoreCase = true)
 
+            // Collapsible Filters Bar
+            item {
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { selectedVisitForDetails = visit },
-                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        // Toggle Header Row
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { isFiltersExpanded = !isFiltersExpanded }
+                                .padding(4.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(visit.schoolName, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Navy900, modifier = Modifier.weight(1f))
-                            StatusChip(statusName = visit.status.name)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Tune,
+                                    contentDescription = null,
+                                    tint = BrandAccent,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "Filters",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Navy900
+                                )
+
+                                // Active Count Badge
+                                if (activeFiltersCount > 0) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = BrandAccentLight,
+                                        modifier = Modifier.padding(start = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = "$activeFiltersCount active",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = BrandAccent,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (activeFiltersCount > 0) {
+                                    TextButton(
+                                        onClick = {
+                                            selectedState = "All States"
+                                            selectedDistrict = "All Districts"
+                                            selectedBlock = "All Blocks"
+                                            selectedStatusChip = "All"
+                                            searchQuery = ""
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            "Clear all",
+                                            fontSize = 11.sp,
+                                            color = Red600,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+
+                                Icon(
+                                    imageVector = if (isFiltersExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = if (isFiltersExpanded) "Collapse" else "Expand",
+                                    tint = Slate500,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
 
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Text("District: ${visit.district} • Block: ${visit.block}", fontSize = 12.sp, color = Slate500)
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                        // Expandable Content
+                        AnimatedVisibility(
+                            visible = isFiltersExpanded,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
                         ) {
-                            Text("Officer: ${visit.employeeName}", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Slate700)
-                            Text("Date: ${visit.visitDate}", fontSize = 12.sp, color = Slate500)
-                        }
-
-                        // Follow-up & Hard Disk Status Badges / Action Row
-                        if (hasFollowup || hasHardDisk) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                if (hasFollowup) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                // Status Filter Chips (Horizontal Scrollable)
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        text = "Status Filter",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Slate500
+                                    )
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(Red100)
-                                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                            .horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(Icons.Default.Warning, contentDescription = null, tint = Red600, modifier = Modifier.size(16.dp))
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text("Follow-up Required (फॉलो-अप)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Red600)
-                                        }
-                                        if (onUpdateVisitAnswers != null) {
-                                            Button(
-                                                onClick = {
-                                                    onUpdateVisitAnswers(visit.visitId, answers.copy(q18_followupRequired = "नहीं"))
-                                                },
-                                                shape = RoundedCornerShape(6.dp),
-                                                colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
-                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                                modifier = Modifier.height(28.dp)
+                                        statusChips.forEach { chipName ->
+                                            val isSelected = selectedStatusChip == chipName
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = if (isSelected) BrandAccent else Slate100,
+                                                border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, Slate200),
+                                                modifier = Modifier
+                                                    .clickable { selectedStatusChip = chipName }
                                             ) {
-                                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp))
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text("Uncheck", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                Text(
+                                                    text = chipName,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                    color = if (isSelected) Color.White else Slate700,
+                                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                                                )
                                             }
                                         }
                                     }
                                 }
 
-                                if (hasHardDisk) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(Amber100)
-                                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                // Cascading Location Dropdowns (State, District, Block)
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        text = "Location Category",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Slate500
+                                    )
+
+                                    // State Filter
+                                    ExposedDropdownMenuBox(
+                                        expanded = stateExpanded,
+                                        onExpandedChange = { stateExpanded = !stateExpanded },
+                                        modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(Icons.Default.Download, contentDescription = null, tint = Amber600, modifier = Modifier.size(16.dp))
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text("Hard Disk Data Needed (डेटा आवश्यक)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Amber600)
+                                        OutlinedTextField(
+                                            value = selectedState,
+                                            onValueChange = {},
+                                            readOnly = true,
+                                            label = { Text("State (राज्य)", fontSize = 11.sp) },
+                                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = stateExpanded) },
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = dropdownFieldColors,
+                                            singleLine = true,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .menuAnchor()
+                                        )
+                                        ExposedDropdownMenu(
+                                            expanded = stateExpanded,
+                                            onDismissRequest = { stateExpanded = false }
+                                        ) {
+                                            stateList.forEach { s ->
+                                                DropdownMenuItem(
+                                                    text = { Text(s, fontSize = 13.sp, fontWeight = if (selectedState == s) FontWeight.Bold else FontWeight.Normal) },
+                                                    onClick = {
+                                                        selectedState = s
+                                                        selectedDistrict = "All Districts"
+                                                        selectedBlock = "All Blocks"
+                                                        stateExpanded = false
+                                                    }
+                                                )
+                                            }
                                         }
-                                        if (onUpdateVisitAnswers != null) {
-                                            Button(
-                                                onClick = {
-                                                    onUpdateVisitAnswers(visit.visitId, answers.copy(q19_dataRequiredOnHardDisk = "नहीं"))
-                                                },
-                                                shape = RoundedCornerShape(6.dp),
-                                                colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
-                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                                modifier = Modifier.height(28.dp)
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        // District Filter
+                                        ExposedDropdownMenuBox(
+                                            expanded = districtExpanded,
+                                            onExpandedChange = { districtExpanded = !districtExpanded },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            OutlinedTextField(
+                                                value = selectedDistrict,
+                                                onValueChange = {},
+                                                readOnly = true,
+                                                label = { Text("District (ज़िला)", fontSize = 11.sp) },
+                                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = districtExpanded) },
+                                                shape = RoundedCornerShape(10.dp),
+                                                colors = dropdownFieldColors,
+                                                singleLine = true,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .menuAnchor()
+                                            )
+                                            ExposedDropdownMenu(
+                                                expanded = districtExpanded,
+                                                onDismissRequest = { districtExpanded = false }
                                             ) {
-                                                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(12.dp))
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text("Mark Done", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                districtList.forEach { d ->
+                                                    DropdownMenuItem(
+                                                        text = { Text(d, fontSize = 13.sp, fontWeight = if (selectedDistrict == d) FontWeight.Bold else FontWeight.Normal) },
+                                                        onClick = {
+                                                            selectedDistrict = d
+                                                            selectedBlock = "All Blocks"
+                                                            districtExpanded = false
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        // Block Filter
+                                        ExposedDropdownMenuBox(
+                                            expanded = blockExpanded,
+                                            onExpandedChange = { blockExpanded = !blockExpanded },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            OutlinedTextField(
+                                                value = selectedBlock,
+                                                onValueChange = {},
+                                                readOnly = true,
+                                                label = { Text("Block (ब्लॉक)", fontSize = 11.sp) },
+                                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = blockExpanded) },
+                                                shape = RoundedCornerShape(10.dp),
+                                                colors = dropdownFieldColors,
+                                                singleLine = true,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .menuAnchor()
+                                            )
+                                            ExposedDropdownMenu(
+                                                expanded = blockExpanded,
+                                                onDismissRequest = { blockExpanded = false }
+                                            ) {
+                                                blockList.forEach { b ->
+                                                    DropdownMenuItem(
+                                                        text = { Text(b, fontSize = 13.sp, fontWeight = if (selectedBlock == b) FontWeight.Bold else FontWeight.Normal) },
+                                                        onClick = {
+                                                            selectedBlock = b
+                                                            blockExpanded = false
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Results count indicator
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Showing ${filteredVisits.size} reports",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Slate500
+                    )
+                }
+            }
+
+            // Empty State
+            if (filteredVisits.isEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(60.dp)
+                                    .clip(CircleShape)
+                                    .background(BrandAccentLight),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.SearchOff,
+                                    contentDescription = null,
+                                    tint = BrandAccent,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+
+                            Text(
+                                text = "No reports found",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Navy900
+                            )
+
+                            Text(
+                                text = "No visit reports match your active search and filter criteria. Try adjusting the keywords or clearing the filters.",
+                                fontSize = 12.sp,
+                                color = Slate500,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                lineHeight = 18.sp
+                            )
+
+                            if (activeFiltersCount > 0 || searchQuery.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Button(
+                                    onClick = {
+                                        searchQuery = ""
+                                        selectedStatusChip = "All"
+                                        selectedState = "All States"
+                                        selectedDistrict = "All Districts"
+                                        selectedBlock = "All Blocks"
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandAccent)
+                                ) {
+                                    Text("Clear All Filters", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Reports List
+                items(filteredVisits, key = { it.visitId }) { visit ->
+                    val answers = remember(visit.answersJson) {
+                        try {
+                            val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
+                            moshi.adapter(VisitAnswers::class.java).fromJson(visit.answersJson) ?: VisitAnswers()
+                        } catch (e: Exception) {
+                            VisitAnswers()
+                        }
+                    }
+                    val hasFollowup = answers.q18_followupRequired.trim().equals("हाँ", ignoreCase = true)
+                    val hasHardDisk = answers.q19_dataRequiredOnHardDisk.trim().equals("हाँ", ignoreCase = true)
+
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedVisitForDetails = visit },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = visit.schoolName,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Navy900,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                StatusChip(statusName = visit.status.name)
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = "District: ${visit.district} • Block: ${visit.block}",
+                                fontSize = 12.sp,
+                                color = Slate500
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Officer: ${visit.employeeName}",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Slate700
+                                )
+                                Text(
+                                    text = "Date: ${visit.visitDate}",
+                                    fontSize = 12.sp,
+                                    color = Slate500
+                                )
+                            }
+
+                            // Follow-up & Hard Disk Status Badges / Action Row
+                            if (hasFollowup || hasHardDisk) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    if (hasFollowup) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(Red100)
+                                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    Icons.Default.Warning,
+                                                    contentDescription = null,
+                                                    tint = Red600,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = "Follow-up Required (फॉलो-अप)",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Red600
+                                                )
+                                            }
+                                            if (onUpdateVisitAnswers != null) {
+                                                Button(
+                                                    onClick = {
+                                                        onUpdateVisitAnswers(visit.visitId, answers.copy(q18_followupRequired = "नहीं"))
+                                                    },
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                    modifier = Modifier.height(28.dp)
+                                                ) {
+                                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Uncheck", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (hasHardDisk) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(Amber100)
+                                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    Icons.Default.Download,
+                                                    contentDescription = null,
+                                                    tint = Amber600,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = "Hard Disk Data Needed (डेटा आवश्यक)",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Amber600
+                                                )
+                                            }
+                                            if (onUpdateVisitAnswers != null) {
+                                                Button(
+                                                    onClick = {
+                                                        onUpdateVisitAnswers(visit.visitId, answers.copy(q19_dataRequiredOnHardDisk = "नहीं"))
+                                                    },
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    colors = ButtonDefaults.buttonColors(containerColor = BrandAccent),
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                    modifier = Modifier.height(28.dp)
+                                                ) {
+                                                    Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(12.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Mark Done", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                }
                                             }
                                         }
                                     }
@@ -553,13 +889,13 @@ fun ReportsTab(
                         modifier = Modifier
                             .size(40.dp)
                             .clip(CircleShape)
-                            .background(Indigo600.copy(alpha = 0.1f)),
+                            .background(BrandAccentLight),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             Icons.Default.Download,
                             contentDescription = null,
-                            tint = Indigo600,
+                            tint = BrandAccent,
                             modifier = Modifier.size(22.dp)
                         )
                     }

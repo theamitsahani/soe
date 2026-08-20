@@ -2,10 +2,16 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
+// Brand Design Tokens
+val BrandAccent = Color(0xFF5B4BDA)
+val BrandAccentDark = Color(0xFF4536C4)
+val BrandAccentLight = Color(0xFFEEECFC)
+val BrandBackground = Color(0xFFF3F4FA)
+
 val Navy900 = Color(0xFF0F172A)
 val Navy800 = Color(0xFF1E293B)
-val Indigo600 = Color(0xFF4F46E5)
-val Indigo700 = Color(0xFF4338CA)
+val Indigo600 = Color(0xFF5B4BDA) // Aligned with BrandAccent
+val Indigo700 = Color(0xFF4536C4) // Aligned with BrandAccentDark
 val Teal600 = Color(0xFF0D9488)
 val Emerald600 = Color(0xFF059669)
 val Emerald100 = Color(0xFFD1FAE5)
@@ -23,3 +29,4 @@ val Red600 = Color(0xFFDC2626)
 val Red100 = Color(0xFFFEE2E2)
 val Rose600 = Color(0xFFE11D48)
 val Rose100 = Color(0xFFFFE4E6)
+
