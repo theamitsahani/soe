@@ -813,6 +813,8 @@ fun VisitDetailDialog(
     if (showEditDialog && onUpdateAnswers != null) {
         EditVisitAnswersDialog(
             initialAnswers = currentAnswers,
+            visit = visit,
+            school = school,
             schoolName = visit.schoolName,
             onDismiss = { showEditDialog = false },
             onSave = { updated ->
@@ -1107,12 +1109,21 @@ private fun DetailGridRow(label: String, value: String) {
 @Composable
 private fun EditVisitAnswersDialog(
     initialAnswers: VisitAnswers,
+    visit: Visit,
+    school: School?,
     schoolName: String,
     onDismiss: () -> Unit,
     onSave: (VisitAnswers) -> Unit
 ) {
-    var q7_principalName by remember { mutableStateOf(initialAnswers.q7_principalName) }
-    var q8_principalMobile by remember { mutableStateOf(initialAnswers.q8_principalMobile) }
+    var q1_soeName by remember { mutableStateOf(initialAnswers.q1_soeName.ifBlank { visit.employeeName }) }
+    var q2_visitDate by remember { mutableStateOf(initialAnswers.q2_visitDate.ifBlank { visit.visitDate.ifBlank { school?.visitDate ?: "" } }) }
+    var q3_schoolName by remember { mutableStateOf(initialAnswers.q3_schoolName.ifBlank { visit.schoolName.ifBlank { school?.schoolName ?: schoolName } }) }
+    var q4_udiseCode by remember { mutableStateOf(initialAnswers.q4_udiseCode.ifBlank { visit.udiseCode.ifBlank { school?.referenceCode ?: "" } }) }
+    var q5_district by remember { mutableStateOf(initialAnswers.q5_district.ifBlank { visit.district.ifBlank { school?.districtName ?: "" } }) }
+    var q6_block by remember { mutableStateOf(initialAnswers.q6_block.ifBlank { visit.block.ifBlank { school?.blockName ?: "" } }) }
+
+    var q7_principalName by remember { mutableStateOf(initialAnswers.q7_principalName.ifBlank { visit.principalName.ifBlank { school?.principalName ?: "" } }) }
+    var q8_principalMobile by remember { mutableStateOf(initialAnswers.q8_principalMobile.ifBlank { visit.principalMobile.ifBlank { school?.principalMobile ?: school?.mobile ?: "" } }) }
     var q9_metPrincipal by remember { mutableStateOf(initialAnswers.q9_metPrincipal) }
     var q10_missionGyanAwareness by remember { mutableStateOf(initialAnswers.q10_missionGyanAwareness) }
     var q22_participatingClasses by remember { mutableStateOf(initialAnswers.q22_participatingClasses) }
@@ -1162,7 +1173,7 @@ private fun EditVisitAnswersDialog(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = schoolName,
+                                text = q3_schoolName.ifBlank { schoolName },
                                 color = Color.White.copy(alpha = 0.85f),
                                 fontSize = 12.sp,
                                 maxLines = 1
@@ -1189,8 +1200,56 @@ private fun EditVisitAnswersDialog(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // 1. Principal Section
-                    EditFormSectionCard(title = "1. Principal Information (प्रधानाचार्य विवरण)") {
+                    // 1. School Basic Info
+                    EditFormSectionCard(title = "1. School & Visit Details (विद्यालय एवं विज़िट विवरण)") {
+                        OutlinedTextField(
+                            value = q3_schoolName,
+                            onValueChange = { q3_schoolName = it },
+                            label = { Text("School Name (विद्यालय का नाम)") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = q2_visitDate,
+                            onValueChange = { q2_visitDate = it },
+                            label = { Text("Visit Date (विज़िट दिनांक e.g. 2025-02-20)") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = q1_soeName,
+                            onValueChange = { q1_soeName = it },
+                            label = { Text("Field Officer / SOE Name (अधिकारी नाम)") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedTextField(
+                                value = q5_district,
+                                onValueChange = { q5_district = it },
+                                label = { Text("District (ज़िला)") },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = q6_block,
+                                onValueChange = { q6_block = it },
+                                label = { Text("Block (ब्लॉक)") },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        OutlinedTextField(
+                            value = q4_udiseCode,
+                            onValueChange = { q4_udiseCode = it },
+                            label = { Text("UDISE Code (यू-डाइस कोड)") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    // 2. Principal Section
+                    EditFormSectionCard(title = "2. Principal Information (प्रधानाचार्य विवरण)") {
                         OutlinedTextField(
                             value = q7_principalName,
                             onValueChange = { q7_principalName = it },
@@ -1213,8 +1272,8 @@ private fun EditVisitAnswersDialog(
                         )
                     }
 
-                    // 2. School Survey Response Section
-                    EditFormSectionCard(title = "2. Survey & Student Response (सर्वे विवरण)") {
+                    // 3. School Survey Response Section
+                    EditFormSectionCard(title = "3. Survey & Student Response (सर्वे विवरण)") {
                         ChoiceSelectorRow(
                             label = "10. क्या प्रधानाचार्य को App की जानकारी थी?",
                             options = listOf("हाँ", "नहीं", "थोड़ी जानकारी थी"),
@@ -1243,8 +1302,8 @@ private fun EditVisitAnswersDialog(
                         )
                     }
 
-                    // 3. BCI Officer Section
-                    EditFormSectionCard(title = "3. BCI Officer Details (BCI अधिकारी विवरण)") {
+                    // 4. BCI Officer Section
+                    EditFormSectionCard(title = "4. BCI Officer Details (BCI अधिकारी विवरण)") {
                         OutlinedTextField(
                             value = q13_bciName,
                             onValueChange = { q13_bciName = it },
@@ -1261,8 +1320,8 @@ private fun EditVisitAnswersDialog(
                         )
                     }
 
-                    // 4. Setup & Status Section
-                    EditFormSectionCard(title = "4. Setup & Installations (स्थापना स्थिति)") {
+                    // 5. Setup & Status Section
+                    EditFormSectionCard(title = "5. Setup & Installations (स्थापना स्थिति)") {
                         ChoiceSelectorRow(
                             label = "WhatsApp Group Added (WhatsApp ग्रुप जोड़ा)",
                             options = listOf("हाँ", "नहीं", "लंबित"),
@@ -1283,8 +1342,8 @@ private fun EditVisitAnswersDialog(
                         )
                     }
 
-                    // 5. Observations, Followup & Hard Disk
-                    EditFormSectionCard(title = "5. Observations & Remarks (अवलोकन एवं टिप्पणी)") {
+                    // 6. Observations, Followup & Hard Disk
+                    EditFormSectionCard(title = "6. Observations & Remarks (अवलोकन एवं टिप्पणी)") {
                         OutlinedTextField(
                             value = q16_keyObservations,
                             onValueChange = { q16_keyObservations = it },
@@ -1346,6 +1405,12 @@ private fun EditVisitAnswersDialog(
                         Button(
                             onClick = {
                                 val updated = initialAnswers.copy(
+                                    q1_soeName = q1_soeName,
+                                    q2_visitDate = q2_visitDate,
+                                    q3_schoolName = q3_schoolName,
+                                    q4_udiseCode = q4_udiseCode,
+                                    q5_district = q5_district,
+                                    q6_block = q6_block,
                                     q7_principalName = q7_principalName,
                                     q8_principalMobile = q8_principalMobile,
                                     q9_metPrincipal = q9_metPrincipal,

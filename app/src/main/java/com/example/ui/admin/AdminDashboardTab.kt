@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.HourglassTop
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Warning
@@ -72,8 +73,14 @@ fun AdminDashboardTab(
     val uniqueVisits = androidx.compose.runtime.remember(visits, schools) {
         val deletedSchoolIds = schools.filter { it.isDeleted }.map { it.schoolId }.toSet()
         val nonDeletedVisits = visits.filter { !deletedSchoolIds.contains(it.schoolId) }
-        val existingSchoolIds = nonDeletedVisits.map { it.schoolId }.toSet()
-        val missingVisits = schools.filter { it.visitDate.isNotBlank() && !it.isDeleted && !existingSchoolIds.contains(it.schoolId) }.map { sch ->
+        val existingSchoolIds = nonDeletedVisits.map { it.schoolId }.toSet() +
+                nonDeletedVisits.map { it.schoolId.removePrefix("sch_") }.toSet() +
+                nonDeletedVisits.map { "sch_" + it.schoolId.removePrefix("sch_") }.toSet()
+        val missingVisits = schools.filter { 
+            it.visitDate.isNotBlank() && !it.isDeleted && 
+            !existingSchoolIds.contains(it.schoolId) && 
+            !existingSchoolIds.contains(it.schoolId.removePrefix("sch_")) 
+        }.map { sch ->
             Visit(
                 visitId = "vst_" + sch.schoolId.removePrefix("sch_") + "_legacy",
                 schoolId = sch.schoolId,
@@ -190,6 +197,11 @@ fun AdminDashboardTab(
                             title = "Assign Visit",
                             icon = Icons.Default.AssignmentTurnedIn,
                             onClick = { onNavigateTab(AdminTab.ASSIGN_VISITS) }
+                        )
+                        QuickActionButton(
+                            title = "Map View",
+                            icon = Icons.Default.Map,
+                            onClick = { onNavigateTab(AdminTab.MAP_VIEW) }
                         )
                         QuickActionButton(
                             title = "Officers",

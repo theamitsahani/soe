@@ -114,8 +114,14 @@ fun ReportsTab(
     val uniqueVisits = remember(visits, schools) {
         val deletedSchoolIds = schools.filter { it.isDeleted }.map { it.schoolId }.toSet()
         val nonDeletedVisits = visits.filter { !deletedSchoolIds.contains(it.schoolId) }
-        val existingSchoolIds = nonDeletedVisits.map { it.schoolId }.toSet()
-        val missingVisits = schools.filter { it.visitDate.isNotBlank() && !it.isDeleted && !existingSchoolIds.contains(it.schoolId) }.map { sch ->
+        val existingSchoolIds = nonDeletedVisits.map { it.schoolId }.toSet() +
+                nonDeletedVisits.map { it.schoolId.removePrefix("sch_") }.toSet() +
+                nonDeletedVisits.map { "sch_" + it.schoolId.removePrefix("sch_") }.toSet()
+        val missingVisits = schools.filter { 
+            it.visitDate.isNotBlank() && !it.isDeleted && 
+            !existingSchoolIds.contains(it.schoolId) && 
+            !existingSchoolIds.contains(it.schoolId.removePrefix("sch_")) 
+        }.map { sch ->
             Visit(
                 visitId = "vst_" + sch.schoolId.removePrefix("sch_") + "_legacy",
                 schoolId = sch.schoolId,

@@ -343,12 +343,35 @@ class VisitRepository(private val context: Context) {
                 db.visitDao().deleteVisitsBySchool(delSchId)
             }
 
+            val localVisitsInDb = db.visitDao().getAllVisitsList().filter { !deletedSchoolIds.contains(it.schoolId) }
+            val localVisitsMap = localVisitsInDb.associateBy { it.visitId }
+
             val nonDeletedCleanVisits = cleanVisits.filter { !deletedSchoolIds.contains(it.schoolId) }
-            val existingSchoolIdsWithVisits = (nonDeletedCleanVisits.map { it.schoolId } + db.visitDao().getAllVisitsList().map { it.schoolId }).toSet()
+            val nonDeletedVisitsMap = nonDeletedCleanVisits.associateBy { it.visitId }
+
+            // Merge server visits and local visits safely, preferring the newest update
+            val mergedVisits = mutableMapOf<String, Visit>()
+            for (v in nonDeletedCleanVisits) {
+                val localV = localVisitsMap[v.visitId]
+                if (localV != null && localV.updatedAt > v.updatedAt) {
+                    mergedVisits[v.visitId] = localV
+                } else {
+                    mergedVisits[v.visitId] = v
+                }
+            }
+            for (localV in localVisitsInDb) {
+                if (!mergedVisits.containsKey(localV.visitId)) {
+                    mergedVisits[localV.visitId] = localV
+                }
+            }
+
+            val existingSchoolIdsWithVisits = mergedVisits.values.map { it.schoolId }.toSet() +
+                    mergedVisits.values.map { it.schoolId.removePrefix("sch_") }.toSet()
             val missingCompletedVisits = mutableListOf<Visit>()
 
             for (sch in completedSchools) {
-                if (!existingSchoolIdsWithVisits.contains(sch.schoolId)) {
+                val schCleanId = sch.schoolId.removePrefix("sch_")
+                if (!existingSchoolIdsWithVisits.contains(sch.schoolId) && !existingSchoolIdsWithVisits.contains(schCleanId)) {
                     val actualVisitDate = sch.visitDate
                     val answers = com.example.data.model.VisitAnswers(
                         q1_soeName = "Admin (Prior Completion)",
@@ -369,7 +392,7 @@ class VisitRepository(private val context: Context) {
                     val answersAdapter = moshi.adapter(com.example.data.model.VisitAnswers::class.java)
                     val now = System.currentTimeMillis()
                     val legacyVisit = Visit(
-                        visitId = "vst_" + sch.schoolId.removePrefix("sch_") + "_legacy",
+                        visitId = "vst_" + schCleanId + "_legacy",
                         schoolId = sch.schoolId,
                         employeeId = "emp_admin",
                         employeeName = "Admin (Prior Completion)",
@@ -428,7 +451,7 @@ class VisitRepository(private val context: Context) {
                 }
             }
 
-            val finalVisitsToKeep = (nonDeletedCleanVisits + missingCompletedVisits).distinctBy { it.visitId }
+            val finalVisitsToKeep = (mergedVisits.values.toList() + missingCompletedVisits).distinctBy { it.visitId }
 
             if (finalVisitsToKeep.isNotEmpty()) {
                 db.visitDao().insertVisits(finalVisitsToKeep)
@@ -613,7 +636,11 @@ class VisitRepository(private val context: Context) {
 
         val matchedSchool = db.schoolDao().getSchoolById(schoolIdCandidate1)
             ?: db.schoolDao().getSchoolById(schoolIdCandidate2)
-            ?: db.schoolDao().getAllSchoolsList().find { it.schoolId == schoolIdCandidate1 || it.schoolId == schoolIdCandidate2 }
+            ?: db.schoolDao().getAllSchoolsList().find {
+                it.schoolId == schoolIdCandidate1 ||
+                it.schoolId == schoolIdCandidate2 ||
+                it.schoolId.removePrefix("sch_") == schoolIdCandidate1.removePrefix("sch_")
+            }
 
         if (matchedSchool != null) {
             val now = System.currentTimeMillis()
@@ -772,19 +799,32 @@ class VisitRepository(private val context: Context) {
             val now = System.currentTimeMillis()
 
             val updated = existing.copy(
+                schoolName = if (updatedAnswers.q3_schoolName.isNotBlank()) updatedAnswers.q3_schoolName else existing.schoolName,
+                employeeName = if (updatedAnswers.q1_soeName.isNotBlank()) updatedAnswers.q1_soeName else existing.employeeName,
+                district = if (updatedAnswers.q5_district.isNotBlank()) updatedAnswers.q5_district else existing.district,
+                block = if (updatedAnswers.q6_block.isNotBlank()) updatedAnswers.q6_block else existing.block,
+                udiseCode = if (updatedAnswers.q4_udiseCode.isNotBlank()) updatedAnswers.q4_udiseCode else existing.udiseCode,
                 answersJson = answersJson,
                 principalName = updatedAnswers.q7_principalName.ifBlank { existing.principalName },
                 principalMobile = updatedAnswers.q8_principalMobile.ifBlank { existing.principalMobile },
                 visitDate = if (updatedAnswers.q2_visitDate.isNotBlank()) updatedAnswers.q2_visitDate else existing.visitDate,
+                syncStatus = SyncStatus.SYNCED,
                 updatedAt = now
             )
-            db.visitDao().updateVisit(updated)
+            db.visitDao().insertVisit(updated)
 
             // Update linked School record if present
             if (updated.schoolId.isNotBlank()) {
                 val sch = db.schoolDao().getSchoolById(updated.schoolId)
+                    ?: db.schoolDao().getSchoolById(updated.schoolId.removePrefix("sch_"))
+                    ?: db.schoolDao().getSchoolById("sch_" + updated.schoolId.removePrefix("sch_"))
+                    ?: db.schoolDao().getAllSchoolsList().find { it.schoolId == updated.schoolId || it.schoolId.removePrefix("sch_") == updated.schoolId.removePrefix("sch_") }
+
                 if (sch != null) {
                     val updatedSchool = sch.copy(
+                        schoolName = if (updatedAnswers.q3_schoolName.isNotBlank()) updatedAnswers.q3_schoolName else sch.schoolName,
+                        districtName = if (updatedAnswers.q5_district.isNotBlank()) updatedAnswers.q5_district else sch.districtName,
+                        blockName = if (updatedAnswers.q6_block.isNotBlank()) updatedAnswers.q6_block else sch.blockName,
                         principalName = updatedAnswers.q7_principalName.ifBlank { sch.principalName },
                         principalMobile = updatedAnswers.q8_principalMobile.ifBlank { sch.principalMobile },
                         visitDate = if (updatedAnswers.q2_visitDate.isNotBlank()) updatedAnswers.q2_visitDate else sch.visitDate,
@@ -827,11 +867,21 @@ class VisitRepository(private val context: Context) {
                         val schoolUpdates = mutableMapOf<String, Any>(
                             "updatedAt" to now
                         )
+                        if (updatedAnswers.q3_schoolName.isNotBlank()) schoolUpdates["schoolName"] = updatedAnswers.q3_schoolName
+                        if (updatedAnswers.q5_district.isNotBlank()) {
+                            schoolUpdates["district"] = updatedAnswers.q5_district
+                            schoolUpdates["districtName"] = updatedAnswers.q5_district
+                        }
+                        if (updatedAnswers.q6_block.isNotBlank()) {
+                            schoolUpdates["block"] = updatedAnswers.q6_block
+                            schoolUpdates["blockName"] = updatedAnswers.q6_block
+                        }
                         if (updatedAnswers.q7_principalName.isNotBlank()) {
                             schoolUpdates["principalName"] = updatedAnswers.q7_principalName
                         }
                         if (updatedAnswers.q8_principalMobile.isNotBlank()) {
                             schoolUpdates["principalMobile"] = updatedAnswers.q8_principalMobile
+                            schoolUpdates["mobile"] = updatedAnswers.q8_principalMobile
                         }
                         if (updatedAnswers.q2_visitDate.isNotBlank()) {
                             schoolUpdates["visitDate"] = updatedAnswers.q2_visitDate

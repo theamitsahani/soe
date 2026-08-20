@@ -34,6 +34,7 @@ import com.example.data.repository.TaskRepository
 import com.example.data.repository.VisitRepository
 import com.example.ui.admin.AdminDashboardTab
 import com.example.ui.admin.AdminMainScreen
+import com.example.ui.admin.AdminMapTab
 import com.example.ui.admin.AdminTab
 import com.example.ui.admin.AssignVisitsTab
 import com.example.ui.admin.EmployeeManagementTab
@@ -375,6 +376,16 @@ class MainActivity : ComponentActivity() {
                                                             )
                                                             callback(res)
                                                         }
+                                                    }
+                                                )
+                                            }
+                                            AdminTab.MAP_VIEW -> {
+                                                AdminMapTab(
+                                                    schools = schools,
+                                                    tasks = tasks,
+                                                    visits = visits,
+                                                    onViewSchoolReport = { visitId ->
+                                                        selectedAdminTab = AdminTab.VISIT_REPORTS.ordinal
                                                     }
                                                 )
                                             }

@@ -85,6 +85,7 @@ import com.example.data.model.Visit
 import com.example.data.model.VisitStatus
 import com.example.ui.components.NotificationBellIcon
 import com.example.ui.components.NotificationDialog
+import com.example.ui.components.SchoolInteractiveMapView
 import com.example.ui.components.StatusChip
 import com.example.ui.components.SyncStatusBanner
 import com.example.ui.components.VisitDetailDialog
@@ -1005,378 +1006,67 @@ fun EmployeeMapSection(
 ) {
     val context = LocalContext.current
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        // Section Header
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Multi-Stop Route shortcut banner if there are 2 or more assigned tasks
+        if (tasks.size >= 2) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFF0F172A),
+                shadowElevation = 2.dp
             ) {
-                Column {
-                    Text(
-                        text = "Assigned Visits Map & Route",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Navy900
-                    )
-                    Text(
-                        text = "Google Maps Navigation & Multi-Stop Itinerary",
-                        fontSize = 12.sp,
-                        color = Slate500
-                    )
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFFEFF6FF)
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(
-                        text = "${tasks.size} Visits",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Indigo600,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                    )
-                }
-            }
-        }
-
-        if (tasks.isEmpty()) {
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.LocationOn,
+                            imageVector = Icons.Default.Directions,
                             contentDescription = null,
-                            tint = Slate500,
-                            modifier = Modifier.size(52.dp)
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(20.dp)
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "No Assigned Visits on Map",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Navy900
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "When admin assigns visits with map links, all your destinations will appear here with route navigation.",
-                            fontSize = 12.sp,
-                            color = Slate500,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                    }
-                }
-            }
-        } else {
-            // Master Navigation Card
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF38BDF8).copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.NearMe,
-                                    contentDescription = null,
-                                    tint = Color(0xFF38BDF8),
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Full Route Navigation",
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                                Text(
-                                    text = "Optimized itinerary connecting all ${tasks.size} stops in Google Maps",
-                                    fontSize = 11.sp,
-                                    color = Color(0xFF94A3B8)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        Button(
-                            onClick = { GoogleMapHelper.startMultiStopNavigation(context, tasks) },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF2563EB),
-                                contentColor = Color.White
-                            ),
-                            modifier = Modifier.fillMaxWidth(),
-                            contentPadding = PaddingValues(vertical = 10.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Navigation,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
                             Text(
-                                text = "Start Complete Route in Google Maps",
+                                text = "Multi-Stop Route (${tasks.size} Visits)",
                                 fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "Connect all assigned stops in Google Maps",
+                                fontSize = 10.sp,
+                                color = Color(0xFF94A3B8)
                             )
                         }
                     }
-                }
-            }
-
-            // List of Ordered Stops
-            items(tasks.size) { index ->
-                val task = tasks[index]
-                val matchedSchool = remember(task.schoolId, schools) {
-                    schools.find { it.schoolId == task.schoolId }
-                }
-                val isSubmitted = task.status == VisitStatus.SUBMITTED || 
-                                  task.status == VisitStatus.REVIEWED || 
-                                  completedVisits.any { it.schoolId == task.schoolId || (task.visitId.isNotBlank() && it.visitId == task.visitId) }
-
-                val pName = task.principalName.ifBlank { matchedSchool?.principalName ?: "" }.ifBlank { "Principal" }
-                val pMobile = task.principalMobile.ifBlank { matchedSchool?.principalMobile ?: "" }.trim()
-                val village = task.villageName.ifBlank { matchedSchool?.villageName ?: "" }.ifBlank { "Village Area" }
-                val block = task.block.ifBlank { matchedSchool?.blockName ?: "" }
-                val district = task.district.ifBlank { matchedSchool?.districtName ?: "" }
-                val state = task.state.ifBlank { matchedSchool?.stateName ?: "Rajasthan" }
-                val mapLink = task.mapLink.ifBlank { matchedSchool?.mapLink ?: "" }
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        // Stop Badge & Status
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = if (isSubmitted) Color(0xFFDCFCE7) else Color(0xFFEEF2FF)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = if (isSubmitted) Icons.Default.CheckCircle else Icons.Default.LocationOn,
-                                        contentDescription = null,
-                                        tint = if (isSubmitted) Emerald600 else Indigo600,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Stop #${index + 1}",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isSubmitted) Emerald600 else Indigo600
-                                    )
-                                }
-                            }
-
-                            StatusChip(statusName = if (isSubmitted) VisitStatus.SUBMITTED.name else task.status.name)
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // School Name
-                        Text(
-                            text = task.schoolName,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Navy900
-                        )
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        // Location Details Box
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = Slate100,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.LocationOn,
-                                        contentDescription = null,
-                                        tint = Indigo600,
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "Address: $village, $block, $district, $state",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = Slate700
-                                    )
-                                }
-
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Person,
-                                        contentDescription = null,
-                                        tint = Indigo600,
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "Principal: $pName",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = Slate700
-                                    )
-                                    if (pMobile.isNotBlank()) {
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = "($pMobile)",
-                                            fontSize = 11.sp,
-                                            color = Slate500
-                                        )
-                                    }
-                                }
-
-                                if (mapLink.isNotBlank() || task.latitude != null) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.NearMe,
-                                            contentDescription = null,
-                                            tint = Emerald600,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = "Google Maps Coordinates Active",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Emerald600
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Actions Row: 1. Turn-by-Turn Navigation, 2. Open Pin, 3. Call/Start Visit
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Turn-by-Turn Navigation Button
-                            Button(
-                                onClick = { GoogleMapHelper.startNavigation(context, task, matchedSchool) },
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF0F766E),
-                                    contentColor = Color.White
-                                ),
-                                modifier = Modifier.weight(1.3f),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Navigation,
-                                    contentDescription = "Navigate",
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Start Navigation",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            // View Pin on Map
-                            OutlinedButton(
-                                onClick = { GoogleMapHelper.openLocationOnMap(context, task, matchedSchool) },
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.NearMe,
-                                    contentDescription = null,
-                                    tint = Indigo600,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Open Pin",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Indigo600
-                                )
-                            }
-
-                            // Start Visit Button
-                            Button(
-                                onClick = { onStartVisit(task) },
-                                enabled = !isSubmitted,
-                                shape = RoundedCornerShape(10.dp),
-                                colors = if (isSubmitted) {
-                                    ButtonDefaults.buttonColors(containerColor = Emerald600, disabledContainerColor = Emerald600, disabledContentColor = Color.White)
-                                } else {
-                                    ButtonDefaults.buttonColors(containerColor = Indigo600)
-                                },
-                                modifier = Modifier.weight(1.1f),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (isSubmitted) Icons.Default.CheckCircle else Icons.Default.PlayArrow,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = if (isSubmitted) "Done" else "Visit",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
+                    Button(
+                        onClick = { GoogleMapHelper.startMultiStopNavigation(context, tasks) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text("Start Route", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
+
+        // Full Interactive Map View with Cluster Pins & Nearby Distance Filter
+        SchoolInteractiveMapView(
+            schools = schools,
+            tasks = tasks,
+            visits = completedVisits,
+            onStartVisit = onStartVisit,
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }
 
