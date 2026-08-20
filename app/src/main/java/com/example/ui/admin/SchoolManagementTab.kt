@@ -222,73 +222,76 @@ fun SchoolManagementTab(
 
         // Top Header with Actions (Manual Add + Refresh)
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column {
-                            Text("School Directory (${activeSchools.size})", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Navy900)
-                            Text("स्कूल प्रबंधन एवं सूची", fontSize = 11.sp, color = Slate500)
+                    Column {
+                        Text("School Directory (${activeSchools.size})", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Navy900)
+                        Text("स्कूल प्रबंधन एवं सूची", fontSize = 11.sp, color = Slate500)
+                    }
+                    if (isRefreshing) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Indigo600)
+                    } else {
+                        IconButton(
+                            onClick = { triggerRefresh() },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh Schools from Firestore",
+                                tint = Indigo600,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
-                        Spacer(modifier = Modifier.width(6.dp))
-                        if (isRefreshing) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Indigo600)
+                    }
+                }
+
+                // Equal-sized Action Buttons (Import Excel & Add School)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Import Excel Button
+                    Button(
+                        onClick = {
+                            filePickerLauncher.launch("*/*")
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp),
+                        enabled = !isParsingExcel && !isImporting
+                    ) {
+                        if (isParsingExcel) {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Reading...", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         } else {
-                            IconButton(
-                                onClick = { triggerRefresh() },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = "Refresh Schools from Firestore",
-                                    tint = Indigo600,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
+                            Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Import Excel", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
 
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    // Add School Button
+                    Button(
+                        onClick = { showAddSchoolDialog = true },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp)
                     ) {
-                        // Import Excel Button
-                        Button(
-                            onClick = {
-                                filePickerLauncher.launch("*/*")
-                            },
-                            shape = RoundedCornerShape(20.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                            modifier = Modifier.height(34.dp),
-                            enabled = !isParsingExcel && !isImporting
-                        ) {
-                            if (isParsingExcel) {
-                                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Reading...", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            } else {
-                                Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Import Excel", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        // Add School Button
-                        Button(
-                            onClick = { showAddSchoolDialog = true },
-                            shape = RoundedCornerShape(20.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Indigo600),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                            modifier = Modifier.height(34.dp)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Add School", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Add School", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
