@@ -142,7 +142,10 @@ enum class RadiusOption(val label: String, val radiusKm: Float?) {
     KM_50("50 km", 50f)
 }
 
-class WebAppInterface(private val onSchoolSelected: (String) -> Unit) {
+class WebAppInterface(
+    private val onSchoolSelected: (String) -> Unit,
+    private val onMapReadyCallback: () -> Unit = {}
+) {
     @JavascriptInterface
     fun onSchoolClick(schoolId: String) {
         onSchoolSelected(schoolId)
@@ -150,7 +153,7 @@ class WebAppInterface(private val onSchoolSelected: (String) -> Unit) {
 
     @JavascriptInterface
     fun onMapReady() {
-        // Map loaded
+        onMapReadyCallback()
     }
 }
 
@@ -177,6 +180,7 @@ fun SchoolInteractiveMapView(
 
     var selectedSchoolId by remember { mutableStateOf<String?>(null) }
     var userLocation by remember { mutableStateOf<UserLocation?>(null) }
+    var isMapReady by remember { mutableStateOf(false) }
     var hasLocationPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -202,7 +206,7 @@ fun SchoolInteractiveMapView(
         if (hasLocationPermission) {
             LocationHelper.getLocationFlow(context).collect { loc ->
                 userLocation = loc
-                if (loc != null) {
+                if (loc != null && isMapReady) {
                     webViewRef?.evaluateJavascript(
                         "if (typeof updateUserLocation === 'function') { updateUserLocation(${loc.latitude}, ${loc.longitude}, ${loc.accuracy}); }",
                         null
@@ -302,6 +306,27 @@ fun SchoolInteractiveMapView(
     val completedCount = filteredMapItems.count { it.status == VisitStatus.SUBMITTED || it.status == VisitStatus.REVIEWED }
     val assignedCount = filteredMapItems.count { it.status == VisitStatus.ASSIGNED }
     val pendingCount = filteredMapItems.count { it.status != VisitStatus.SUBMITTED && it.status != VisitStatus.REVIEWED && it.status != VisitStatus.ASSIGNED }
+
+    // Reactively update markers on map without page reloading
+    LaunchedEffect(filteredMapItems, isMapReady) {
+        if (isMapReady && webViewRef != null) {
+            val json = MapHtmlBuilder.buildMarkersJson(filteredMapItems)
+            webViewRef?.evaluateJavascript(
+                "if (typeof updateMapData === 'function') { updateMapData($json); }",
+                null
+            )
+        }
+    }
+
+    // Reactively sync selected school marker highlight without page reload
+    LaunchedEffect(selectedSchoolId, isMapReady) {
+        if (isMapReady && webViewRef != null) {
+            webViewRef?.evaluateJavascript(
+                "if (typeof selectMarker === 'function') { selectMarker('${selectedSchoolId ?: ""}'); }",
+                null
+            )
+        }
+    }
 
     Box(modifier = modifier.fillMaxSize().background(Color(0xFFF8FAFC))) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -483,15 +508,24 @@ fun SchoolInteractiveMapView(
                     AndroidView(
                         factory = { ctx ->
                             WebView(ctx).apply {
+                                layoutParams = android.view.ViewGroup.LayoutParams(
+                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                                )
+                                setBackgroundColor(0xFFF1F5F9.toInt())
+                                setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
                                 @SuppressLint("SetJavaScriptEnabled")
                                 settings.javaScriptEnabled = true
                                 settings.domStorageEnabled = true
+                                settings.databaseEnabled = true
+                                settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
                                 settings.loadWithOverviewMode = true
                                 settings.useWideViewPort = true
                                 webChromeClient = WebChromeClient()
                                 webViewClient = object : WebViewClient() {
                                     override fun onPageFinished(view: WebView?, url: String?) {
                                         super.onPageFinished(view, url)
+                                        isMapReady = true
                                         userLocation?.let { loc ->
                                             view?.evaluateJavascript(
                                                 "if (typeof updateUserLocation === 'function') { updateUserLocation(${loc.latitude}, ${loc.longitude}, ${loc.accuracy}); }",
@@ -501,11 +535,18 @@ fun SchoolInteractiveMapView(
                                     }
                                 }
 
-                                addJavascriptInterface(WebAppInterface { schoolId ->
-                                    scope.launch(Dispatchers.Main) {
-                                        selectedSchoolId = schoolId
+                                addJavascriptInterface(WebAppInterface(
+                                    onSchoolSelected = { schoolId ->
+                                        scope.launch(Dispatchers.Main) {
+                                            selectedSchoolId = schoolId
+                                        }
+                                    },
+                                    onMapReadyCallback = {
+                                        scope.launch(Dispatchers.Main) {
+                                            isMapReady = true
+                                        }
                                     }
-                                }, "AndroidBridge")
+                                ), "AndroidBridge")
 
                                 val html = MapHtmlBuilder.buildMapHtml(
                                     items = filteredMapItems,
@@ -517,15 +558,7 @@ fun SchoolInteractiveMapView(
                                 webViewRef = this
                             }
                         },
-                        update = { view ->
-                            val html = MapHtmlBuilder.buildMapHtml(
-                                items = filteredMapItems,
-                                userLocation = userLocation,
-                                initialLat = userLocation?.latitude ?: 26.9124,
-                                initialLng = userLocation?.longitude ?: 75.7873
-                            )
-                            view.loadDataWithBaseURL("https://appassets.androidplatform.net", html, "text/html", "UTF-8", null)
-                        },
+                        update = { /* Avoid reloading full page on recompositions! */ },
                         modifier = Modifier.fillMaxSize()
                     )
 

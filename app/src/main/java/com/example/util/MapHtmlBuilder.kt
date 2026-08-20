@@ -5,13 +5,7 @@ import org.json.JSONObject
 
 object MapHtmlBuilder {
 
-    fun buildMapHtml(
-        items: List<SchoolMapItem>,
-        userLocation: UserLocation? = null,
-        initialLat: Double = 26.9124,
-        initialLng: Double = 75.7873,
-        initialZoom: Int = 8
-    ): String {
+    fun buildMarkersJson(items: List<SchoolMapItem>): String {
         val markersArray = JSONArray()
         for (item in items) {
             val obj = JSONObject().apply {
@@ -31,6 +25,17 @@ object MapHtmlBuilder {
             }
             markersArray.put(obj)
         }
+        return markersArray.toString()
+    }
+
+    fun buildMapHtml(
+        items: List<SchoolMapItem>,
+        userLocation: UserLocation? = null,
+        initialLat: Double = 26.9124,
+        initialLng: Double = 75.7873,
+        initialZoom: Int = 8
+    ): String {
+        val markersArray = buildMarkersJson(items)
 
         val userObj = if (userLocation != null) {
             JSONObject().apply {
@@ -338,6 +343,11 @@ object MapHtmlBuilder {
             if (bounds.length > 0) {
                 map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
             }
+        }
+
+        function updateMapData(newItems) {
+            mapData = newItems;
+            renderMarkers(mapData);
         }
 
         function switchLayer(layerType) {
