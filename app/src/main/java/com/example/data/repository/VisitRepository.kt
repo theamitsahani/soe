@@ -334,8 +334,17 @@ class VisitRepository(private val context: Context) {
             }
 
             // Auto-reconcile completed schools: if a school has a visitDate set, ensure it has a completed Visit record
-            val completedSchools = db.schoolDao().getAllSchoolsList().filter { it.visitDate.isNotBlank() && !it.isDeleted }
-            val existingSchoolIdsWithVisits = (cleanVisits.map { it.schoolId } + db.visitDao().getAllVisitsList().map { it.schoolId }).toSet()
+            val allSchools = db.schoolDao().getAllSchoolsList()
+            val deletedSchoolIds = allSchools.filter { it.isDeleted }.map { it.schoolId }.toSet()
+            val completedSchools = allSchools.filter { it.visitDate.isNotBlank() && !it.isDeleted }
+
+            // Purge local visits for any deleted schools
+            for (delSchId in deletedSchoolIds) {
+                db.visitDao().deleteVisitsBySchool(delSchId)
+            }
+
+            val nonDeletedCleanVisits = cleanVisits.filter { !deletedSchoolIds.contains(it.schoolId) }
+            val existingSchoolIdsWithVisits = (nonDeletedCleanVisits.map { it.schoolId } + db.visitDao().getAllVisitsList().map { it.schoolId }).toSet()
             val missingCompletedVisits = mutableListOf<Visit>()
 
             for (sch in completedSchools) {
@@ -419,7 +428,7 @@ class VisitRepository(private val context: Context) {
                 }
             }
 
-            val finalVisitsToKeep = (cleanVisits + missingCompletedVisits).distinctBy { it.visitId }
+            val finalVisitsToKeep = (nonDeletedCleanVisits + missingCompletedVisits).distinctBy { it.visitId }
 
             if (finalVisitsToKeep.isNotEmpty()) {
                 db.visitDao().insertVisits(finalVisitsToKeep)

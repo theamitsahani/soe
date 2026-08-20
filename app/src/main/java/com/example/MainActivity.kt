@@ -221,8 +221,8 @@ class MainActivity : ComponentActivity() {
                                                 AdminDashboardTab(
                                                     visits = visits,
                                                     schools = schools,
-                                                    totalSchoolsCount = schools.size,
-                                                    totalEmployeesCount = employees.size,
+                                                    totalSchoolsCount = schools.count { !it.isDeleted },
+                                                    totalEmployeesCount = employees.count { !it.isDeleted },
                                                     onNavigateTab = { targetTab ->
                                                         selectedAdminTab = targetTab.ordinal
                                                     },
@@ -314,18 +314,25 @@ class MainActivity : ComponentActivity() {
                                                     onDeleteSchool = { schoolId, callback ->
                                                         scope.launch {
                                                             val res = schoolRepository.softDeleteSchool(schoolId)
+                                                            launch { visitRepository.syncVisitsFromFirestore(state.adminUser.role, state.adminUser.userId) }
+                                                            launch { taskRepository.syncTasksFromFirestore(state.adminUser.role, state.adminUser.userId, state.adminUser.email, state.adminUser.name) }
+                                                            launch { schoolRepository.syncSchoolsFromFirestore() }
                                                             callback?.invoke(res)
                                                         }
                                                     },
                                                     onRestoreSchool = { schoolId, callback ->
                                                         scope.launch {
                                                             val res = schoolRepository.restoreSchool(schoolId)
+                                                            launch { schoolRepository.syncSchoolsFromFirestore() }
                                                             callback?.invoke(res)
                                                         }
                                                     },
                                                     onPermanentDeleteSchool = { schoolId, callback ->
                                                         scope.launch {
                                                             val res = schoolRepository.permanentDeleteSchool(schoolId)
+                                                            launch { visitRepository.syncVisitsFromFirestore(state.adminUser.role, state.adminUser.userId) }
+                                                            launch { taskRepository.syncTasksFromFirestore(state.adminUser.role, state.adminUser.userId, state.adminUser.email, state.adminUser.name) }
+                                                            launch { schoolRepository.syncSchoolsFromFirestore() }
                                                             callback?.invoke(res)
                                                         }
                                                     },
@@ -336,7 +343,7 @@ class MainActivity : ComponentActivity() {
                                             }
                                             AdminTab.ASSIGN_VISITS -> {
                                                 AssignVisitsTab(
-                                                    schools = schools.filter { !it.isDeleted },
+                                                    schools = schools,
                                                     employees = employees.filter { !it.isDeleted },
                                                     assignedTasks = tasks,
                                                     visits = visits,

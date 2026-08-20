@@ -725,6 +725,10 @@ class SchoolRepository(private val context: Context) {
             val now = System.currentTimeMillis()
             db.schoolDao().softDeleteSchool(schoolId, now)
 
+            // Remove associated tasks and visits from local database so they no longer appear in submitted/completed lists
+            db.taskDao().deleteTasksBySchool(schoolId)
+            db.visitDao().deleteVisitsBySchool(schoolId)
+
             val fStore = firestore
             if (fStore != null) {
                 val task = fStore.collection("schools").document(schoolId).update(
@@ -735,6 +739,24 @@ class SchoolRepository(private val context: Context) {
                     )
                 )
                 com.google.android.gms.tasks.Tasks.await(task)
+
+                // Also delete associated tasks and visits from Firestore
+                try {
+                    val visitDocs = com.google.android.gms.tasks.Tasks.await(
+                        fStore.collection("visits").whereEqualTo("schoolId", schoolId).get()
+                    )
+                    for (doc in visitDocs.documents) {
+                        fStore.collection("visits").document(doc.id).delete()
+                    }
+                    val taskDocs = com.google.android.gms.tasks.Tasks.await(
+                        fStore.collection("tasks").whereEqualTo("schoolId", schoolId).get()
+                    )
+                    for (doc in taskDocs.documents) {
+                        fStore.collection("tasks").document(doc.id).delete()
+                    }
+                } catch (e: Exception) {
+                    Log.w("SchoolRepository", "Notice cleaning up tasks/visits on soft delete: ${e.message}")
+                }
             }
             Result.success(Unit)
         } catch (e: Exception) {

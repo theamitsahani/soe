@@ -157,17 +157,29 @@ fun AssignVisitsTab(
     var showAllTasksDialog by remember { mutableStateOf(false) }
     var taskToDelete by remember { mutableStateOf<Task?>(null) }
 
+    val deletedSchoolIds = remember(schools) {
+        schools.filter { it.isDeleted }.map { it.schoolId }.toSet()
+    }
+
+    val activeAssignedTasks = remember(assignedTasks, deletedSchoolIds) {
+        assignedTasks.filter { !deletedSchoolIds.contains(it.schoolId) }
+    }
+
+    val activeVisits = remember(visits, deletedSchoolIds) {
+        visits.filter { !deletedSchoolIds.contains(it.schoolId) }
+    }
+
     // Identify completed schools from school visitDate, visits reports, or completed tasks
-    val completedSchoolIds = remember(schools, visits, assignedTasks) {
-        val fromSchools = schools.filter { it.visitDate.isNotBlank() }.map { it.schoolId }
-        val fromVisits = visits.filter { it.status == VisitStatus.SUBMITTED || it.status == VisitStatus.REVIEWED }.map { it.schoolId }
-        val fromTasks = assignedTasks.filter { it.status == VisitStatus.SUBMITTED || it.status == VisitStatus.REVIEWED }.map { it.schoolId }
+    val completedSchoolIds = remember(schools, activeVisits, activeAssignedTasks) {
+        val fromSchools = schools.filter { !it.isDeleted && it.visitDate.isNotBlank() }.map { it.schoolId }
+        val fromVisits = activeVisits.filter { it.status == VisitStatus.SUBMITTED || it.status == VisitStatus.REVIEWED }.map { it.schoolId }
+        val fromTasks = activeAssignedTasks.filter { it.status == VisitStatus.SUBMITTED || it.status == VisitStatus.REVIEWED }.map { it.schoolId }
         (fromSchools + fromVisits + fromTasks).toSet()
     }
 
     // Exclude schools that currently have an active (non-submitted) task in assignedTasks
-    val currentlyAssignedSchoolIds = remember(assignedTasks) {
-        assignedTasks.filter { it.status == VisitStatus.ASSIGNED || it.status == VisitStatus.STARTED || it.status == VisitStatus.IN_PROGRESS }.map { it.schoolId }.toSet()
+    val currentlyAssignedSchoolIds = remember(activeAssignedTasks) {
+        activeAssignedTasks.filter { it.status == VisitStatus.ASSIGNED || it.status == VisitStatus.STARTED || it.status == VisitStatus.IN_PROGRESS }.map { it.schoolId }.toSet()
     }
 
     val availableSchools = remember(schools, currentlyAssignedSchoolIds, completedSchoolIds) {
@@ -689,18 +701,18 @@ fun AssignVisitsTab(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Recently Assigned Tasks (${assignedTasks.take(6).size}/${assignedTasks.size})",
+                    text = "Recently Assigned Tasks (${activeAssignedTasks.take(6).size}/${activeAssignedTasks.size})",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = Navy900
                 )
-                if (assignedTasks.isNotEmpty()) {
+                if (activeAssignedTasks.isNotEmpty()) {
                     TextButton(
                         onClick = { showAllTasksDialog = true },
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text(
-                            text = "View All (${assignedTasks.size})",
+                            text = "View All (${activeAssignedTasks.size})",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = Indigo600
@@ -717,7 +729,7 @@ fun AssignVisitsTab(
             }
         }
 
-        if (assignedTasks.isEmpty()) {
+        if (activeAssignedTasks.isEmpty()) {
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -737,10 +749,10 @@ fun AssignVisitsTab(
                 }
             }
         } else {
-            val recentTasks = assignedTasks.take(6)
+            val recentTasks = activeAssignedTasks.take(6)
             items(recentTasks) { task ->
-                val matchedVisit = remember(task, visits) {
-                    visits.find { it.schoolId == task.schoolId || it.schoolName == task.schoolName }
+                val matchedVisit = remember(task, activeVisits) {
+                    activeVisits.find { it.schoolId == task.schoolId || it.schoolName == task.schoolName }
                 }
 
                 Card(
@@ -791,8 +803,8 @@ fun AssignVisitsTab(
     // All Assigned Tasks Full Dialog
     if (showAllTasksDialog) {
         AllAssignedTasksDialog(
-            assignedTasks = assignedTasks,
-            visits = visits,
+            assignedTasks = activeAssignedTasks,
+            visits = activeVisits,
             onDismiss = { showAllTasksDialog = false },
             onDeleteTask = onDeleteTask,
             onSelectVisit = { visit ->

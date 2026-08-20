@@ -108,9 +108,12 @@ fun ReportsTab(
 
     val statusList = listOf("All Statuses", "Completed", "Data Required on Hard Disk", "Follow-up Required", "Pending")
 
-    // Combine explicit visits with synthesized records for any completed schools that don't have an explicit visit object yet
+    // Combine explicit visits with synthesized records for any completed schools that don't have an explicit visit object yet,
+    // and strictly exclude any visits that belong to deleted schools
     val uniqueVisits = remember(visits, schools) {
-        val existingSchoolIds = visits.map { it.schoolId }.toSet()
+        val deletedSchoolIds = schools.filter { it.isDeleted }.map { it.schoolId }.toSet()
+        val nonDeletedVisits = visits.filter { !deletedSchoolIds.contains(it.schoolId) }
+        val existingSchoolIds = nonDeletedVisits.map { it.schoolId }.toSet()
         val missingVisits = schools.filter { it.visitDate.isNotBlank() && !it.isDeleted && !existingSchoolIds.contains(it.schoolId) }.map { sch ->
             Visit(
                 visitId = "vst_" + sch.schoolId.removePrefix("sch_") + "_legacy",
@@ -134,7 +137,7 @@ fun ReportsTab(
                 updatedAt = sch.updatedAt
             )
         }
-        (visits + missingVisits).distinctBy { it.visitId }
+        (nonDeletedVisits + missingVisits).distinctBy { it.visitId }
     }
 
     val stateList = remember(uniqueVisits) {
