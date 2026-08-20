@@ -430,7 +430,7 @@ class SchoolRepository(private val context: Context) {
             val coords = if (school.latitude != null && school.longitude != null) {
                 Pair(school.latitude, school.longitude)
             } else {
-                com.example.util.GoogleMapHelper.extractCoordinates(cleanMap)
+                com.example.util.GoogleMapHelper.extractCoordinatesWithNetwork(cleanMap)
             }
             val finalSchool = school.copy(
                 mapLink = cleanMap,
@@ -523,7 +523,7 @@ class SchoolRepository(private val context: Context) {
             val coords = if (school.latitude != null && school.longitude != null) {
                 Pair(school.latitude, school.longitude)
             } else {
-                com.example.util.GoogleMapHelper.extractCoordinates(cleanMap)
+                com.example.util.GoogleMapHelper.extractCoordinatesWithNetwork(cleanMap)
             }
             val updated = school.copy(
                 mapLink = cleanMap,

@@ -408,7 +408,7 @@ class TaskRepository(private val context: Context) {
             val parsedCoords = if (latitude != null && longitude != null) {
                 Pair(latitude, longitude)
             } else {
-                com.example.util.GoogleMapHelper.extractCoordinates(finalMapLink)
+                com.example.util.GoogleMapHelper.extractCoordinatesWithNetwork(finalMapLink)
             }
             val finalLat = parsedCoords?.first ?: localSchool?.latitude
             val finalLng = parsedCoords?.second ?: localSchool?.longitude
@@ -444,12 +444,12 @@ class TaskRepository(private val context: Context) {
 
             db.taskDao().insertTask(task)
 
-            // Also update local school record if map link is provided
-            if (localSchool != null && cleanMapLink.isNotBlank() && localSchool.mapLink != cleanMapLink) {
+            // Also update local school record if map link or coordinates are provided
+            if (localSchool != null && (cleanMapLink.isNotBlank() || finalLat != null)) {
                 val updatedSch = localSchool.copy(
-                    mapLink = cleanMapLink,
-                    latitude = finalLat,
-                    longitude = finalLng,
+                    mapLink = if (cleanMapLink.isNotBlank()) cleanMapLink else localSchool.mapLink,
+                    latitude = finalLat ?: localSchool.latitude,
+                    longitude = finalLng ?: localSchool.longitude,
                     updatedAt = System.currentTimeMillis()
                 )
                 db.schoolDao().updateSchool(updatedSch)

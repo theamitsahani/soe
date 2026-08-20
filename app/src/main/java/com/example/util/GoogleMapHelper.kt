@@ -16,33 +16,162 @@ object GoogleMapHelper {
     private const val TAG = "GoogleMapHelper"
 
     /**
-     * Attempts to parse latitude and longitude from various Google Maps link formats
-     * or raw coordinate strings.
+     * Attempts to parse latitude and longitude from various Google Maps link formats,
+     * place URLs, URL-encoded strings, DMS strings, or raw coordinate strings.
      */
     fun extractCoordinates(rawInput: String?): Pair<Double, Double>? {
         if (rawInput.isNullOrBlank()) return null
-        val trimmed = rawInput.trim()
+        val decoded = try {
+            java.net.URLDecoder.decode(rawInput.trim(), StandardCharsets.UTF_8.name())
+        } catch (_: Exception) {
+            rawInput.trim()
+        }
 
-        try {
-            // Pattern 1: "@26.912433,75.787271" or "q=26.912433,75.787271" or "ll=26.912433,75.787271" or "geo:26.912433,75.787271"
-            val coordRegex = Pattern.compile("[-+]?([1-8]?\\d(\\.\\d+)?|90(\\.0+)?)[,\\s/]+[-+]?(180(\\.0+)?|((1[0-7]\\d)|([1-9]?\\d))(\\.\\d+)?)")
-            val matcher = coordRegex.matcher(trimmed)
-            if (matcher.find()) {
-                val matchGroup = matcher.group(0)
-                val parts = matchGroup.split(Regex("[,\\s/]+"))
-                if (parts.size >= 2) {
-                    val lat = parts[0].toDoubleOrNull()
-                    val lng = parts[1].toDoubleOrNull()
-                    if (lat != null && lng != null && lat in -90.0..90.0 && lng in -180.0..180.0) {
-                        return Pair(lat, lng)
-                    }
-                }
+        // 1. Check for @lat,lng format (e.g., @26.912433,75.787271 or @26.912433,75.787271,17z)
+        val atRegex = Regex("""@([+-]?\d{1,2}(?:\.\d+)?),([+-]?\d{1,3}(?:\.\d+)?)""")
+        atRegex.find(decoded)?.let {
+            val lat = it.groupValues[1].toDoubleOrNull()
+            val lng = it.groupValues[2].toDoubleOrNull()
+            if (lat != null && lng != null && isValidLatLng(lat, lng)) {
+                return Pair(lat, lng)
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Error extracting coordinates from $rawInput", e)
+        }
+
+        // 2. Check for Google Maps place data (!3dlat!4dlng or !8m2!3dlat!4dlng)
+        val placeDataRegex = Regex("""!3d([+-]?\d{1,2}(?:\.\d+)?)(?:.*?)[!&]4d([+-]?\d{1,3}(?:\.\d+)?)""")
+        placeDataRegex.find(decoded)?.let {
+            val lat = it.groupValues[1].toDoubleOrNull()
+            val lng = it.groupValues[2].toDoubleOrNull()
+            if (lat != null && lng != null && isValidLatLng(lat, lng)) {
+                return Pair(lat, lng)
+            }
+        }
+
+        // 3. Check for query parameters: q=lat,lng or query=lat,lng or daddr=lat,lng or destination=lat,lng or ll=lat,lng or sll=lat,lng
+        val paramRegex = Regex("""(?:q|query|daddr|destination|ll|sll|center|loc|geo)[:=]([+-]?\d{1,2}(?:\.\d+)?)[,\s/+]+([+-]?\d{1,3}(?:\.\d+)?)""", RegexOption.IGNORE_CASE)
+        paramRegex.find(decoded)?.let {
+            val lat = it.groupValues[1].toDoubleOrNull()
+            val lng = it.groupValues[2].toDoubleOrNull()
+            if (lat != null && lng != null && isValidLatLng(lat, lng)) {
+                return Pair(lat, lng)
+            }
+        }
+
+        // 4. Check for /place/lat,lng or /dir/lat,lng or /search/lat,lng
+        val pathCoordRegex = Regex("""/(?:place|dir|search|maps)/([+-]?\d{1,2}(?:\.\d+)?)[,\s/+]+([+-]?\d{1,3}(?:\.\d+)?)""", RegexOption.IGNORE_CASE)
+        pathCoordRegex.find(decoded)?.let {
+            val lat = it.groupValues[1].toDoubleOrNull()
+            val lng = it.groupValues[2].toDoubleOrNull()
+            if (lat != null && lng != null && isValidLatLng(lat, lng)) {
+                return Pair(lat, lng)
+            }
+        }
+
+        // 5. Check for Degree Minute Second (DMS) format: e.g. 26°54'44.6"N 75°48'00.5"E
+        val dmsResult = parseDmsCoordinates(decoded)
+        if (dmsResult != null && isValidLatLng(dmsResult.first, dmsResult.second)) {
+            return dmsResult
+        }
+
+        // 6. Check for plain raw coordinate string: e.g. "26.912433, 75.787271" or "26.912433,75.787271" or "26.912433 75.787271"
+        val generalRegex = Regex("""([+-]?\d{1,2}(?:\.\d+)?)[,\s/+]+([+-]?\d{1,3}(?:\.\d+)?)""")
+        generalRegex.findAll(decoded).forEach { match ->
+            val lat = match.groupValues[1].toDoubleOrNull()
+            val lng = match.groupValues[2].toDoubleOrNull()
+            if (lat != null && lng != null && isValidLatLng(lat, lng)) {
+                return Pair(lat, lng)
+            }
         }
 
         return null
+    }
+
+    private fun isValidLatLng(lat: Double, lng: Double): Boolean {
+        return lat in -90.0..90.0 && lng in -180.0..180.0 && (lat != 0.0 || lng != 0.0)
+    }
+
+    /**
+     * Parses DMS coordinates like 26°54'44.6"N 75°48'00.5"E into decimal degrees
+     */
+    private fun parseDmsCoordinates(text: String): Pair<Double, Double>? {
+        try {
+            val dmsPattern = Regex("""(\d{1,2})[°\s]+(\d{1,2})['\s]+([\d.]+)?["\s]*([NSEWnsew])[,\s]+(\d{1,3})[°\s]+(\d{1,2})['\s]+([\d.]+)?["\s]*([NSEWnsew])""")
+            val match = dmsPattern.find(text) ?: return null
+            val (d1, m1, s1, dir1, d2, m2, s2, dir2) = match.destructured
+
+            fun convert(d: String, m: String, s: String?, dir: String): Double {
+                val deg = d.toDoubleOrNull() ?: 0.0
+                val min = m.toDoubleOrNull() ?: 0.0
+                val sec = s?.toDoubleOrNull() ?: 0.0
+                var result = deg + (min / 60.0) + (sec / 3600.0)
+                if (dir.equals("S", ignoreCase = true) || dir.equals("W", ignoreCase = true)) {
+                    result = -result
+                }
+                return result
+            }
+
+            val val1 = convert(d1, m1, s1, dir1)
+            val val2 = convert(d2, m2, s2, dir2)
+
+            return if (dir1.equals("N", true) || dir1.equals("S", true)) {
+                Pair(val1, val2)
+            } else {
+                Pair(val2, val1)
+            }
+        } catch (_: Exception) {
+            return null
+        }
+    }
+
+    /**
+     * Follows HTTP redirects for shortened URLs (maps.app.goo.gl, goo.gl/maps, bit.ly)
+     * and extracts coordinates from the final resolved URL.
+     */
+    fun extractCoordinatesWithNetwork(rawInput: String?): Pair<Double, Double>? {
+        if (rawInput.isNullOrBlank()) return null
+        val direct = extractCoordinates(rawInput)
+        if (direct != null) return direct
+
+        val trimmed = rawInput.trim()
+        if (trimmed.contains("goo.gl") || trimmed.contains("maps.app") || trimmed.contains("bit.ly")) {
+            val resolvedUrl = resolveShortUrlSync(trimmed)
+            if (!resolvedUrl.isNullOrBlank()) {
+                return extractCoordinates(resolvedUrl)
+            }
+        }
+        return null
+    }
+
+    private fun resolveShortUrlSync(shortUrl: String): String? {
+        var currentUrl = if (!shortUrl.startsWith("http://") && !shortUrl.startsWith("https://")) "https://$shortUrl" else shortUrl
+        try {
+            for (i in 0..3) {
+                val urlObj = java.net.URL(currentUrl)
+                val conn = urlObj.openConnection() as java.net.HttpURLConnection
+                conn.instanceFollowRedirects = false
+                conn.connectTimeout = 3500
+                conn.readTimeout = 3500
+                conn.requestMethod = "HEAD"
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10)")
+                val code = conn.responseCode
+                if (code in 300..399) {
+                    val loc = conn.getHeaderField("Location")
+                    conn.disconnect()
+                    if (loc.isNullOrBlank()) break
+                    currentUrl = loc
+                    if (!currentUrl.contains("goo.gl") && !currentUrl.contains("maps.app")) {
+                        break
+                    }
+                } else {
+                    conn.disconnect()
+                    break
+                }
+            }
+            return currentUrl
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to resolve short URL: ${e.message}")
+            return null
+        }
     }
 
     /**
