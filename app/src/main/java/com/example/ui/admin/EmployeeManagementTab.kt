@@ -655,16 +655,16 @@ fun EmployeeManagementTab(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // 2. Email (With duplicate check warning & max 15 chars)
+                    // 2. Email (With duplicate check warning, max 30 chars limit internal)
                     OutlinedTextField(
                         value = email,
                         onValueChange = {
-                            if (it.length <= 15) {
+                            if (it.length <= 30) {
                                 email = it.trim()
                                 addErrorMessage = null
                             }
                         },
-                        label = { Text("Email (ईमेल / Login ID - Max 15) *", fontSize = 12.sp) },
+                        label = { Text("Email (ईमेल / Login ID) *", fontSize = 12.sp) },
                         placeholder = { Text("e.g. rahul@soe.com", fontSize = 12.sp, color = Slate500) },
                         leadingIcon = {
                             Icon(Icons.Default.Email, contentDescription = null, tint = Indigo600, modifier = Modifier.size(18.dp))
@@ -672,27 +672,23 @@ fun EmployeeManagementTab(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                         singleLine = true,
                         isError = isDuplicateEmail,
-                        supportingText = {
-                            if (isDuplicateEmail) {
-                                Text("⚠️ इस ईमेल से पहले ही एक कर्मचारी मौजूद है। कृपया दूसरा ईमेल चुनें।", color = Red600, fontSize = 11.sp)
-                            } else {
-                                Text("${email.length}/15 chars (Max 15)", fontSize = 11.sp, color = Slate500)
-                            }
-                        },
+                        supportingText = if (isDuplicateEmail) {
+                            { Text("⚠️ इस ईमेल से पहले ही एक कर्मचारी मौजूद है। कृपया दूसरा ईमेल चुनें।", color = Red600, fontSize = 11.sp) }
+                        } else null,
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // 3. Initial Password (8 digits/chars)
+                    // 3. Initial Password
                     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         OutlinedTextField(
                             value = password,
                             onValueChange = {
-                                if (it.length <= 8) {
+                                if (it.length <= 30) {
                                     password = it
                                     addErrorMessage = null
                                 }
                             },
-                            label = { Text("Initial Password (ठीक 8 अक्षर) *", fontSize = 12.sp) },
+                            label = { Text("Initial Password *", fontSize = 12.sp) },
                             placeholder = { Text("Abcd1234", fontSize = 12.sp, color = Slate500) },
                             leadingIcon = {
                                 Icon(Icons.Default.Lock, contentDescription = null, tint = Indigo600, modifier = Modifier.size(18.dp))
@@ -710,13 +706,10 @@ fun EmployeeManagementTab(
                             visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                             singleLine = true,
-                            supportingText = {
-                                Text("${password.length}/8 digits/chars", fontSize = 11.sp, color = if (password.length == 8) Indigo600 else Slate500)
-                            },
                             modifier = Modifier.fillMaxWidth()
                         )
                         Text(
-                            text = "💡 A unique secure temporary 8-digit/char password has been generated.",
+                            text = "💡 A secure temporary password has been generated.",
                             fontSize = 11.sp,
                             color = Slate500
                         )
@@ -1036,15 +1029,12 @@ fun EmployeeManagementTab(
                     OutlinedTextField(
                         value = email,
                         onValueChange = { 
-                            if (it.length <= 15) {
+                            if (it.length <= 30) {
                                 email = it.trim()
                                 editErrorMessage = null
                             }
                         },
-                        label = { Text("Email Address (Max 15 chars)", fontSize = 11.sp) },
-                        supportingText = {
-                            Text("${email.length}/15 chars", fontSize = 10.sp, color = Slate500)
-                        },
+                        label = { Text("Email Address", fontSize = 11.sp) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
